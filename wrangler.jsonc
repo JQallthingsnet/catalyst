@@ -19,5 +19,13 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "catalyst-db",
+      "database_id": "local-catalyst-db",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

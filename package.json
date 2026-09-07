@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@vinext/cloudflare": "^1.0.0-beta.7",
+    "nodemailer": "^10.0.1",
     "react": "latest",
     "react-dom": "latest",
     "react-server-dom-webpack": "^19.2.8",
@@ -17,6 +18,7 @@
     "@cloudflare/vite-plugin": "^1.54.4",
     "@tailwindcss/postcss": "latest",
     "@types/node": "latest",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "^6.1.1",
@@ -32,6 +34,9 @@
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "deploy": "vinext-cloudflare deploy --config dist/server/wrangler.json",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "db:create": "wrangler d1 create catalyst-db",
+    "db:migrate:local": "wrangler d1 migrations apply catalyst-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply catalyst-db --remote"
   }
 }
