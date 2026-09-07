@@ -24,7 +24,7 @@
     {
       "binding": "DB",
       "database_name": "catalyst-db",
-      "database_id": "local-catalyst-db",
+      "database_id": "1cdbc21b-2359-4457-bab4-c2a7001225fa",
       "migrations_dir": "migrations"
     }
   ]
