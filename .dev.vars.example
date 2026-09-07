@@ -1,0 +1,10 @@
+# Copy to .dev.vars for local development. Never commit .dev.vars.
+
+# Required for session cookies.
+AUTH_SECRET=replace-with-a-long-random-string
+
+# Show the 8-digit code on the login page when SMTP is not set.
+AUTH_DEV_RETURN_CODE=true
+
+# Optional JSON secret (same shape as Auking). When set, codes are emailed.
+# gmail-smtp-keys={"gmail-smtp-email":"you@gmail.com","gmail-smtp-password":"app-password","gmail-smtp-host":"smtp.gmail.com","gmail-smtp-port":"465"}
