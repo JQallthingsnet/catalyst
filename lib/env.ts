@@ -4,7 +4,7 @@ export type AppEnv = {
   DB?: D1Database;
   AUTH_SECRET?: string;
   AUTH_DEV_RETURN_CODE?: string;
-  "gmail-smtp-keys"?: string;
+  "smtp-keys"?: string;
 };
 
 export function getEnv(): AppEnv {
