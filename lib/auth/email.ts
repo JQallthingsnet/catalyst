@@ -1,6 +1,8 @@
 import { getEnv } from "@/lib/env";
 
-const SECRET_NAME = "gmail-smtp-keys";
+const SECRET_NAME = "smtp-keys";
+const DEFAULT_HOST = "smtp.office365.com";
+const DEFAULT_PORT = "587";
 
 type SmtpConfig = {
   host: string;
@@ -13,7 +15,8 @@ type SmtpConfig = {
 function readString(json: Record<string, unknown>, key: string): string | undefined {
   const value = json[key];
   if (typeof value === "number") return String(value);
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  if (typeof value === "string" && value.length > 0) return value;
+  return undefined;
 }
 
 function parseSmtpSecret(raw: unknown): SmtpConfig | null {
@@ -25,13 +28,13 @@ function parseSmtpSecret(raw: unknown): SmtpConfig | null {
     return null;
   }
 
-  const user = readString(json, "gmail-smtp-email");
-  const pass = readString(json, "gmail-smtp-password");
+  const user = readString(json, "smtp-email");
+  const pass = readString(json, "smtp-password");
   if (!user || !pass) return null;
 
   return {
-    host: readString(json, "gmail-smtp-host") ?? "smtp.gmail.com",
-    port: Number(readString(json, "gmail-smtp-port") ?? "465"),
+    host: readString(json, "smtp-host") ?? DEFAULT_HOST,
+    port: Number(readString(json, "smtp-port") ?? DEFAULT_PORT),
     user,
     pass,
     from: user,
@@ -51,6 +54,7 @@ export async function sendVerificationEmail(to: string, code: string): Promise<b
     host: smtp.host,
     port: smtp.port,
     secure: smtp.port === 465,
+    requireTLS: smtp.port === 587,
     auth: { user: smtp.user, pass: smtp.pass },
   });
 

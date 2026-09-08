@@ -8,7 +8,18 @@ Requires **Node.js 22+**.
 
 Passwordless login: enter an email, receive an 8-digit passcode, then open the dashboard. The first successful sign-in registers that email.
 
-Local testing can show the code on the page (`AUTH_DEV_RETURN_CODE=true` in `.dev.vars`). Production should send the code by email (`gmail-smtp-keys` Worker secret) and set `AUTH_SECRET`.
+Local testing can show the code on the page (`AUTH_DEV_RETURN_CODE=true` in `.dev.vars`). Production should send the code by email (`smtp-keys` Worker secret) and set `AUTH_SECRET`.
+
+Microsoft 365 through GoDaddy (Worker secret `smtp-keys`):
+
+```json
+{
+  "smtp-email": "you@yourdomain.com",
+  "smtp-password": "your-password",
+  "smtp-host": "smtp.office365.com",
+  "smtp-port": "587"
+}
+```
 
 ## Scripts
 
@@ -28,5 +39,6 @@ npm run db:create
 # Put the printed database_id into wrangler.jsonc
 npm run db:migrate:remote
 npx wrangler secret put AUTH_SECRET
+npx wrangler secret put smtp-keys
 npm run deploy
 ```
