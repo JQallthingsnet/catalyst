@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       }
     } else if (!allowDevCode) {
       return NextResponse.json(
-        { error: "Email is not configured. Add the smtp-keys secret, or set AUTH_DEV_RETURN_CODE for local testing." },
+        { error: "Email is not configured. Add the gmail-smtp-keys secret, or set AUTH_DEV_RETURN_CODE for local testing." },
         { status: 503 },
       );
     }
