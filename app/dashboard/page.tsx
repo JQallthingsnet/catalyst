@@ -1,63 +1,88 @@
-import { SignOutButton } from "@/components/dashboard/sign-out-button";
-import { getSession } from "@/lib/auth/session";
-import { getUser } from "@/lib/auth/repository";
-import { redirect } from "next/navigation";
+import Link from "next/link";
+import { requirePortal } from "@/lib/portal/guard";
+import { dashboardSummary } from "@/lib/portal/repo";
 
-const cards = [
-  { label: "Projects", value: "0", hint: "Nothing created yet" },
-  { label: "Team", value: "1", hint: "You are the first member" },
-  { label: "Alerts", value: "0", hint: "All clear" },
-  { label: "Status", value: "Live", hint: "Account is active" },
-];
+function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <article className="rounded-card border border-line bg-panel p-5">
+      <p className="text-sm text-quiet">{label}</p>
+      <p className="mt-2 text-3xl font-semibold tracking-tight">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-quiet">{hint}</p> : null}
+    </article>
+  );
+}
 
 export default async function DashboardPage() {
-  const session = await getSession();
-  if (!session) {
-    redirect("/");
-  }
-
-  const user = await getUser(session.email);
+  const ctx = await requirePortal();
+  const data = await dashboardSummary(ctx.tenantId);
+  const maxMb = Math.max(...data.usage.map((row) => row.mb), 1);
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div>
-            <p className="text-sm font-semibold text-slate-950">Catalyst</p>
-            <p className="text-xs text-slate-500">Dashboard</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <p className="hidden text-sm text-slate-600 sm:block">{session.email}</p>
-            <SignOutButton />
-          </div>
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm text-quiet">First screen after login</p>
+          <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
         </div>
-      </header>
-
-      <section className="mx-auto max-w-6xl px-6 py-8">
-        <h1 className="text-3xl font-semibold text-slate-950">
-          Welcome{user?.name ? `, ${user.name}` : ""}
-        </h1>
-        <p className="mt-2 text-slate-600">
-          Signed in as {session.email}. This is your workspace overview.
-        </p>
-
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {cards.map((card) => (
-            <article key={card.label} className="rounded-2xl border border-slate-200 bg-white p-5">
-              <p className="text-sm text-slate-500">{card.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-950">{card.value}</p>
-              <p className="mt-1 text-sm text-slate-500">{card.hint}</p>
-            </article>
-          ))}
+        <div className="flex flex-wrap gap-2">
+          <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+            Order SIMs
+          </Link>
+          <Link href="/dashboard/plans/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            Create plan
+          </Link>
+          <Link href="/dashboard/pools/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            Create pool
+          </Link>
+          <Link href="/dashboard/sims/assign" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            Assign SIMs
+          </Link>
         </div>
+      </div>
 
-        <article className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold text-slate-950">Recent activity</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            No activity yet. After you add products, orders, or team actions, they will show up here.
-          </p>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi label="SIMs active" value={data.simsActive.toLocaleString("en-AU")} />
+        <Kpi label="Pool used" value={`${data.poolUsedPct}%`} hint={data.poolName} />
+        <Kpi label="Open orders" value={String(data.openOrders)} />
+        <Kpi label="Activations 24h" value={String(data.activations24h)} />
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-5">
+        <article className="rounded-card border border-line bg-panel p-5 lg:col-span-3">
+          <h2 className="text-lg font-semibold">Usage 7 days</h2>
+          <div className="mt-4 flex h-48 items-end gap-2">
+            {data.usage.length === 0 ? (
+              <p className="text-sm text-quiet">No usage yet. Control Center is source of rated usage.</p>
+            ) : (
+              data.usage.map((row) => (
+                <div key={row.day} className="flex flex-1 flex-col items-center gap-2">
+                  <div
+                    className="w-full rounded-t-lg bg-accent/80"
+                    style={{ height: `${Math.max(8, (row.mb / maxMb) * 100)}%` }}
+                    title={`${row.mb} MB`}
+                  />
+                  <span className="text-[10px] text-quiet">{row.day.slice(5)}</span>
+                </div>
+              ))
+            )}
+          </div>
         </article>
-      </section>
-    </main>
+        <article className="rounded-card border border-line bg-panel p-5 lg:col-span-2">
+          <h2 className="text-lg font-semibold">Activity</h2>
+          <ul className="mt-4 space-y-3">
+            {data.activity.length === 0 ? (
+              <li className="text-sm text-quiet">No activity yet.</li>
+            ) : (
+              data.activity.map((item) => (
+                <li key={item.id} className="border-b border-line pb-3 text-sm last:border-0">
+                  <p className="text-ink">{item.detail}</p>
+                  <p className="mt-1 text-xs text-quiet">{new Date(item.createdAt).toLocaleString("en-AU")}</p>
+                </li>
+              ))
+            )}
+          </ul>
+        </article>
+      </div>
+    </div>
   );
 }
