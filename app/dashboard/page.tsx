@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { can } from "@/lib/portal/role-model";
 import { requirePortal } from "@/lib/portal/guard";
 import { dashboardSummary } from "@/lib/portal/repo";
 
@@ -25,18 +26,26 @@ export default async function DashboardPage() {
           <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
-            Order SIMs
-          </Link>
-          <Link href="/dashboard/plans/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
-            Create plan
-          </Link>
-          <Link href="/dashboard/pools/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
-            Create pool
-          </Link>
-          <Link href="/dashboard/sims/assign" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
-            Assign SIMs
-          </Link>
+          {can(ctx.role, "order.create") ? (
+            <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+              Order SIMs
+            </Link>
+          ) : null}
+          {can(ctx.role, "plan.create") ? (
+            <Link href="/dashboard/plans/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+              Create plan
+            </Link>
+          ) : null}
+          {can(ctx.role, "pool.create") ? (
+            <Link href="/dashboard/pools/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+              Create pool
+            </Link>
+          ) : null}
+          {can(ctx.role, "assign") ? (
+            <Link href="/dashboard/sims/assign" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+              Assign SIMs
+            </Link>
+          ) : null}
         </div>
       </div>
 

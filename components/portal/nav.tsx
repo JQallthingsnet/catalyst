@@ -2,21 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { PortalRole } from "@/lib/portal/role-model";
+import { navForRole } from "@/lib/portal/role-model";
 
-const NAV = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/dashboard/sims", label: "SIMs" },
-  { href: "/dashboard/plans", label: "Plans" },
-  { href: "/dashboard/pools", label: "Pools" },
-  { href: "/dashboard/customers", label: "Customers" },
-  { href: "/dashboard/orders", label: "Orders" },
-  { href: "/dashboard/usage", label: "Usage" },
-  { href: "/dashboard/settings", label: "Settings" },
-];
-
-export function PortalNav({ showAdmin }: { showAdmin: boolean }) {
+export function PortalNav({ role }: { role: PortalRole }) {
   const pathname = usePathname();
-  const items = showAdmin ? [...NAV, { href: "/dashboard/admin", label: "Admin" }] : NAV;
+  const items = navForRole(role);
 
   return (
     <nav className="flex-1 space-y-1 px-3">

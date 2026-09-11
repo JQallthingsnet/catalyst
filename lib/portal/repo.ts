@@ -3,14 +3,16 @@ import { runCcMutation } from "@/lib/cc/adapter";
 import { lifecycleTarget, skuById, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
 import { newId, padIccid } from "@/lib/portal/ids";
 import { seedTenantDemo } from "@/lib/portal/seed";
+import { type PortalRole } from "@/lib/portal/role-model";
 
-export type PortalRole = "super_admin" | "reseller_admin" | "reseller_operator";
+export type { PortalRole };
 
 export type PortalContext = {
   email: string;
   tenantId: string;
   tenantName: string;
   role: PortalRole;
+  isSuperAdmin: boolean;
 };
 
 export type Customer = { id: string; name: string; createdAt: string };
@@ -69,7 +71,13 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
     .first<{ email: string; tenant_id: string; role: PortalRole; name: string }>();
 
   if (member) {
-    return { email, tenantId: member.tenant_id, tenantName: member.name, role: member.role };
+    return {
+      email,
+      tenantId: member.tenant_id,
+      tenantName: member.name,
+      role: member.role,
+      isSuperAdmin: false,
+    };
   }
 
   const tenantId = newId("ten");
@@ -80,7 +88,7 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
     .bind(email, tenantId, "reseller_admin")
     .run();
   await seedTenantDemo(tenantId, email);
-  return { email, tenantId, tenantName: "Acme MVNO", role: "reseller_admin" };
+  return { email, tenantId, tenantName: "Acme MVNO", role: "reseller_admin", isSuperAdmin: false };
 }
 
 export async function writeAudit(tenantId: string, actorEmail: string, action: string, detail: string): Promise<void> {
