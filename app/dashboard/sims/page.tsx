@@ -31,7 +31,7 @@ export default async function SimsPage({
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        <table className="w-full min-w-180 text-left text-sm">
           <thead className="text-quiet">
             <tr>
               <th className="px-4 py-3">ICCID</th>

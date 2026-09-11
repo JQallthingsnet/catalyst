@@ -9,16 +9,16 @@ export default async function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-canvas">
       <div className="mx-auto grid min-h-screen max-w-6xl items-center gap-12 px-6 py-12 lg:grid-cols-2">
         <section className="max-w-xl">
-          <p className="text-sm font-semibold uppercase tracking-wide text-orange-600">Catalyst</p>
-          <h1 className="mt-3 text-4xl font-semibold leading-tight text-slate-950 sm:text-5xl">
-            Work starts after you sign in.
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">ATN Catalyst</p>
+          <h1 className="mt-3 text-4xl font-semibold leading-tight text-ink sm:text-5xl">
+            Order SIMs, plans, and pools for your customers.
           </h1>
-          <p className="mt-4 text-lg leading-8 text-slate-600">
-            Enter the email you want to register. We send an 8-digit passcode to that address.
-            After you confirm it, you land on your dashboard.
+          <p className="mt-4 text-lg leading-8 text-quiet">
+            Multi-tenant MVNE portal for resellers. Enter your email for an 8-digit passcode. First sign-in registers
+            you to your tenant.
           </p>
         </section>
         <LoginForm />
