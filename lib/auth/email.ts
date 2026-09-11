@@ -1,8 +1,8 @@
 import { getEnv } from "@/lib/env";
 
-const SECRET_NAME = "smtp-keys";
-const DEFAULT_HOST = "smtp.office365.com";
-const DEFAULT_PORT = "587";
+const SECRET_NAME = "gmail-smtp-keys";
+const DEFAULT_HOST = "smtp.gmail.com";
+const DEFAULT_PORT = "465";
 
 type SmtpConfig = {
   host: string;
@@ -28,13 +28,13 @@ function parseSmtpSecret(raw: unknown): SmtpConfig | null {
     return null;
   }
 
-  const user = readString(json, "smtp-email");
-  const pass = readString(json, "smtp-password");
+  const user = readString(json, "gmail-smtp-email");
+  const pass = readString(json, "gmail-smtp-password");
   if (!user || !pass) return null;
 
   return {
-    host: readString(json, "smtp-host") ?? DEFAULT_HOST,
-    port: Number(readString(json, "smtp-port") ?? DEFAULT_PORT),
+    host: readString(json, "gmail-smtp-host") ?? DEFAULT_HOST,
+    port: Number(readString(json, "gmail-smtp-port") ?? DEFAULT_PORT),
     user,
     pass,
     from: user,
