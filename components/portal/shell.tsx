@@ -1,9 +1,18 @@
 import { SignOutButton } from "@/components/dashboard/sign-out-button";
 import { PortalNav } from "@/components/portal/nav";
+import { TenantSwitcher } from "@/components/portal/tenant-switcher";
 import { ViewAsSwitcher } from "@/components/portal/view-as-switcher";
 import type { PortalContext } from "@/lib/portal/repo";
 
-export function PortalShell({ ctx, children }: { ctx: PortalContext; children: React.ReactNode }) {
+export function PortalShell({
+  ctx,
+  tenants,
+  children,
+}: {
+  ctx: PortalContext;
+  tenants: { id: string; name: string }[];
+  children: React.ReactNode;
+}) {
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-line bg-panel md:flex md:flex-col">
@@ -26,6 +35,7 @@ export function PortalShell({ ctx, children }: { ctx: PortalContext; children: R
                 className="w-full rounded-card border border-line bg-panel px-4 py-2.5 text-sm text-ink outline-none placeholder:text-quiet focus:border-accent"
               />
             </form>
+            {ctx.isSuperAdmin ? <TenantSwitcher tenants={tenants} currentId={ctx.tenantId} /> : null}
             {ctx.isSuperAdmin ? <ViewAsSwitcher role={ctx.role} /> : null}
             <p className="hidden truncate text-sm text-quiet sm:block">{ctx.tenantName}</p>
             <p className="hidden truncate text-xs text-quiet lg:block">{ctx.email}</p>

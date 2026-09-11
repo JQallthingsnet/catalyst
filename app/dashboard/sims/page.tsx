@@ -43,6 +43,7 @@ export default async function SimsPage({
               <th className="px-4 py-3">Form</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Plan</th>
+              <th className="px-4 py-3">Wholesale</th>
               <th className="px-4 py-3">Pool</th>
               <th className="px-4 py-3">State</th>
               <th className="px-4 py-3">Lifecycle</th>
@@ -55,6 +56,7 @@ export default async function SimsPage({
                 <td className="px-4 py-3">{sim.formFactor}</td>
                 <td className="px-4 py-3">{sim.customerName ?? "—"}</td>
                 <td className="px-4 py-3">{sim.planName ?? "—"}</td>
+                <td className="px-4 py-3">{sim.wholesalePlan ?? "—"}</td>
                 <td className="px-4 py-3">{sim.poolName ?? "—"}</td>
                 <td className="px-4 py-3">{sim.state}</td>
                 <td className="px-4 py-3">

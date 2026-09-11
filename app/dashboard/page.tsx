@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { TenantDirectory } from "@/components/portal/tenant-directory";
 import { can } from "@/lib/portal/role-model";
 import { requirePortal } from "@/lib/portal/guard";
 import { dashboardSummary } from "@/lib/portal/repo";
+import { listPlatformTenants } from "@/lib/portal/tenant";
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -15,14 +17,17 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
 
 export default async function DashboardPage() {
   const ctx = await requirePortal();
-  const data = await dashboardSummary(ctx.tenantId);
+  const [data, tenants] = await Promise.all([
+    dashboardSummary(ctx.tenantId),
+    ctx.isSuperAdmin && ctx.role === "super_admin" ? listPlatformTenants(true) : Promise.resolve([]),
+  ]);
   const maxMb = Math.max(...data.usage.map((row) => row.mb), 1);
 
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm text-quiet">First screen after login</p>
+          <p className="text-sm text-quiet">{ctx.tenantName}</p>
           <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -48,6 +53,23 @@ export default async function DashboardPage() {
           ) : null}
         </div>
       </div>
+
+      {tenants.length > 0 ? (
+        <div className="mt-6 space-y-3">
+          <TenantDirectory tenants={tenants} currentId={ctx.tenantId} />
+          <p className="text-sm text-quiet">
+            See every customer and warehouse, or{" "}
+            <Link href="/dashboard/estate" className="text-accent">
+              open Estate
+            </Link>
+            .{" "}
+            <Link href="/dashboard/estate/allocate" className="text-accent">
+              Sell stock
+            </Link>{" "}
+            to put SIMs in a reseller warehouse.
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="SIMs active" value={data.simsActive.toLocaleString("en-AU")} />
