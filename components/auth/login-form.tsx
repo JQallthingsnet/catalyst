@@ -146,14 +146,14 @@ export function LoginForm() {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-      <p className="text-sm font-semibold uppercase tracking-wide text-orange-600">Sign in</p>
-      <h2 className="mt-2 text-2xl font-semibold text-slate-950">
+    <div className="rounded-card border border-line bg-panel p-6 sm:p-8">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">Sign in</p>
+      <h2 className="mt-2 text-2xl font-semibold text-ink">
         {step === "email" ? "Enter your email" : "Enter your 8-digit code"}
       </h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600">
+      <p className="mt-2 text-sm leading-6 text-quiet">
         {step === "email"
-          ? "We’ll send an 8-digit passcode to this address. First sign-in creates your account."
+          ? "We’ll send an 8-digit passcode to this address. First sign-in creates your tenant."
           : `Code sent to ${email}. It is valid for 5 minutes.`}
       </p>
 
@@ -166,7 +166,7 @@ export function LoginForm() {
           }}
         >
           <label className="block">
-            <span className="text-sm font-medium text-slate-900">Email</span>
+            <span className="text-sm font-medium text-ink">Email</span>
             <input
               type="email"
               required
@@ -175,14 +175,14 @@ export function LoginForm() {
               onChange={(event) => setEmail(event.target.value)}
               disabled={loading}
               placeholder="you@company.com"
-              className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:bg-slate-50"
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-4 py-3 text-sm text-ink outline-none focus:border-accent disabled:opacity-50"
             />
           </label>
-          {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+          {error ? <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
           <button
             type="submit"
             disabled={loading || !email.trim()}
-            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+            className="w-full rounded-card bg-accent px-4 py-3 text-sm font-medium text-canvas disabled:opacity-50"
           >
             {loading ? "Sending…" : "Send passcode"}
           </button>
@@ -207,16 +207,16 @@ export function LoginForm() {
                 onKeyDown={(event) => handleCodeKeyDown(index, event)}
                 onPaste={handleCodePaste}
                 onFocus={(event) => event.target.select()}
-                className="h-11 w-8 rounded-lg border border-slate-300 text-center text-lg font-semibold outline-none focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 disabled:opacity-50 sm:h-12 sm:w-10"
+                className="h-11 w-8 rounded-lg border border-line bg-canvas text-center text-lg font-semibold text-ink outline-none focus:border-accent disabled:opacity-50 sm:h-12 sm:w-10"
               />
             ))}
           </div>
           {devCode ? (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-center text-sm text-amber-800">
+            <p className="rounded-lg bg-warn/10 px-3 py-2 text-center text-sm text-warn">
               Local testing code: <strong className="tracking-widest">{devCode}</strong>
             </p>
           ) : null}
-          {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+          {error ? <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
           <div className="flex gap-3">
             <button
               type="button"
@@ -227,7 +227,7 @@ export function LoginForm() {
                 setError("");
                 setDevCode(null);
               }}
-              className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+              className="flex-1 rounded-card border border-line px-4 py-3 text-sm font-medium hover:border-accent disabled:opacity-50"
             >
               Back
             </button>
@@ -235,7 +235,7 @@ export function LoginForm() {
               type="button"
               disabled={loading || codeString.length !== AUTH_CODE_LEN}
               onClick={() => void handleVerify(codeString)}
-              className="flex-1 rounded-xl bg-slate-950 px-4 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+              className="flex-1 rounded-card bg-accent px-4 py-3 text-sm font-medium text-canvas disabled:opacity-50"
             >
               {loading ? "Checking…" : "Sign in"}
             </button>
@@ -244,7 +244,7 @@ export function LoginForm() {
             type="button"
             disabled={loading || cooldown > 0}
             onClick={() => void sendCode()}
-            className="w-full text-sm text-slate-600 hover:text-slate-950 disabled:text-slate-400"
+            className="w-full text-sm text-quiet hover:text-ink disabled:text-line"
           >
             {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
           </button>
