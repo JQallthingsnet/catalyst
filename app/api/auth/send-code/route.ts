@@ -7,7 +7,7 @@ import {
   isValidEmail,
   normalizeEmail,
 } from "@/lib/auth/codes";
-import { sendVerificationEmail, getSmtpConfig } from "@/lib/auth/email";
+import { sendVerificationEmail, getEmailConfig } from "@/lib/auth/email";
 import { AuthRateLimitBucket, checkRateLimit } from "@/lib/auth/rate-limit";
 import { upsertAuthCode } from "@/lib/auth/repository";
 import { getClientIP, isBrowserRequest } from "@/lib/auth/request";
@@ -58,14 +58,17 @@ export async function POST(request: Request) {
     const expiresAt = authCodeExpiresAtIso();
     await upsertAuthCode(email, code, expiresAt);
 
-    const smtpReady = Boolean(getSmtpConfig());
+    const emailReady = Boolean(getEmailConfig());
     const allowDevCode = isDevCodeEnabled();
 
-    if (smtpReady) {
+    if (emailReady) {
       await sendVerificationEmail(email, code);
     } else if (!allowDevCode) {
       return NextResponse.json(
-        { error: "Email is not configured. Add the gmail-smtp-keys secret, or set AUTH_DEV_RETURN_CODE for local testing." },
+        {
+          error:
+            "Email is not configured. Add the gmail-smtp-keys secret, or set AUTH_DEV_RETURN_CODE for local testing.",
+        },
         { status: 503 },
       );
     }

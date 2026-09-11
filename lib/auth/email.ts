@@ -1,3 +1,4 @@
+import { WorkerMailer } from "worker-mailer";
 import { getEnv } from "@/lib/env";
 
 const SECRET_NAME = "gmail-smtp-keys";
@@ -24,6 +25,9 @@ function parseSmtpSecret(raw: unknown): SmtpConfig | null {
   let json: Record<string, unknown>;
   try {
     json = typeof raw === "string" ? (JSON.parse(raw) as Record<string, unknown>) : (raw as Record<string, unknown>);
+    if (typeof json === "string") {
+      json = JSON.parse(json) as Record<string, unknown>;
+    }
   } catch {
     return null;
   }
@@ -41,34 +45,35 @@ function parseSmtpSecret(raw: unknown): SmtpConfig | null {
   };
 }
 
-export function getSmtpConfig(): SmtpConfig | null {
+export function getEmailConfig(): SmtpConfig | null {
   return parseSmtpSecret(getEnv()[SECRET_NAME]);
 }
 
 export async function sendVerificationEmail(to: string, code: string): Promise<void> {
-  const smtp = getSmtpConfig();
+  const smtp = getEmailConfig();
   if (!smtp) {
     throw new Error("gmail-smtp-keys is missing or does not contain gmail-smtp-email and gmail-smtp-password.");
   }
 
+  const implicitTls = smtp.port === 465;
   try {
-    const nodemailer = await import("nodemailer");
-    const transporter = nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.port === 465,
-      requireTLS: smtp.port === 587,
-      auth: { user: smtp.user, pass: smtp.pass },
-      connectionTimeout: 15_000,
-      greetingTimeout: 15_000,
-      socketTimeout: 15_000,
-    });
-
-    await transporter.sendMail({
-      from: `"Catalyst" <${smtp.from}>`,
-      to,
-      subject: "Your Catalyst login code",
-      html: `
+    await WorkerMailer.send(
+      {
+        host: smtp.host,
+        port: smtp.port,
+        secure: implicitTls,
+        startTls: !implicitTls,
+        authType: "plain",
+        credentials: {
+          username: smtp.user,
+          password: smtp.pass,
+        },
+      },
+      {
+        from: { name: "Catalyst", email: smtp.from },
+        to,
+        subject: "Your Catalyst login code",
+        html: `
       <div style="font-family: system-ui, sans-serif; max-width: 560px; margin: 0 auto;">
         <h2 style="color: #111827;">Your login code</h2>
         <p>Use this 8-digit code to sign in to Catalyst. It expires in 5 minutes.</p>
@@ -78,7 +83,8 @@ export async function sendVerificationEmail(to: string, code: string): Promise<v
         <p style="color: #6b7280; font-size: 14px;">If you did not request this, you can ignore this email.</p>
       </div>
     `,
-    });
+      },
+    );
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown SMTP error";
     console.error("[email] SMTP send failed", detail);
