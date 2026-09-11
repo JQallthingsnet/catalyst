@@ -59,10 +59,7 @@ export async function POST(request: Request) {
     const allowDevCode = isDevCodeEnabled();
 
     if (smtpReady) {
-      const sent = await sendVerificationEmail(email, code);
-      if (!sent) {
-        return NextResponse.json({ error: "Could not send the login code. Try again shortly." }, { status: 502 });
-      }
+      await sendVerificationEmail(email, code);
     } else if (!allowDevCode) {
       return NextResponse.json(
         { error: "Email is not configured. Add the gmail-smtp-keys secret, or set AUTH_DEV_RETURN_CODE for local testing." },
@@ -79,6 +76,10 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     console.error("[send-code]", err);
-    return NextResponse.json({ error: "Could not send the login code." }, { status: 500 });
+    const detail = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json(
+      { error: "Could not send the login code.", detail },
+      { status: 500 },
+    );
   }
 }

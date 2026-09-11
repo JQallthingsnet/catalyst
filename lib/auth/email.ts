@@ -45,24 +45,30 @@ export function getSmtpConfig(): SmtpConfig | null {
   return parseSmtpSecret(getEnv()[SECRET_NAME]);
 }
 
-export async function sendVerificationEmail(to: string, code: string): Promise<boolean> {
+export async function sendVerificationEmail(to: string, code: string): Promise<void> {
   const smtp = getSmtpConfig();
-  if (!smtp) return false;
+  if (!smtp) {
+    throw new Error("gmail-smtp-keys is missing or does not contain gmail-smtp-email and gmail-smtp-password.");
+  }
 
-  const nodemailer = await import("nodemailer");
-  const transporter = nodemailer.createTransport({
-    host: smtp.host,
-    port: smtp.port,
-    secure: smtp.port === 465,
-    requireTLS: smtp.port === 587,
-    auth: { user: smtp.user, pass: smtp.pass },
-  });
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.port === 465,
+      requireTLS: smtp.port === 587,
+      auth: { user: smtp.user, pass: smtp.pass },
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 15_000,
+    });
 
-  await transporter.sendMail({
-    from: `"Catalyst" <${smtp.from}>`,
-    to,
-    subject: "Your Catalyst login code",
-    html: `
+    await transporter.sendMail({
+      from: `"Catalyst" <${smtp.from}>`,
+      to,
+      subject: "Your Catalyst login code",
+      html: `
       <div style="font-family: system-ui, sans-serif; max-width: 560px; margin: 0 auto;">
         <h2 style="color: #111827;">Your login code</h2>
         <p>Use this 8-digit code to sign in to Catalyst. It expires in 5 minutes.</p>
@@ -72,7 +78,10 @@ export async function sendVerificationEmail(to: string, code: string): Promise<b
         <p style="color: #6b7280; font-size: 14px;">If you did not request this, you can ignore this email.</p>
       </div>
     `,
-  });
-
-  return true;
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unknown SMTP error";
+    console.error("[email] SMTP send failed", detail);
+    throw new Error(`SMTP send failed: ${detail}`);
+  }
 }
