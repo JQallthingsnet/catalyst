@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
 import { normalizeEmail, isValidEmail } from "@/lib/auth/codes";
 import { getDB, getEnv } from "@/lib/env";
-import { parseViewRole, VIEW_AS_COOKIE, type PortalRole } from "@/lib/portal/role-model";
+import { ACTING_TENANT_COOKIE, parseViewRole, VIEW_AS_COOKIE, type PortalRole } from "@/lib/portal/role-model";
 
 export {
+  ACTING_TENANT_COOKIE,
   can,
   effectiveRole,
   navForRole,
@@ -85,4 +86,23 @@ export async function setViewAsCookie(role: PortalRole): Promise<void> {
 
 export async function clearViewAsCookie(): Promise<void> {
   (await cookies()).delete(VIEW_AS_COOKIE);
+}
+
+export async function getActingTenantCookie(): Promise<string | null> {
+  const value = (await cookies()).get(ACTING_TENANT_COOKIE)?.value?.trim();
+  return value || null;
+}
+
+export async function setActingTenantCookie(tenantId: string): Promise<void> {
+  (await cookies()).set(ACTING_TENANT_COOKIE, tenantId, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+}
+
+export async function clearActingTenantCookie(): Promise<void> {
+  (await cookies()).delete(ACTING_TENANT_COOKIE);
 }

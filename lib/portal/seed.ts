@@ -50,8 +50,8 @@ export async function seedTenantDemo(tenantId: string, actorEmail: string): Prom
     const assigned = n <= 40;
     await db
       .prepare(
-        `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         newId("sim"),
@@ -63,6 +63,7 @@ export async function seedTenantDemo(tenantId: string, actorEmail: string): Prom
         assigned ? planId : null,
         assigned ? poolId : null,
         receivedOrderId,
+        "T50",
         now,
       )
       .run();

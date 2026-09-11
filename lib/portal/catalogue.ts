@@ -48,6 +48,14 @@ export function skuById(id: string) {
   return SIM_SKUS.find((sku) => sku.id === id);
 }
 
+export function wholesalePlanById(id: string) {
+  return WHOLESALE_PLANS.find((plan) => plan.id === id);
+}
+
+export function commPlanById(id: string) {
+  return COMM_PLANS.find((plan) => plan.id === id);
+}
+
 export function lifecycleTarget(action: string, current: SimState): SimState | null {
   if (action === "Activate" && (current === "Ready" || current === "Suspended")) return "Active";
   if (action === "Suspend" && current === "Active") return "Suspended";

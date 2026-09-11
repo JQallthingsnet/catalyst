@@ -1,5 +1,7 @@
 import { WorkerMailer } from "worker-mailer";
 import { getEnv } from "@/lib/env";
+import type { PortalRole } from "@/lib/portal/role-model";
+import { VIEW_ROLES } from "@/lib/portal/role-model";
 
 const SECRET_NAME = "gmail-smtp-keys";
 const DEFAULT_HOST = "smtp.gmail.com";
@@ -49,7 +51,7 @@ export function getEmailConfig(): SmtpConfig | null {
   return parseSmtpSecret(getEnv()[SECRET_NAME]);
 }
 
-export async function sendVerificationEmail(to: string, code: string): Promise<void> {
+export async function sendSystemEmail(to: string, subject: string, html: string): Promise<void> {
   const smtp = getEmailConfig();
   if (!smtp) {
     throw new Error("gmail-smtp-keys is missing or does not contain gmail-smtp-email and gmail-smtp-password.");
@@ -70,10 +72,24 @@ export async function sendVerificationEmail(to: string, code: string): Promise<v
         },
       },
       {
-        from: { name: "Catalyst", email: smtp.from },
+        from: { name: "ATN Catalyst", email: smtp.from },
         to,
-        subject: "Your Catalyst login code",
-        html: `
+        subject,
+        html,
+      },
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unknown SMTP error";
+    console.error("[email] SMTP send failed", detail);
+    throw new Error(`SMTP send failed: ${detail}`);
+  }
+}
+
+export async function sendVerificationEmail(to: string, code: string): Promise<void> {
+  await sendSystemEmail(
+    to,
+    "Your Catalyst login code",
+    `
       <div style="font-family: system-ui, sans-serif; max-width: 560px; margin: 0 auto;">
         <h2 style="color: #111827;">Your login code</h2>
         <p>Use this 8-digit code to sign in to Catalyst. It expires in 5 minutes.</p>
@@ -83,11 +99,32 @@ export async function sendVerificationEmail(to: string, code: string): Promise<v
         <p style="color: #6b7280; font-size: 14px;">If you did not request this, you can ignore this email.</p>
       </div>
     `,
-      },
-    );
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "Unknown SMTP error";
-    console.error("[email] SMTP send failed", detail);
-    throw new Error(`SMTP send failed: ${detail}`);
-  }
+  );
+}
+
+export async function sendInviteEmail(input: {
+  to: string;
+  role: PortalRole;
+  invitedBy: string;
+  tenantName: string;
+  signInUrl: string;
+}): Promise<void> {
+  const roleLabel = VIEW_ROLES.find((item) => item.id === input.role)?.label ?? input.role;
+  await sendSystemEmail(
+    input.to,
+    `You're invited to ATN Catalyst as ${roleLabel}`,
+    `
+      <div style="font-family: system-ui, sans-serif; max-width: 560px; margin: 0 auto;">
+        <h2 style="color: #111827;">You're invited to ATN Catalyst</h2>
+        <p>${input.invitedBy} invited you as <strong>${roleLabel}</strong> for <strong>${input.tenantName}</strong>.</p>
+        <p>Open the portal and sign in with this email. We will email you an 8-digit passcode.</p>
+        <p style="margin: 24px 0;">
+          <a href="${input.signInUrl}" style="background: #2EE6D6; color: #070B14; padding: 12px 18px; border-radius: 12px; text-decoration: none; font-weight: 600;">
+            Sign in to Catalyst
+          </a>
+        </p>
+        <p style="color: #6b7280; font-size: 14px;">If you were not expecting this, you can ignore this email.</p>
+      </div>
+    `,
+  );
 }

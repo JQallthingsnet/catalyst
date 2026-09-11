@@ -1,9 +1,12 @@
 export type PortalRole = "super_admin" | "reseller_admin" | "reseller_operator";
 
 export const VIEW_AS_COOKIE = "catalyst_view_as";
+export const ACTING_TENANT_COOKIE = "catalyst_acting_tenant";
 
 export type Privilege =
   | "admin"
+  | "platform.estate"
+  | "wholesale.allocate"
   | "order.create"
   | "plan.create"
   | "plan.edit"
@@ -12,11 +15,16 @@ export type Privilege =
   | "customer.create"
   | "assign"
   | "lifecycle"
-  | "settings";
+  | "settings"
+  | "invite.operator"
+  | "invite.reseller_admin"
+  | "invite.super_admin";
 
 const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
   super_admin: [
     "admin",
+    "platform.estate",
+    "wholesale.allocate",
     "order.create",
     "plan.create",
     "plan.edit",
@@ -26,6 +34,9 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "assign",
     "lifecycle",
     "settings",
+    "invite.operator",
+    "invite.reseller_admin",
+    "invite.super_admin",
   ],
   reseller_admin: [
     "order.create",
@@ -37,6 +48,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "assign",
     "lifecycle",
     "settings",
+    "invite.operator",
   ],
   reseller_operator: ["plan.edit", "assign", "lifecycle"],
 };
@@ -44,6 +56,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
 const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
   super_admin: [
     { href: "/dashboard", label: "Dashboard" },
+    { href: "/dashboard/estate", label: "Estate" },
     { href: "/dashboard/sims", label: "SIMs" },
     { href: "/dashboard/plans", label: "Plans" },
     { href: "/dashboard/pools", label: "Pools" },

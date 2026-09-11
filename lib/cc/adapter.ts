@@ -1,7 +1,7 @@
 import { getDB } from "@/lib/env";
 import { newId } from "@/lib/portal/ids";
 
-export type CcJobKind = "assign" | "lifecycle" | "order.accept";
+export type CcJobKind = "assign" | "lifecycle" | "order.accept" | "wholesale.allocate";
 
 export type CcJob = {
   id: string;
@@ -25,8 +25,8 @@ export async function runCcMutation(input: {
   const db = getDB();
   const correlationId = input.correlationId ?? newId("corr");
   const existing = await db
-    .prepare("SELECT id, correlation_id, kind, status, error FROM cc_jobs WHERE correlation_id = ?")
-    .bind(correlationId)
+    .prepare("SELECT id, correlation_id, kind, status, error FROM cc_jobs WHERE correlation_id = ? AND tenant_id = ?")
+    .bind(correlationId, input.tenantId)
     .first<{
       id: string;
       correlation_id: string;

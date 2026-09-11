@@ -1,9 +1,18 @@
 import { getDB } from "@/lib/env";
 import { runCcMutation } from "@/lib/cc/adapter";
-import { lifecycleTarget, skuById, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
+import {
+  commPlanById,
+  lifecycleTarget,
+  skuById,
+  wholesalePlanById,
+  type OrderStatus,
+  type SimState,
+} from "@/lib/portal/catalogue";
+import { loadTenant } from "@/lib/portal/tenant";
 import { newId, padIccid } from "@/lib/portal/ids";
 import { seedTenantDemo } from "@/lib/portal/seed";
 import { type PortalRole } from "@/lib/portal/role-model";
+import { isListedSuperAdmin } from "@/lib/portal/roles";
 
 export type { PortalRole };
 
@@ -11,6 +20,8 @@ export type PortalContext = {
   email: string;
   tenantId: string;
   tenantName: string;
+  homeTenantId: string;
+  homeTenantName: string;
   role: PortalRole;
   isSuperAdmin: boolean;
 };
@@ -38,6 +49,7 @@ export type Sim = {
   planName: string | null;
   poolId: string | null;
   poolName: string | null;
+  wholesalePlan: string | null;
 };
 export type Order = {
   id: string;
@@ -47,6 +59,8 @@ export type Order = {
   destination: string | null;
   status: OrderStatus;
   createdAt: string;
+  tenantId?: string;
+  tenantName?: string;
 };
 export type AuditEvent = { id: string; action: string; detail: string; createdAt: string };
 export type UsagePoint = { day: string; mb: number };
@@ -65,7 +79,7 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
     .prepare(
       `SELECT m.email, m.tenant_id, m.role, t.name
        FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
-       WHERE m.email = ? LIMIT 1`,
+       WHERE m.email = ?`,
     )
     .bind(email)
     .first<{ email: string; tenant_id: string; role: PortalRole; name: string }>();
@@ -75,6 +89,8 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
       email,
       tenantId: member.tenant_id,
       tenantName: member.name,
+      homeTenantId: member.tenant_id,
+      homeTenantName: member.name,
       role: member.role,
       isSuperAdmin: false,
     };
@@ -82,13 +98,23 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
 
   const tenantId = newId("ten");
   const now = new Date().toISOString();
-  await db.prepare("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)").bind(tenantId, "Acme MVNO", now).run();
+  const isSuperAdmin = await isListedSuperAdmin(email);
+  const tenantName = isSuperAdmin ? "ATN Platform" : "Acme MVNO";
+  await db.prepare("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)").bind(tenantId, tenantName, now).run();
   await db
     .prepare("INSERT INTO tenant_members (email, tenant_id, role) VALUES (?, ?, ?)")
     .bind(email, tenantId, "reseller_admin")
     .run();
-  await seedTenantDemo(tenantId, email);
-  return { email, tenantId, tenantName: "Acme MVNO", role: "reseller_admin", isSuperAdmin: false };
+  if (!isSuperAdmin) await seedTenantDemo(tenantId, email);
+  return {
+    email,
+    tenantId,
+    tenantName,
+    homeTenantId: tenantId,
+    homeTenantName: tenantName,
+    role: "reseller_admin",
+    isSuperAdmin: false,
+  };
 }
 
 export async function writeAudit(tenantId: string, actorEmail: string, action: string, detail: string): Promise<void> {
@@ -151,7 +177,7 @@ export async function dashboardSummary(tenantId: string) {
 export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
   const q = query.trim();
   const sql = `
-    SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id,
+    SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
            c.name as customer_name, p.name as plan_name, pl.name as pool_name
     FROM sims s
     LEFT JOIN customers c ON c.id = s.customer_id
@@ -171,6 +197,7 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     customer_id: string | null;
     plan_id: string | null;
     pool_id: string | null;
+    wholesale_plan: string | null;
     customer_name: string | null;
     plan_name: string | null;
     pool_name: string | null;
@@ -186,6 +213,7 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     planName: row.plan_name,
     poolId: row.pool_id,
     poolName: row.pool_name,
+    wholesalePlan: row.wholesale_plan,
   }));
 }
 
@@ -415,6 +443,89 @@ export async function createOrder(
   };
 }
 
+export async function allocateWholesaleStock(
+  actor: { email: string; isSuperAdmin: boolean; role: PortalRole },
+  input: { tenantId: string; skuId: string; quantity: number; wholesalePlan: string; commPlan: string },
+): Promise<Order> {
+  if (!actor.isSuperAdmin || actor.role !== "super_admin") {
+    throw new Error("Only a super admin can sell stock into a reseller warehouse.");
+  }
+  const tenant = await loadTenant(input.tenantId);
+  if (!tenant) throw new Error("Organisation not found.");
+  const sku = skuById(input.skuId);
+  if (!sku) throw new Error("Unknown catalogue item.");
+  const wholesale = wholesalePlanById(input.wholesalePlan);
+  if (!wholesale) throw new Error("Unknown wholesale plan.");
+  const comm = commPlanById(input.commPlan);
+  if (!comm) throw new Error("Unknown communication plan.");
+  if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
+
+  const id = newId("ord");
+  const now = new Date().toISOString();
+  const logistics = "ATN wholesale";
+  const destination = `${wholesale.label} · ${comm.label}`;
+
+  await getDB()
+    .prepare(
+      `INSERT INTO orders (id, tenant_id, sku_id, sku_name, quantity, logistics, destination, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Received', ?)`,
+    )
+    .bind(id, tenant.id, sku.id, sku.name, input.quantity, logistics, destination, now)
+    .run();
+
+  const job = await runCcMutation({
+    tenantId: tenant.id,
+    kind: "wholesale.allocate",
+    payload: {
+      orderId: id,
+      sku: sku.id,
+      quantity: input.quantity,
+      wholesalePlan: wholesale.id,
+      commPlan: comm.id,
+    },
+    correlationId: `wholesale-${id}`,
+  });
+  if (job.status === "failed") {
+    throw new Error(job.error ?? "Control Center rejected the wholesale allocation.");
+  }
+
+  const dbInsert = getDB();
+  let n = await nextIccidSeed(tenant.id);
+  const inserts = [];
+  for (let i = 0; i < input.quantity; i += 1) {
+    inserts.push(
+      dbInsert
+        .prepare(
+          `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, created_at)
+           VALUES (?, ?, ?, ?, 'Ready', NULL, NULL, NULL, ?, ?, ?)`,
+        )
+        .bind(newId("sim"), tenant.id, padIccid(n), sku.formFactor, id, wholesale.id, now),
+    );
+    n += 1;
+  }
+  for (let i = 0; i < inserts.length; i += 40) {
+    await dbInsert.batch(inserts.slice(i, i + 40));
+  }
+
+  await writeAudit(
+    tenant.id,
+    actor.email,
+    "wholesale",
+    `Sold ${sku.name} × ${input.quantity} to ${tenant.name} on ${wholesale.label}`,
+  );
+  return {
+    id,
+    skuName: sku.name,
+    quantity: input.quantity,
+    logistics,
+    destination,
+    status: "Received",
+    createdAt: now,
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+  };
+}
+
 export async function assignSims(
   tenantId: string,
   actorEmail: string,
@@ -430,6 +541,15 @@ export async function assignSims(
     .bind(input.planId, tenantId)
     .first<{ id: string; name: string; wholesale_plan: string; comm_plan: string }>();
   if (!customer || !plan) throw new Error("Customer or plan not found in this tenant.");
+  let poolId: string | null = null;
+  if (input.poolId) {
+    const pool = await db
+      .prepare("SELECT id FROM pools WHERE id = ? AND tenant_id = ?")
+      .bind(input.poolId, tenantId)
+      .first<{ id: string }>();
+    if (!pool) throw new Error("Pool not found in this tenant.");
+    poolId = pool.id;
+  }
 
   const iccids = input.iccids.map((value) => value.replace(/\s/g, "")).filter(Boolean);
   if (iccids.length === 0) throw new Error("Select at least one SIM.");
@@ -442,7 +562,7 @@ export async function assignSims(
       planId: plan.id,
       wholesalePlan: plan.wholesale_plan,
       commPlan: plan.comm_plan,
-      poolId: input.poolId ?? null,
+      poolId,
       iccids,
     },
     correlationId: `assign-${customer.id}-${iccids[0]}-${iccids.length}`,
@@ -456,7 +576,7 @@ export async function assignSims(
          SET customer_id = ?, plan_id = ?, pool_id = ?, state = CASE WHEN state = 'Ready' THEN 'Ready' ELSE state END
          WHERE tenant_id = ? AND iccid = ?`,
       )
-      .bind(customer.id, plan.id, input.poolId ?? null, tenantId, iccid)
+      .bind(customer.id, plan.id, poolId, tenantId, iccid)
       .run();
     if ((result.meta.changes ?? 0) === 0) throw new Error(`SIM ${iccid} is not in this tenant.`);
   }
@@ -465,7 +585,7 @@ export async function assignSims(
     tenantId,
     actorEmail,
     "assign",
-    `${customer.name} · ${iccids.length} SIMs · ${plan.name}${input.poolId ? " · pool" : ""}`,
+    `${customer.name} · ${iccids.length} SIMs · ${plan.name}${poolId ? " · pool" : ""}`,
   );
   return { assigned: iccids.length, correlationId: job.correlationId };
 }
