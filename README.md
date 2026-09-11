@@ -10,7 +10,7 @@ Visual theme follows allthingsnet.io. Interaction follows Atomic-style 3-step wi
 
 Passwordless login: enter an email, receive an 8-digit passcode, then open the dashboard. The first successful sign-in registers that email to a tenant.
 
-Set `SUPER_ADMIN_EMAIL` (your login email, comma-separated for more than one) in `.dev.vars` locally and as a Worker variable in production. After sign-in, **Admin** lists super admins and lets you add others. Super admins can use **View as** in the header to see reseller admin or reseller operator.
+Set `SUPER_ADMIN_EMAIL` (your login email, comma-separated for more than one) in `.dev.vars` locally and as a Worker variable in production. After sign-in, **Admin** can invite super admins, reseller admins, and operators by email (same Gmail SMTP as login codes). Reseller admins invite operators from **Settings**. Super admins use **Estate** to see every reseller’s customers, the retail plan sold to each customer, and warehouse stock (ACMA key-information view). **Sell stock to reseller** asks Control Center for ICCIDs and places Ready SIMs in that reseller’s warehouse on a wholesale plan; the reseller then assigns those SIMs to a customer. **Open** scopes day-to-day edits to one tenant. Invite a reseller admin with a new organisation name to create a separate reseller. **View as** only previews privileges.
 
 Local testing can show the code on the page (`AUTH_DEV_RETURN_CODE=true` in `.dev.vars`). Production should send the code by email (`gmail-smtp-keys` Worker secret) and set `AUTH_SECRET`.
 
