@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { requirePortal } from "@/lib/portal/guard";
+import { requirePrivilege } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import { listPools, listSims } from "@/lib/portal/repo";
+import { can } from "@/lib/portal/role-model";
 
 export default async function PoolsPage() {
-  const ctx = await requirePortal();
+  const ctx = await requirePrivilege("pool.view");
   const [pools, sims] = await Promise.all([listPools(ctx.tenantId), listSims(ctx.tenantId)]);
 
   return (
@@ -14,9 +15,11 @@ export default async function PoolsPage() {
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">Shared data caps. Alerts at 80% and 100%.</p>
         </div>
-        <Link href="/dashboard/pools/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
-          Create pool
-        </Link>
+        {can(ctx.role, "pool.create") ? (
+          <Link href="/dashboard/pools/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+            Create pool
+          </Link>
+        ) : null}
       </div>
 
       <div className="mt-6 space-y-6">

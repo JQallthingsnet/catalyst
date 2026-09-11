@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { requirePortal } from "@/lib/portal/guard";
+import { requirePrivilege } from "@/lib/portal/guard";
 import { listOrders } from "@/lib/portal/repo";
 
 export default async function OrdersPage() {
-  const ctx = await requirePortal();
+  const ctx = await requirePrivilege("order.create");
   const orders = await listOrders(ctx.tenantId);
 
   return (

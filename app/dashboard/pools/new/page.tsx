@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { PoolWizard } from "@/components/portal/pool-wizard";
-import { requirePortal } from "@/lib/portal/guard";
+import { requirePrivilege } from "@/lib/portal/guard";
 import { listSims } from "@/lib/portal/repo";
 
 export default async function NewPoolPage() {
-  const ctx = await requirePortal();
+  const ctx = await requirePrivilege("pool.create");
   const sims = await listSims(ctx.tenantId);
   return (
     <div>

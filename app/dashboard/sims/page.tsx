@@ -3,6 +3,7 @@ import { LifecycleButtons } from "@/components/portal/lifecycle-buttons";
 import { requirePortal } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import { listSims } from "@/lib/portal/repo";
+import { can } from "@/lib/portal/role-model";
 
 export default async function SimsPage({
   searchParams,
@@ -21,12 +22,16 @@ export default async function SimsPage({
           <p className="mt-1 text-sm text-quiet">Inventory, order, and lifecycle. States match Control Center only.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
-            Order SIMs
-          </Link>
-          <Link href="/dashboard/sims/assign" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
-            Assign SIMs
-          </Link>
+          {can(ctx.role, "order.create") ? (
+            <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+              Order SIMs
+            </Link>
+          ) : null}
+          {can(ctx.role, "assign") ? (
+            <Link href="/dashboard/sims/assign" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
+              Assign SIMs
+            </Link>
+          ) : null}
         </div>
       </div>
 
@@ -53,7 +58,7 @@ export default async function SimsPage({
                 <td className="px-4 py-3">{sim.poolName ?? "—"}</td>
                 <td className="px-4 py-3">{sim.state}</td>
                 <td className="px-4 py-3">
-                  <LifecycleButtons iccid={sim.iccid} />
+                  {can(ctx.role, "lifecycle") ? <LifecycleButtons iccid={sim.iccid} /> : sim.state}
                 </td>
               </tr>
             ))}

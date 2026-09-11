@@ -1,12 +1,15 @@
 import { NameForm } from "@/components/portal/name-form";
-import { requirePortal } from "@/lib/portal/guard";
+import { requirePrivilege } from "@/lib/portal/guard";
 
 export default async function SettingsPage() {
-  const ctx = await requirePortal();
+  const ctx = await requirePrivilege("settings");
   return (
     <div>
       <h1 className="text-3xl font-semibold">Settings</h1>
-      <p className="mt-1 text-sm text-quiet">Tenant {ctx.tenantId} · Role {ctx.role.replace("_", " ")}</p>
+      <p className="mt-1 text-sm text-quiet">
+        Tenant {ctx.tenantId} · Viewing as {ctx.role.replace(/_/g, " ")}
+        {ctx.isSuperAdmin ? " (you are a super admin)" : ""}
+      </p>
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
         <h2 className="font-semibold">Organisation name</h2>
         <p className="mt-1 text-sm text-quiet">Shown in the top bar. Currently {ctx.tenantName}.</p>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requirePortal } from "@/lib/portal/guard";
 import { listPlans } from "@/lib/portal/repo";
 import { COMM_PLANS, WHOLESALE_PLANS } from "@/lib/portal/catalogue";
+import { can } from "@/lib/portal/role-model";
 
 export default async function PlansPage() {
   const ctx = await requirePortal();
@@ -14,9 +15,13 @@ export default async function PlansPage() {
           <h1 className="text-3xl font-semibold">Plans</h1>
           <p className="mt-1 text-sm text-quiet">Retail plans mapped to ATN-approved network plans.</p>
         </div>
-        <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
-          Create plan
-        </Link>
+        {can(ctx.role, "plan.create") ? (
+          <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+            Create plan
+          </Link>
+        ) : (
+          <p className="text-sm text-quiet">View and limited edit only</p>
+        )}
       </div>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         {plans.map((plan) => (

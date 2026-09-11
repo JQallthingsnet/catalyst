@@ -1,10 +1,10 @@
 import { AssignWizard } from "@/components/portal/assign-wizard";
-import { requirePortal } from "@/lib/portal/guard";
+import { requirePrivilege } from "@/lib/portal/guard";
 import { listCustomers, listPlans, listPools, listSims } from "@/lib/portal/repo";
 import Link from "next/link";
 
 export default async function AssignPage() {
-  const ctx = await requirePortal();
+  const ctx = await requirePrivilege("assign");
   const [customers, plans, pools, sims] = await Promise.all([
     listCustomers(ctx.tenantId),
     listPlans(ctx.tenantId),
