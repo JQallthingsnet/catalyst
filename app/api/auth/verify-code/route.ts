@@ -8,6 +8,7 @@ import {
   upsertUser,
 } from "@/lib/auth/repository";
 import { getClientIP, isBrowserRequest } from "@/lib/auth/request";
+import { ensureAuthSchema } from "@/lib/auth/schema";
 import { setSessionCookie } from "@/lib/auth/session";
 import { timingSafeEqual } from "@/lib/auth/crypto";
 
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
     if (!isValidEmail(email) || code.length !== AUTH_CODE_LEN) {
       return NextResponse.json({ error: "Enter your email and the 8-digit code." }, { status: 400 });
     }
+
+    await ensureAuthSchema();
 
     const emailLimit = await checkRateLimit({
       bucket: AuthRateLimitBucket.verifyCodeEmail,

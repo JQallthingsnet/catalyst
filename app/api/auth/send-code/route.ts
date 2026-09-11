@@ -11,6 +11,7 @@ import { sendVerificationEmail, getSmtpConfig } from "@/lib/auth/email";
 import { AuthRateLimitBucket, checkRateLimit } from "@/lib/auth/rate-limit";
 import { upsertAuthCode } from "@/lib/auth/repository";
 import { getClientIP, isBrowserRequest } from "@/lib/auth/request";
+import { ensureAuthSchema } from "@/lib/auth/schema";
 import { isDevCodeEnabled } from "@/lib/env";
 
 export async function POST(request: Request) {
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
     if (!isValidEmail(email)) {
       return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
     }
+
+    await ensureAuthSchema();
 
     const emailLimit = await checkRateLimit({
       bucket: AuthRateLimitBucket.sendCodeEmail,
