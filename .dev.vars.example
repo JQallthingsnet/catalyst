@@ -8,3 +8,6 @@ AUTH_DEV_RETURN_CODE=true
 
 # Optional JSON secret (same name as the Worker setting). When set, codes are emailed.
 # gmail-smtp-keys={"gmail-smtp-email":"you@gmail.com","gmail-smtp-password":"app-password","gmail-smtp-host":"smtp.gmail.com","gmail-smtp-port":"465"}
+
+# Your email becomes a super admin on first portal load. Comma-separated for more than one.
+# SUPER_ADMIN_EMAIL=you@company.com

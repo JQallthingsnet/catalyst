@@ -10,6 +10,8 @@ Visual theme follows allthingsnet.io. Interaction follows Atomic-style 3-step wi
 
 Passwordless login: enter an email, receive an 8-digit passcode, then open the dashboard. The first successful sign-in registers that email to a tenant.
 
+Set `SUPER_ADMIN_EMAIL` (your login email, comma-separated for more than one) in `.dev.vars` locally and as a Worker variable in production. After sign-in, **Admin** lists super admins and lets you add others. Super admins can use **View as** in the header to see reseller admin or reseller operator.
+
 Local testing can show the code on the page (`AUTH_DEV_RETURN_CODE=true` in `.dev.vars`). Production should send the code by email (`gmail-smtp-keys` Worker secret) and set `AUTH_SECRET`.
 
 Gmail SMTP uses the same Worker JSON secret as Auking (`gmail-smtp-keys`):

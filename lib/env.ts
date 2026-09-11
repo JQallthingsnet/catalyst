@@ -4,6 +4,7 @@ export type AppEnv = {
   DB?: D1Database;
   AUTH_SECRET?: string;
   AUTH_DEV_RETURN_CODE?: string;
+  SUPER_ADMIN_EMAIL?: string;
   "gmail-smtp-keys"?: string | Record<string, unknown>;
 };
 
