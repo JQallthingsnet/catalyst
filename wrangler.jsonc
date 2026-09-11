@@ -20,6 +20,7 @@
   "observability": {
     "enabled": true
   },
+  "keep_vars": true,
   "d1_databases": [
     {
       "binding": "DB",
