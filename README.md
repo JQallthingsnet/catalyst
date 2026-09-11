@@ -1,12 +1,14 @@
-# Catalyst
+# ATN Catalyst
 
-Next.js (App Router, TypeScript) web app on Cloudflare Workers via [vinext](https://vinext.dev/).
+All Things Network Catalyst is the reseller MVNE portal on Cisco IoT Control Center. Next.js (App Router, TypeScript) on Cloudflare Workers via [vinext](https://vinext.dev/).
 
 Requires **Node.js 22+**.
 
+Visual theme follows allthingsnet.io. Interaction follows Atomic-style 3-step wizards. Control Center is the source of radio/SIM state; Catalyst D1 is the source of tenants, customers, retail plans, orders, and commercial pools.
+
 ## Auth
 
-Passwordless login: enter an email, receive an 8-digit passcode, then open the dashboard. The first successful sign-in registers that email.
+Passwordless login: enter an email, receive an 8-digit passcode, then open the dashboard. The first successful sign-in registers that email to a tenant.
 
 Local testing can show the code on the page (`AUTH_DEV_RETURN_CODE=true` in `.dev.vars`). Production should send the code by email (`gmail-smtp-keys` Worker secret) and set `AUTH_SECRET`.
 

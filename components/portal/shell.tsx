@@ -5,7 +5,7 @@ import type { PortalContext } from "@/lib/portal/repo";
 export function PortalShell({ ctx, children }: { ctx: PortalContext; children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-canvas text-ink">
-      <aside className="fixed inset-y-0 left-0 hidden w-[240px] border-r border-line bg-panel md:flex md:flex-col">
+      <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-line bg-panel md:flex md:flex-col">
         <div className="px-5 py-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">ATN Catalyst</p>
           <p className="mt-2 text-sm text-quiet">Reseller portal</p>
@@ -13,9 +13,9 @@ export function PortalShell({ ctx, children }: { ctx: PortalContext; children: R
         <PortalNav showAdmin={ctx.role === "super_admin"} />
       </aside>
 
-      <div className="md:pl-[240px]">
+      <div className="md:pl-60">
         <header className="sticky top-0 z-10 border-b border-line bg-canvas/90 backdrop-blur">
-          <div className="mx-auto flex max-w-[1280px] items-center gap-4 px-4 py-3 sm:px-6">
+          <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6">
             <form action="/dashboard/sims" className="min-w-0 flex-1">
               <input
                 name="q"
@@ -28,7 +28,7 @@ export function PortalShell({ ctx, children }: { ctx: PortalContext; children: R
             <SignOutButton />
           </div>
         </header>
-        <div className="mx-auto max-w-[1280px] px-4 py-6 sm:px-6">{children}</div>
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
       </div>
     </div>
   );
