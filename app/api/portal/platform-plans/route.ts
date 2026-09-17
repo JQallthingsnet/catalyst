@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     const plan = await createPlatformPlan(ctx.email, {
       name: body.name ?? "",
       ccRatePlan: body.ccRatePlan ?? "",
-      commPlan: body.commPlan ?? "data",
+      commPlan: body.commPlan ?? "",
     });
     return NextResponse.json({ success: true, plan });
   } catch (err) {
