@@ -24,7 +24,7 @@ Every SIM can carry three plan records. They are different commercial relationsh
 
 **How stock gets onto a plan**
 
-1. Super admin **creates** an ATN plan and maps it to a Control Center rate plan.
+1. Super admin **creates catalogue SKUs** (form factor products) under Catalogue, then **creates** an ATN plan and maps it to a Control Center rate plan (typed as it appears in CC).
 2. Super admin **assigns the contract** (same Plan 1, same T&Cs) to a reseller. No SIMs move. The reseller is allowed to buy that plan.
 3. Super admin **sells stock** into that reseller’s warehouse. Each SIM is tagged with that ATN plan when it lands. Sell stock is refused until the contract exists.
 4. **Bought** means SIMs on that plan exist in the warehouse. A signed contract with an empty warehouse is contracted, not buying.

@@ -3,7 +3,6 @@ import { requirePortal } from "@/lib/portal/guard";
 import { listPlans } from "@/lib/portal/repo";
 import { listAssignedPlatformPlans, listPlatformPlans } from "@/lib/portal/platform-plans";
 import { can } from "@/lib/portal/role-model";
-import { WHOLESALE_PLANS, COMM_PLANS } from "@/lib/portal/catalogue";
 
 export default async function PlansPage() {
   const ctx = await requirePortal();
@@ -31,8 +30,7 @@ export default async function PlansPage() {
             >
               <p className="text-lg font-semibold">{plan.name}</p>
               <p className="mt-1 text-sm text-quiet">
-                CC {WHOLESALE_PLANS.find((item) => item.id === plan.ccRatePlan)?.label ?? plan.ccRatePlan} ·{" "}
-                {COMM_PLANS.find((item) => item.id === plan.commPlan)?.label ?? plan.commPlan}
+                CC {plan.ccRatePlan} · {plan.commPlan}
               </p>
               <p className="mt-3 text-sm">
                 {plan.assignedResellers} resellers contracted · {plan.simCount} SIMs (bought)
