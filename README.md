@@ -37,7 +37,18 @@ The retail plan must be a copy of the ATN plan already on that SIM. If the resel
 
 **Plan 1 metrics (super admin)**
 
-On an ATN plan page: which resellers are contracted, which are buying (have SIMs), current volume snapshot, SIMs sold per reseller, and top SIMs by current volume. Catalyst stores a snapshot (ICCID, IMSI, MSISDN, current volume), not CDR history.
+On an ATN plan page: which resellers are contracted, which are buying (have SIMs), current volume snapshot, SIMs sold per reseller, and top SIMs by current volume. Catalyst stores a snapshot (ICCID, CC status, rate plan, communication plan; IMSI / MSISDN / volume when those APIs are wired), not CDR history.
+
+**Control Center copy**
+
+CC is the radio source. Pages read D1, not Jasper. Super admin Dashboard and **CC snapshot** (`/dashboard/estate/cc`) show the same columns as Control Center (ICCID, IMSI, MSISDN, SIM status, rate plan, cycle-to-date MB, in session, activated, date added). Sync runs, in order:
+
+1. `GET /rws/api/v1/devices` — each CC device is a SIM we sell. Results are paged (`pageSize` 50). Repeat the **same** call with `pageNumber` 1, 2, … until `lastPage` is true, then write every ICCID into D1.
+2. `GET /rws/api/v1/devices/{iccid}` — IMSI, MSISDN, dates, status, plans
+3. `GET /rws/api/v1/devices/{iccid}/ctdUsages` — cycle-to-date data bytes
+4. `GET /rws/api/v1/devices/{iccid}/sessionInfo` — in session
+
+One HTTP call at a time, at most 5/s. Each sync copies a few list pages then enriches a batch of ICCIDs. Click Sync again until details fill. Auth is HTTP Basic: Base64 of `JASPER_ACCOUNT_NAME:JASPER_API_KEY` (colon, no space). Optional `JASPER_ACCOUNT_ID` scopes the device search; if omitted, Control Center uses the account on that user name. Do not put these in `wrangler.jsonc`. No CDR history — snapshots overwrite in place.
 
 ## Auth
 
@@ -77,6 +88,9 @@ npm run db:create
 npm run db:migrate:remote
 npx wrangler secret put AUTH_SECRET
 npx wrangler secret put gmail-smtp-keys
+npx wrangler secret put JASPER_ACCOUNT_NAME
+npx wrangler secret put JASPER_API_KEY
+# optional: npx wrangler secret put JASPER_ACCOUNT_ID
 npm run deploy
 ```
 

@@ -11,3 +11,10 @@ AUTH_DEV_RETURN_CODE=true
 
 # Your email becomes a super admin on first portal load. Comma-separated for more than one.
 # SUPER_ADMIN_EMAIL=you@company.com
+
+# Control Center (Jasper). Worker secrets in production — never commit real values.
+# HTTP Basic: Base64(JASPER_ACCOUNT_NAME:JASPER_API_KEY) — colon, no space.
+# JASPER_ACCOUNT_NAME=your-cc-username
+# JASPER_API_KEY=your-cc-api-key
+# Optional device-search account id (omit to use the username's account):
+# JASPER_ACCOUNT_ID=

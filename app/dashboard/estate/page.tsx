@@ -43,6 +43,12 @@ export default async function EstatePage({
         </div>
         <div className="flex w-full max-w-md flex-col gap-2">
           <Link
+            href="/dashboard/estate/cc"
+            className="rounded-card border border-line px-4 py-2.5 text-center text-sm hover:border-accent"
+          >
+            CC snapshot
+          </Link>
+          <Link
             href="/dashboard/estate/allocate"
             className="rounded-card bg-accent px-4 py-2.5 text-center text-sm font-medium text-canvas"
           >
@@ -144,6 +150,7 @@ export default async function EstatePage({
                         <th className="px-3 py-2">Retail plan</th>
                         <th className="px-3 py-2">ATN plan</th>
                         <th className="px-3 py-2">CC rate plan</th>
+                        <th className="px-3 py-2">CC status</th>
                         <th className="px-3 py-2">Pool</th>
                         <th className="px-3 py-2">State</th>
                       </tr>
@@ -156,6 +163,7 @@ export default async function EstatePage({
                           <td className="px-3 py-2">{sim.planName ?? "—"}</td>
                           <td className="px-3 py-2">{sim.platformPlanName ?? "—"}</td>
                           <td className="px-3 py-2">{wholesaleLabel(sim.wholesalePlan)}</td>
+                          <td className="px-3 py-2">{sim.ccStatus ?? "—"}</td>
                           <td className="px-3 py-2">{sim.poolName ?? "—"}</td>
                           <td className="px-3 py-2">{sim.state}</td>
                         </tr>

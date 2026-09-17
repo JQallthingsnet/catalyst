@@ -38,6 +38,11 @@ export default async function SimsPage({
               Sell stock
             </Link>
           ) : null}
+          {can(ctx.role, "platform.estate") ? (
+            <Link href="/dashboard/estate/cc" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
+              CC snapshot
+            </Link>
+          ) : null}
           {can(ctx.role, "assign") ? (
             <Link href="/dashboard/sims/assign" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
               Assign SIMs
@@ -56,6 +61,7 @@ export default async function SimsPage({
               <th className="px-4 py-3">Retail plan</th>
               {fields.platformPlan ? <th className="px-4 py-3">ATN plan</th> : null}
               {fields.ccRatePlan ? <th className="px-4 py-3">CC rate plan</th> : null}
+              {fields.ccStatus ? <th className="px-4 py-3">CC status</th> : null}
               <th className="px-4 py-3">IMSI</th>
               <th className="px-4 py-3">MSISDN</th>
               <th className="px-4 py-3">Volume</th>
@@ -73,6 +79,7 @@ export default async function SimsPage({
                 <td className="px-4 py-3">{sim.planName ?? "—"}</td>
                 {fields.platformPlan ? <td className="px-4 py-3">{sim.platformPlanName ?? "—"}</td> : null}
                 {fields.ccRatePlan ? <td className="px-4 py-3">{ccLabel(sim.wholesalePlan)}</td> : null}
+                {fields.ccStatus ? <td className="px-4 py-3">{sim.ccStatus ?? "—"}</td> : null}
                 <td className="px-4 py-3 font-mono">{sim.imsi ?? "—"}</td>
                 <td className="px-4 py-3 font-mono">{sim.msisdn ?? "—"}</td>
                 <td className="px-4 py-3">

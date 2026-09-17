@@ -59,6 +59,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
   super_admin: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/estate", label: "Estate" },
+    { href: "/dashboard/estate/cc", label: "CC snapshot" },
     { href: "/dashboard/sims", label: "SIMs" },
     { href: "/dashboard/plans", label: "Plans" },
     { href: "/dashboard/pools", label: "Pools" },
@@ -100,6 +101,7 @@ export function simFieldsForRole(role: PortalRole) {
   return {
     tenantName: role === "super_admin",
     ccRatePlan: role === "super_admin",
+    ccStatus: role === "super_admin",
     platformPlan: role === "super_admin" || role === "reseller_admin",
   };
 }

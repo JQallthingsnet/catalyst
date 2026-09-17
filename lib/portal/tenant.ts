@@ -94,6 +94,7 @@ export type PlatformEstateSim = {
   poolName: string | null;
   wholesalePlan: string | null;
   platformPlanName: string | null;
+  ccStatus: string | null;
 };
 
 export type PlatformEstateWarehouse = {
@@ -155,12 +156,14 @@ export async function listPlatformEstate(
     db
       .prepare(
         `SELECT s.id, s.tenant_id, s.iccid, s.form_factor, s.state, s.customer_id, s.wholesale_plan,
-                c.name as customer_name, p.name as plan_name, pl.name as pool_name, pp.name as platform_plan_name
+                c.name as customer_name, p.name as plan_name, pl.name as pool_name, pp.name as platform_plan_name,
+                cc.status as cc_status
          FROM sims s
          LEFT JOIN customers c ON c.id = s.customer_id
          LEFT JOIN plans p ON p.id = s.plan_id
          LEFT JOIN pools pl ON pl.id = s.pool_id
          LEFT JOIN platform_plans pp ON pp.id = s.platform_plan_id
+         LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
          ORDER BY s.iccid ASC
          LIMIT 2000`,
       )
@@ -176,6 +179,7 @@ export async function listPlatformEstate(
         plan_name: string | null;
         pool_name: string | null;
         platform_plan_name: string | null;
+        cc_status: string | null;
       }>(),
   ]);
 
@@ -215,6 +219,7 @@ export async function listPlatformEstate(
       poolName: row.pool_name,
       wholesalePlan: row.wholesale_plan,
       platformPlanName: row.platform_plan_name,
+      ccStatus: row.cc_status,
     });
     simsByTenant.set(row.tenant_id, list);
     if (row.customer_id) {

@@ -52,6 +52,8 @@ export type Sim = {
   imsi: string | null;
   msisdn: string | null;
   currentVolumeMb: number | null;
+  ccStatus: string | null;
+  ccPolledAt: string | null;
 };
 export type Order = {
   id: string;
@@ -190,13 +192,15 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
            s.platform_plan_id, s.imsi, s.msisdn, s.current_volume_mb,
            c.name as customer_name, p.name as plan_name, pl.name as pool_name,
-           pp.name as platform_plan_name, t.name as tenant_name
+           pp.name as platform_plan_name, t.name as tenant_name,
+           cc.status as cc_status, cc.polled_at as cc_polled_at
     FROM sims s
     LEFT JOIN customers c ON c.id = s.customer_id
     LEFT JOIN plans p ON p.id = s.plan_id
     LEFT JOIN pools pl ON pl.id = s.pool_id
     LEFT JOIN platform_plans pp ON pp.id = s.platform_plan_id
     LEFT JOIN tenants t ON t.id = s.tenant_id
+    LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
     WHERE s.tenant_id = ?
       AND (? = '' OR s.iccid LIKE ? OR IFNULL(c.name,'') LIKE ?)
     ORDER BY s.iccid ASC
@@ -221,6 +225,8 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     customer_name: string | null;
     plan_name: string | null;
     pool_name: string | null;
+    cc_status: string | null;
+    cc_polled_at: string | null;
   }>();
   return (rows.results ?? []).map((row) => ({
     id: row.id,
@@ -240,6 +246,8 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     imsi: row.imsi,
     msisdn: row.msisdn,
     currentVolumeMb: row.current_volume_mb,
+    ccStatus: row.cc_status,
+    ccPolledAt: row.cc_polled_at,
   }));
 }
 
