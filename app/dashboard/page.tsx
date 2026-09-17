@@ -38,33 +38,51 @@ export default async function DashboardPage() {
           <p className="text-sm text-quiet">{ctx.tenantName}</p>
           <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {can(ctx.role, "wholesale.allocate") ? (
-            <Link href="/dashboard/estate/allocate" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+            <Link
+              href="/dashboard/estate/allocate"
+              className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-canvas"
+            >
               Sell stock
             </Link>
           ) : null}
           {can(ctx.role, "platform.estate") ? (
-            <Link href="/dashboard/estate/cc" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            <Link
+              href="/dashboard/estate/cc"
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
+            >
               CC snapshot
             </Link>
           ) : null}
           {can(ctx.role, "platform.plan") ? (
-            <Link href="/dashboard/plans/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            <Link
+              href="/dashboard/plans/new"
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
+            >
               Create ATN plan
             </Link>
           ) : can(ctx.role, "plan.create") ? (
-            <Link href="/dashboard/plans/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            <Link
+              href="/dashboard/plans/new"
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
+            >
               Copy to retail
             </Link>
           ) : null}
           {can(ctx.role, "pool.create") && !onPlatform ? (
-            <Link href="/dashboard/pools/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            <Link
+              href="/dashboard/pools/new"
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
+            >
               Create pool
             </Link>
           ) : null}
           {can(ctx.role, "assign") && !onPlatform ? (
-            <Link href="/dashboard/sims/assign" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+            <Link
+              href="/dashboard/sims/assign"
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
+            >
               Assign SIMs
             </Link>
           ) : null}

@@ -38,17 +38,17 @@ export function SyncCcButton() {
   }
 
   return (
-    <div className="flex flex-col items-stretch gap-2">
+    <div className="flex flex-col items-end gap-1">
       <button
         type="button"
         disabled={busy}
         onClick={() => void sync()}
-        className="rounded-card border border-line px-4 py-2.5 text-sm hover:border-accent disabled:opacity-40"
+        className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent disabled:opacity-40"
       >
-        {busy ? "Syncing Control Center…" : "Sync from Control Center"}
+        {busy ? "Syncing…" : "Sync now"}
       </button>
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {ok ? <p className="text-sm text-ok">{ok}</p> : null}
+      {error ? <p className="max-w-56 text-right text-xs text-danger">{error}</p> : null}
+      {ok ? <p className="max-w-56 text-right text-xs text-ok">{ok}</p> : null}
     </div>
   );
 }
