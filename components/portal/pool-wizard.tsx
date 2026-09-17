@@ -7,7 +7,7 @@ import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 export function PoolWizard({ readyIccids }: { readyIccids: string[] }) {
   const [step, setStep] = useState(0);
   const [type, setType] = useState<(typeof POOL_TYPES)[number]>("Fleet data");
-  const [name, setName] = useState("Fleet-A");
+  const [name, setName] = useState("");
   const [capGb, setCapGb] = useState(10);
   const [selected, setSelected] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -69,7 +69,12 @@ export function PoolWizard({ readyIccids }: { readyIccids: string[] }) {
           </div>
           <label className="block text-sm">
             Pool name
-            <input value={name} onChange={(event) => setName(event.target.value)} className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2" />
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Pool name"
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+            />
           </label>
           <label className="block text-sm">
             Cap (GB)

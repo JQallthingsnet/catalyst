@@ -14,7 +14,7 @@ export default async function CustomersPage() {
       <p className="mt-1 text-sm text-quiet">End customers of this reseller. Isolated by tenant.</p>
       {can(ctx.role, "customer.create") ? (
         <div className="mt-6 rounded-card border border-line bg-panel p-5">
-          <NameForm kind="customer" placeholder="Acme Logistics" button="Add customer" />
+          <NameForm kind="customer" placeholder="Customer name" button="Add customer" />
         </div>
       ) : null}
       <ul className="mt-4 space-y-2">

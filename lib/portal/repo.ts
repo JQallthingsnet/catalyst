@@ -10,7 +10,6 @@ import {
 } from "@/lib/portal/catalogue";
 import { loadTenant } from "@/lib/portal/tenant";
 import { newId, padIccid } from "@/lib/portal/ids";
-import { seedTenantDemo } from "@/lib/portal/seed";
 import { type PortalRole } from "@/lib/portal/role-model";
 import { isListedSuperAdmin } from "@/lib/portal/roles";
 
@@ -99,13 +98,12 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
   const tenantId = newId("ten");
   const now = new Date().toISOString();
   const isSuperAdmin = await isListedSuperAdmin(email);
-  const tenantName = isSuperAdmin ? "ATN Platform" : "Acme MVNO";
+  const tenantName = isSuperAdmin ? "ATN Platform" : "My organisation";
   await db.prepare("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)").bind(tenantId, tenantName, now).run();
   await db
     .prepare("INSERT INTO tenant_members (email, tenant_id, role) VALUES (?, ?, ?)")
     .bind(email, tenantId, "reseller_admin")
     .run();
-  if (!isSuperAdmin) await seedTenantDemo(tenantId, email);
   return {
     email,
     tenantId,

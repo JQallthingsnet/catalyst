@@ -7,7 +7,7 @@ import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 export function PlanWizard() {
   const [step, setStep] = useState(0);
   const [type, setType] = useState<(typeof PLAN_TYPES)[number]>("Telematics");
-  const [name, setName] = useState("Telematics 50");
+  const [name, setName] = useState("");
   const [inclusiveMb, setInclusiveMb] = useState(50);
   const [overage, setOverage] = useState("throttle");
   const [roaming, setRoaming] = useState("AU/NZ");
@@ -74,6 +74,7 @@ export function PlanWizard() {
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
+              placeholder="Retail plan name"
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             />
           </label>
