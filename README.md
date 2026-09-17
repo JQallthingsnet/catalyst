@@ -79,3 +79,5 @@ npx wrangler secret put AUTH_SECRET
 npx wrangler secret put gmail-smtp-keys
 npm run deploy
 ```
+
+Git-connected **Workers Builds** is separate from `npm run deploy`. The builder already has Node 24; this repo pins that in `.nvmrc`. If a Git build fails on `Installing nodejs …`, turn off **Build cache** in the Worker **Settings → Build**, remove any dashboard `NODE_VERSION` override, and retry.
