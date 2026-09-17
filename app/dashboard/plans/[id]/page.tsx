@@ -8,7 +8,6 @@ import {
   listPlatformPlanTopSims,
 } from "@/lib/portal/platform-plans";
 import { listTenantOptions } from "@/lib/portal/tenant";
-import { COMM_PLANS, WHOLESALE_PLANS } from "@/lib/portal/catalogue";
 import { notFound } from "next/navigation";
 
 export default async function PlatformPlanPage({ params }: { params: { id: string } | Promise<{ id: string }> }) {
@@ -31,8 +30,7 @@ export default async function PlatformPlanPage({ params }: { params: { id: strin
       </Link>
       <h1 className="mt-4 text-3xl font-semibold">{plan.name}</h1>
       <p className="mt-1 text-sm text-quiet">
-        ATN ↔ reseller plan. CC {WHOLESALE_PLANS.find((item) => item.id === plan.ccRatePlan)?.label ?? plan.ccRatePlan} ·{" "}
-        {COMM_PLANS.find((item) => item.id === plan.commPlan)?.label ?? plan.commPlan}
+        ATN ↔ reseller plan. CC {plan.ccRatePlan} · {plan.commPlan}
       </p>
       <p className="mt-2 text-xs text-quiet">Opened as {ctx.tenantName}</p>
 

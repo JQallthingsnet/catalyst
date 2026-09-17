@@ -1,6 +1,7 @@
 import { getDB } from "@/lib/env";
 import { runCcMutation } from "@/lib/cc/adapter";
-import { lifecycleTarget, skuById, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
+import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
+import { getSimSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import { loadTenant } from "@/lib/portal/tenant";
 import { newId, padIccid } from "@/lib/portal/ids";
@@ -452,7 +453,7 @@ export async function createOrder(
   actorEmail: string,
   input: { skuId: string; quantity: number; logistics: string; destination?: string },
 ): Promise<Order> {
-  const sku = skuById(input.skuId);
+  const sku = await getSimSku(input.skuId);
   if (!sku) throw new Error("Unknown catalogue item.");
   if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
 
@@ -497,7 +498,7 @@ export async function allocateWholesaleStock(
   }
   const tenant = await loadTenant(input.tenantId);
   if (!tenant) throw new Error("Organisation not found.");
-  const sku = skuById(input.skuId);
+  const sku = await getSimSku(input.skuId);
   if (!sku) throw new Error("Unknown catalogue item.");
   const platformPlan = await loadPlatformPlanRecord(input.platformPlanId);
   if (!platformPlan) throw new Error("Plan not found.");

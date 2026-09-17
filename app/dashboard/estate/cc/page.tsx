@@ -30,8 +30,8 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            All SIMs as Control Center sees them, stored in D1. Use Auto poll to let the Worker cron fill every page and
-            SIM detail in the background. Sync runs one batch now.
+            All SIMs as Control Center sees them, stored in D1. Columns follow the CC device list (rate plan and
+            communication plan are both shown). Auto poll fills pages in the background; Sync runs one batch now.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

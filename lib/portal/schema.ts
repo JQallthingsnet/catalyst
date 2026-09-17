@@ -45,6 +45,15 @@ const STATEMENTS = [
     last_page_complete INTEGER NOT NULL DEFAULT 0,
     auto_poll INTEGER NOT NULL DEFAULT 1
   )`,
+  `CREATE TABLE IF NOT EXISTS sim_skus (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    form_factor TEXT NOT NULL,
+    tech TEXT NOT NULL,
+    region TEXT NOT NULL,
+    blurb TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  )`,
 ];
 
 const ALTERS = [
