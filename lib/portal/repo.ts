@@ -1,13 +1,7 @@
 import { getDB } from "@/lib/env";
 import { runCcMutation } from "@/lib/cc/adapter";
-import {
-  commPlanById,
-  lifecycleTarget,
-  skuById,
-  wholesalePlanById,
-  type OrderStatus,
-  type SimState,
-} from "@/lib/portal/catalogue";
+import { lifecycleTarget, skuById, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
+import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import { loadTenant } from "@/lib/portal/tenant";
 import { newId, padIccid } from "@/lib/portal/ids";
 import { type PortalRole } from "@/lib/portal/role-model";
@@ -35,6 +29,9 @@ export type Plan = {
   roaming: string;
   wholesalePlan: string;
   commPlan: string;
+  platformPlanId: string | null;
+  platformPlanName: string | null;
+  pricePerSim: number | null;
 };
 export type Pool = { id: string; name: string; type: string; capMb: number; usedMb: number; members: number };
 export type Sim = {
@@ -49,6 +46,12 @@ export type Sim = {
   poolId: string | null;
   poolName: string | null;
   wholesalePlan: string | null;
+  platformPlanId: string | null;
+  platformPlanName: string | null;
+  tenantName: string | null;
+  imsi: string | null;
+  msisdn: string | null;
+  currentVolumeMb: number | null;
 };
 export type Order = {
   id: string;
@@ -176,11 +179,15 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
   const q = query.trim();
   const sql = `
     SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
-           c.name as customer_name, p.name as plan_name, pl.name as pool_name
+           s.platform_plan_id, s.imsi, s.msisdn, s.current_volume_mb,
+           c.name as customer_name, p.name as plan_name, pl.name as pool_name,
+           pp.name as platform_plan_name, t.name as tenant_name
     FROM sims s
     LEFT JOIN customers c ON c.id = s.customer_id
     LEFT JOIN plans p ON p.id = s.plan_id
     LEFT JOIN pools pl ON pl.id = s.pool_id
+    LEFT JOIN platform_plans pp ON pp.id = s.platform_plan_id
+    LEFT JOIN tenants t ON t.id = s.tenant_id
     WHERE s.tenant_id = ?
       AND (? = '' OR s.iccid LIKE ? OR IFNULL(c.name,'') LIKE ?)
     ORDER BY s.iccid ASC
@@ -196,6 +203,12 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     plan_id: string | null;
     pool_id: string | null;
     wholesale_plan: string | null;
+    platform_plan_id: string | null;
+    platform_plan_name: string | null;
+    tenant_name: string | null;
+    imsi: string | null;
+    msisdn: string | null;
+    current_volume_mb: number | null;
     customer_name: string | null;
     plan_name: string | null;
     pool_name: string | null;
@@ -212,6 +225,12 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     poolId: row.pool_id,
     poolName: row.pool_name,
     wholesalePlan: row.wholesale_plan,
+    platformPlanId: row.platform_plan_id,
+    platformPlanName: row.platform_plan_name,
+    tenantName: row.tenant_name,
+    imsi: row.imsi,
+    msisdn: row.msisdn,
+    currentVolumeMb: row.current_volume_mb,
   }));
 }
 
@@ -226,8 +245,11 @@ export async function listCustomers(tenantId: string): Promise<Customer[]> {
 export async function listPlans(tenantId: string): Promise<Plan[]> {
   const rows = await getDB()
     .prepare(
-      `SELECT id, name, type, inclusive_mb, overage, roaming, wholesale_plan, comm_plan
-       FROM plans WHERE tenant_id = ? ORDER BY name`,
+      `SELECT p.id, p.name, p.type, p.inclusive_mb, p.overage, p.roaming, p.wholesale_plan, p.comm_plan,
+              p.platform_plan_id, p.price_per_sim, pp.name as platform_plan_name
+       FROM plans p
+       LEFT JOIN platform_plans pp ON pp.id = p.platform_plan_id
+       WHERE p.tenant_id = ? ORDER BY p.name`,
     )
     .bind(tenantId)
     .all<{
@@ -239,6 +261,9 @@ export async function listPlans(tenantId: string): Promise<Plan[]> {
       roaming: string;
       wholesale_plan: string;
       comm_plan: string;
+      platform_plan_id: string | null;
+      platform_plan_name: string | null;
+      price_per_sim: number | null;
     }>();
   return (rows.results ?? []).map((row) => ({
     id: row.id,
@@ -249,6 +274,9 @@ export async function listPlans(tenantId: string): Promise<Plan[]> {
     roaming: row.roaming,
     wholesalePlan: row.wholesale_plan,
     commPlan: row.comm_plan,
+    platformPlanId: row.platform_plan_id,
+    platformPlanName: row.platform_plan_name,
+    pricePerSim: row.price_per_sim,
   }));
 }
 
@@ -335,35 +363,57 @@ export async function createPlan(
   actorEmail: string,
   input: {
     name: string;
-    type: string;
+    platformPlanId: string;
     inclusiveMb: number;
-    overage: string;
-    roaming: string;
-    wholesalePlan: string;
-    commPlan: string;
+    pricePerSim: number;
   },
 ): Promise<Plan> {
+  const allowed = await tenantHasPlatformPlan(tenantId, input.platformPlanId);
+  if (!allowed) throw new Error("This organisation is not contracted for that plan.");
+  const parent = await loadPlatformPlanRecord(input.platformPlanId);
+  if (!parent) throw new Error("Plan not found.");
+  const name = input.name.trim();
+  if (name.length < 2) throw new Error("Enter a retail plan name.");
+  const inclusiveMb = Number(input.inclusiveMb);
+  if (!inclusiveMb || inclusiveMb < 1) throw new Error("Enter data allowance per SIM.");
+  const pricePerSim = Number(input.pricePerSim);
+  if (Number.isNaN(pricePerSim) || pricePerSim < 0) throw new Error("Enter price per SIM.");
+
   const id = newId("plan");
   await getDB()
     .prepare(
-      `INSERT INTO plans (id, tenant_id, name, type, inclusive_mb, overage, roaming, wholesale_plan, comm_plan, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO plans (id, tenant_id, name, type, inclusive_mb, overage, roaming, wholesale_plan, comm_plan, platform_plan_id, price_per_sim, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
       tenantId,
-      input.name,
-      input.type,
-      input.inclusiveMb,
-      input.overage,
-      input.roaming,
-      input.wholesalePlan,
-      input.commPlan,
+      name,
+      "Retail",
+      inclusiveMb,
+      "throttle",
+      "AU/NZ",
+      parent.cc_rate_plan,
+      parent.comm_plan,
+      parent.id,
+      pricePerSim,
       new Date().toISOString(),
     )
     .run();
-  await writeAudit(tenantId, actorEmail, "plan", `Plan ${input.name} mapped to ${input.wholesalePlan}`);
-  return { id, ...input };
+  await writeAudit(tenantId, actorEmail, "plan", `Retail plan ${name} copied from ${parent.name}`);
+  return {
+    id,
+    name,
+    type: "Retail",
+    inclusiveMb,
+    overage: "throttle",
+    roaming: "AU/NZ",
+    wholesalePlan: parent.cc_rate_plan,
+    commPlan: parent.comm_plan,
+    platformPlanId: parent.id,
+    platformPlanName: parent.name,
+    pricePerSim,
+  };
 }
 
 export async function createPool(
@@ -409,41 +459,21 @@ export async function createOrder(
     throw new Error(job.error ?? "Control Center rejected the order.");
   }
 
-  await getDB().prepare("UPDATE orders SET status = 'Received' WHERE id = ? AND tenant_id = ?").bind(id, tenantId).run();
-
-  const dbInsert = getDB();
-  let n = await nextIccidSeed(tenantId);
-  const inserts = [];
-  for (let i = 0; i < input.quantity; i += 1) {
-    inserts.push(
-      dbInsert
-        .prepare(
-          `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, created_at)
-           VALUES (?, ?, ?, ?, 'Ready', NULL, NULL, NULL, ?, ?)`,
-        )
-        .bind(newId("sim"), tenantId, padIccid(n), sku.formFactor, id, now),
-    );
-    n += 1;
-  }
-  for (let i = 0; i < inserts.length; i += 40) {
-    await dbInsert.batch(inserts.slice(i, i + 40));
-  }
-
-  await writeAudit(tenantId, actorEmail, "order", `Order ${sku.name} × ${input.quantity} received · ICCIDs reserved`);
+  await writeAudit(tenantId, actorEmail, "order", `Order ${sku.name} × ${input.quantity} submitted`);
   return {
     id,
     skuName: sku.name,
     quantity: input.quantity,
     logistics: input.logistics,
     destination: input.destination ?? input.logistics,
-    status: "Received",
+    status: "Submitted",
     createdAt: now,
   };
 }
 
 export async function allocateWholesaleStock(
   actor: { email: string; isSuperAdmin: boolean; role: PortalRole },
-  input: { tenantId: string; skuId: string; quantity: number; wholesalePlan: string; commPlan: string },
+  input: { tenantId: string; skuId: string; quantity: number; platformPlanId: string },
 ): Promise<Order> {
   if (!actor.isSuperAdmin || actor.role !== "super_admin") {
     throw new Error("Only a super admin can sell stock into a reseller warehouse.");
@@ -452,16 +482,16 @@ export async function allocateWholesaleStock(
   if (!tenant) throw new Error("Organisation not found.");
   const sku = skuById(input.skuId);
   if (!sku) throw new Error("Unknown catalogue item.");
-  const wholesale = wholesalePlanById(input.wholesalePlan);
-  if (!wholesale) throw new Error("Unknown wholesale plan.");
-  const comm = commPlanById(input.commPlan);
-  if (!comm) throw new Error("Unknown communication plan.");
+  const platformPlan = await loadPlatformPlanRecord(input.platformPlanId);
+  if (!platformPlan) throw new Error("Plan not found.");
+  const contracted = await tenantHasPlatformPlan(tenant.id, platformPlan.id);
+  if (!contracted) throw new Error("Assign this plan to the reseller (contract) before selling stock.");
   if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
 
   const id = newId("ord");
   const now = new Date().toISOString();
   const logistics = "ATN wholesale";
-  const destination = `${wholesale.label} · ${comm.label}`;
+  const destination = platformPlan.name;
 
   await getDB()
     .prepare(
@@ -478,8 +508,9 @@ export async function allocateWholesaleStock(
       orderId: id,
       sku: sku.id,
       quantity: input.quantity,
-      wholesalePlan: wholesale.id,
-      commPlan: comm.id,
+      platformPlanId: platformPlan.id,
+      wholesalePlan: platformPlan.cc_rate_plan,
+      commPlan: platformPlan.comm_plan,
     },
     correlationId: `wholesale-${id}`,
   });
@@ -494,10 +525,10 @@ export async function allocateWholesaleStock(
     inserts.push(
       dbInsert
         .prepare(
-          `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, created_at)
-           VALUES (?, ?, ?, ?, 'Ready', NULL, NULL, NULL, ?, ?, ?)`,
+          `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, platform_plan_id, created_at)
+           VALUES (?, ?, ?, ?, 'Ready', NULL, NULL, NULL, ?, ?, ?, ?)`,
         )
-        .bind(newId("sim"), tenant.id, padIccid(n), sku.formFactor, id, wholesale.id, now),
+        .bind(newId("sim"), tenant.id, padIccid(n), sku.formFactor, id, platformPlan.cc_rate_plan, platformPlan.id, now),
     );
     n += 1;
   }
@@ -509,7 +540,7 @@ export async function allocateWholesaleStock(
     tenant.id,
     actor.email,
     "wholesale",
-    `Sold ${sku.name} × ${input.quantity} to ${tenant.name} on ${wholesale.label}`,
+    `Sold ${sku.name} × ${input.quantity} to ${tenant.name} on ${platformPlan.name}`,
   );
   return {
     id,
@@ -535,10 +566,11 @@ export async function assignSims(
     .bind(input.customerId, tenantId)
     .first<{ id: string; name: string }>();
   const plan = await db
-    .prepare("SELECT id, name, wholesale_plan, comm_plan FROM plans WHERE id = ? AND tenant_id = ?")
+    .prepare("SELECT id, name, wholesale_plan, comm_plan, platform_plan_id FROM plans WHERE id = ? AND tenant_id = ?")
     .bind(input.planId, tenantId)
-    .first<{ id: string; name: string; wholesale_plan: string; comm_plan: string }>();
+    .first<{ id: string; name: string; wholesale_plan: string; comm_plan: string; platform_plan_id: string | null }>();
   if (!customer || !plan) throw new Error("Customer or plan not found in this tenant.");
+  if (!plan.platform_plan_id) throw new Error("Choose a retail plan copied from a contracted ATN plan.");
   let poolId: string | null = null;
   if (input.poolId) {
     const pool = await db
@@ -568,6 +600,14 @@ export async function assignSims(
   if (job.status === "failed") throw new Error(job.error ?? "Control Center assign failed.");
 
   for (const iccid of iccids) {
+    const sim = await db
+      .prepare("SELECT platform_plan_id FROM sims WHERE tenant_id = ? AND iccid = ?")
+      .bind(tenantId, iccid)
+      .first<{ platform_plan_id: string | null }>();
+    if (!sim) throw new Error(`SIM ${iccid} is not in this tenant.`);
+    if (!sim.platform_plan_id || sim.platform_plan_id !== plan.platform_plan_id) {
+      throw new Error(`SIM ${iccid} is not on the ATN plan this retail plan was copied from.`);
+    }
     const result = await db
       .prepare(
         `UPDATE sims

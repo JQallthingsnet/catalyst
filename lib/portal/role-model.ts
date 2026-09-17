@@ -7,6 +7,7 @@ export type Privilege =
   | "admin"
   | "platform.estate"
   | "wholesale.allocate"
+  | "platform.plan"
   | "order.create"
   | "plan.create"
   | "plan.edit"
@@ -25,6 +26,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "admin",
     "platform.estate",
     "wholesale.allocate",
+    "platform.plan",
     "order.create",
     "plan.create",
     "plan.edit",
@@ -50,7 +52,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "settings",
     "invite.operator",
   ],
-  reseller_operator: ["plan.edit", "assign", "lifecycle"],
+  reseller_operator: ["assign", "lifecycle"],
 };
 
 const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
@@ -79,7 +81,6 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
   reseller_operator: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/sims", label: "SIMs" },
-    { href: "/dashboard/plans", label: "Plans" },
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/usage", label: "Usage" },
   ],
@@ -93,6 +94,14 @@ export const VIEW_ROLES: { id: PortalRole; label: string }[] = [
 
 export function can(role: PortalRole, privilege: Privilege): boolean {
   return ROLE_PRIVILEGES[role].includes(privilege);
+}
+
+export function simFieldsForRole(role: PortalRole) {
+  return {
+    tenantName: role === "super_admin",
+    ccRatePlan: role === "super_admin",
+    platformPlan: role === "super_admin" || role === "reseller_admin",
+  };
 }
 
 export function navForRole(role: PortalRole) {

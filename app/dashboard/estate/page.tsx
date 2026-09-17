@@ -88,7 +88,7 @@ export default async function EstatePage({
                   <p className="mt-4 rounded-xl border border-line px-3 py-2 text-sm text-quiet">
                     Warehouse: {tenant.warehouse.count} SIMs not yet sold to a customer
                     {tenant.warehouse.plans.length > 0
-                      ? ` · ${tenant.warehouse.plans.map((item) => `${item.count} ${wholesaleLabel(item.plan)}`).join(", ")}`
+                      ? ` · ${tenant.warehouse.plans.map((item) => `${item.count} ${item.plan}`).join(", ")}`
                       : ""}
                   </p>
                 ) : (
@@ -112,10 +112,8 @@ export default async function EstatePage({
                             Retail: {customer.plansSold.length > 0 ? customer.plansSold.join(", ") : "—"}
                           </p>
                           <p className="text-quiet">
-                            Wholesale:{" "}
-                            {customer.wholesalePlans.length > 0
-                              ? customer.wholesalePlans.map((id) => wholesaleLabel(id)).join(", ")
-                              : "—"}
+                            ATN plan:{" "}
+                            {customer.wholesalePlans.length > 0 ? customer.wholesalePlans.join(", ") : "—"}
                           </p>
                         </li>
                       ))}
@@ -144,7 +142,8 @@ export default async function EstatePage({
                         <th className="px-3 py-2">ICCID</th>
                         <th className="px-3 py-2">Customer</th>
                         <th className="px-3 py-2">Retail plan</th>
-                        <th className="px-3 py-2">Wholesale</th>
+                        <th className="px-3 py-2">ATN plan</th>
+                        <th className="px-3 py-2">CC rate plan</th>
                         <th className="px-3 py-2">Pool</th>
                         <th className="px-3 py-2">State</th>
                       </tr>
@@ -155,6 +154,7 @@ export default async function EstatePage({
                           <td className="px-3 py-2 font-mono">{formatIccid(sim.iccid)}</td>
                           <td className="px-3 py-2">{sim.customerName ?? "Warehouse"}</td>
                           <td className="px-3 py-2">{sim.planName ?? "—"}</td>
+                          <td className="px-3 py-2">{sim.platformPlanName ?? "—"}</td>
                           <td className="px-3 py-2">{wholesaleLabel(sim.wholesalePlan)}</td>
                           <td className="px-3 py-2">{sim.poolName ?? "—"}</td>
                           <td className="px-3 py-2">{sim.state}</td>

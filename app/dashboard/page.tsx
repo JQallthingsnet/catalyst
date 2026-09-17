@@ -31,14 +31,18 @@ export default async function DashboardPage() {
           <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          {can(ctx.role, "order.create") ? (
-            <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
-              Order SIMs
+          {can(ctx.role, "wholesale.allocate") ? (
+            <Link href="/dashboard/estate/allocate" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+              Sell stock
             </Link>
           ) : null}
-          {can(ctx.role, "plan.create") ? (
+          {can(ctx.role, "platform.plan") ? (
             <Link href="/dashboard/plans/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
-              Create plan
+              Create ATN plan
+            </Link>
+          ) : can(ctx.role, "plan.create") ? (
+            <Link href="/dashboard/plans/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
+              Copy to retail
             </Link>
           ) : null}
           {can(ctx.role, "pool.create") ? (

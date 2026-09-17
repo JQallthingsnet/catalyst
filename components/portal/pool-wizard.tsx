@@ -92,7 +92,7 @@ export function PoolWizard({ readyIccids }: { readyIccids: string[] }) {
       {step === 1 ? (
         <div className="max-h-80 space-y-2 overflow-auto">
           {readyIccids.length === 0 ? (
-            <p className="text-sm text-quiet">No SIMs in tenant yet. Order SIMs first, or add members later.</p>
+            <p className="text-sm text-quiet">No SIMs in this organisation yet. Sell stock into the warehouse first, or add members later.</p>
           ) : (
             readyIccids.slice(0, 80).map((iccid) => (
               <label key={iccid} className="flex items-center gap-3 rounded-xl border border-line px-3 py-2 text-sm">

@@ -75,7 +75,7 @@ export function AssignWizard({
       {step === 0 ? (
         <div className="space-y-2">
           {customers.length === 0 ? (
-            <p className="text-sm text-quiet">Create a customer first.</p>
+            <p className="text-sm text-quiet">A reseller admin needs to add a customer name first.</p>
           ) : (
             customers.map((item) => (
               <button
@@ -109,6 +109,9 @@ export function AssignWizard({
                   </option>
                 ))}
               </select>
+              {plans.length === 0 ? (
+                <p className="mt-2 text-xs text-quiet">Copy a contracted ATN plan to retail first.</p>
+              ) : null}
             </label>
             <label className="text-sm">
               Pool (optional)
@@ -169,7 +172,7 @@ export function AssignWizard({
         }}
         nextLabel={step < 2 ? "Continue" : "Assign & sync CC"}
         busy={busy}
-        disabled={!customerId || (step === 1 && selected.length === 0)}
+        disabled={!customerId || !planId || (step === 1 && selected.length === 0)}
       />
     </WizardFrame>
   );

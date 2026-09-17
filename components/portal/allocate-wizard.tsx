@@ -1,23 +1,34 @@
 "use client";
 
-import { useState } from "react";
-import { COMM_PLANS, SIM_SKUS, WHOLESALE_PLANS } from "@/lib/portal/catalogue";
+import { useMemo, useState } from "react";
+import { SIM_SKUS } from "@/lib/portal/catalogue";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 
-export function AllocateWizard({ resellers }: { resellers: { id: string; name: string }[] }) {
+type Plan = { id: string; name: string };
+type Reseller = { id: string; name: string; planIds: string[] };
+
+export function AllocateWizard({
+  resellers,
+  plans,
+}: {
+  resellers: Reseller[];
+  plans: Plan[];
+}) {
   const [step, setStep] = useState(0);
   const [tenantId, setTenantId] = useState(resellers[0]?.id ?? "");
   const [skuId, setSkuId] = useState<string>(SIM_SKUS[0].id);
   const [quantity, setQuantity] = useState(500);
-  const [wholesalePlan, setWholesalePlan] = useState<string>(WHOLESALE_PLANS[0].id);
-  const [commPlan, setCommPlan] = useState<string>(COMM_PLANS[0].id);
+  const [platformPlanId, setPlatformPlanId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const reseller = resellers.find((item) => item.id === tenantId);
   const sku = SIM_SKUS.find((item) => item.id === skuId)!;
-  const wholesale = WHOLESALE_PLANS.find((item) => item.id === wholesalePlan)!;
-  const comm = COMM_PLANS.find((item) => item.id === commPlan)!;
+  const contracted = useMemo(
+    () => plans.filter((plan) => reseller?.planIds.includes(plan.id)),
+    [plans, reseller],
+  );
+  const plan = contracted.find((item) => item.id === platformPlanId) ?? contracted[0];
 
   async function submit() {
     setBusy(true);
@@ -26,7 +37,7 @@ export function AllocateWizard({ resellers }: { resellers: { id: string; name: s
       const res = await fetch("/api/portal/wholesale", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, skuId, quantity, wholesalePlan, commPlan }),
+        body: JSON.stringify({ tenantId, skuId, quantity, platformPlanId: plan?.id }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
@@ -51,18 +62,16 @@ export function AllocateWizard({ resellers }: { resellers: { id: string; name: s
           <p>{reseller?.name ?? "Choose a reseller"}</p>
           <p>{sku.name}</p>
           <p>{quantity} SIMs</p>
-          <p>
-            {wholesale.label} · {comm.label}
-          </p>
-          <p className="text-ok">ICCIDs land in their warehouse as Ready. They assign to their customers.</p>
+          <p>{plan?.name ?? "No contracted plan"}</p>
+          <p className="text-ok">SIMs land in warehouse on this ATN plan.</p>
         </>
       }
     >
       {step === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-quiet">
-            ATN sells SIMs into this reseller’s warehouse. Control Center issues the numbers. The reseller then
-            assigns those SIMs to an end customer.
+            Only resellers with a signed plan assignment (contract) can receive stock. Each SIM will carry that ATN
+            plan.
           </p>
           {resellers.length === 0 ? <p className="text-sm text-quiet">Create a reseller from Admin first.</p> : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -70,13 +79,18 @@ export function AllocateWizard({ resellers }: { resellers: { id: string; name: s
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setTenantId(item.id)}
+                onClick={() => {
+                  setTenantId(item.id);
+                  setPlatformPlanId("");
+                }}
                 className={`rounded-card border p-4 text-left ${
                   tenantId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
                 }`}
               >
                 <p className="font-semibold">{item.name}</p>
-                <p className="mt-1 text-xs text-quiet">{item.id}</p>
+                <p className="mt-1 text-xs text-quiet">
+                  {item.planIds.length} contracted plan{item.planIds.length === 1 ? "" : "s"}
+                </p>
               </button>
             ))}
           </div>
@@ -98,7 +112,6 @@ export function AllocateWizard({ resellers }: { resellers: { id: string; name: s
               <p className="mt-2 text-sm text-quiet">
                 {item.tech} · {item.region}
               </p>
-              <p className="mt-2 text-xs text-quiet">{item.blurb}</p>
             </button>
           ))}
         </div>
@@ -118,37 +131,22 @@ export function AllocateWizard({ resellers }: { resellers: { id: string; name: s
             />
           </label>
           <label className="block text-sm">
-            Wholesale plan sold to the reseller
+            ATN plan (this reseller)
             <select
-              value={wholesalePlan}
-              onChange={(event) => setWholesalePlan(event.target.value)}
+              value={plan?.id ?? ""}
+              onChange={(event) => setPlatformPlanId(event.target.value)}
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             >
-              {WHOLESALE_PLANS.map((item) => (
+              {contracted.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.label}
+                  {item.name}
                 </option>
               ))}
             </select>
           </label>
-          <label className="block text-sm">
-            Communication plan
-            <select
-              value={commPlan}
-              onChange={(event) => setCommPlan(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
-            >
-              {COMM_PLANS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="text-sm leading-6 text-quiet">
-            Confirm asks Control Center for {quantity} numbers, then puts them in {reseller?.name ?? "the reseller"}{" "}
-            as warehouse stock on {wholesale.label}. No end customer is attached yet.
-          </p>
+          {contracted.length === 0 ? (
+            <p className="text-sm text-danger">Assign a plan to this reseller on Plans before selling stock.</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -161,7 +159,7 @@ export function AllocateWizard({ resellers }: { resellers: { id: string; name: s
         }}
         nextLabel={step < 2 ? "Continue" : "Sell stock"}
         busy={busy}
-        disabled={step === 0 && !tenantId}
+        disabled={(step === 0 && !tenantId) || (step === 2 && !plan)}
       />
     </WizardFrame>
   );
