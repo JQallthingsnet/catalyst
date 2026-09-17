@@ -9,6 +9,7 @@ export {
   effectiveRole,
   navForRole,
   parseViewRole,
+  simFieldsForRole,
   VIEW_AS_COOKIE,
   VIEW_ROLES,
   type PortalRole,

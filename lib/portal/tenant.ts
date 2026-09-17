@@ -93,6 +93,7 @@ export type PlatformEstateSim = {
   planName: string | null;
   poolName: string | null;
   wholesalePlan: string | null;
+  platformPlanName: string | null;
 };
 
 export type PlatformEstateWarehouse = {
@@ -150,11 +151,12 @@ export async function listPlatformEstate(
     db
       .prepare(
         `SELECT s.id, s.tenant_id, s.iccid, s.form_factor, s.state, s.customer_id, s.wholesale_plan,
-                c.name as customer_name, p.name as plan_name, pl.name as pool_name
+                c.name as customer_name, p.name as plan_name, pl.name as pool_name, pp.name as platform_plan_name
          FROM sims s
          LEFT JOIN customers c ON c.id = s.customer_id
          LEFT JOIN plans p ON p.id = s.plan_id
          LEFT JOIN pools pl ON pl.id = s.pool_id
+         LEFT JOIN platform_plans pp ON pp.id = s.platform_plan_id
          ORDER BY s.iccid ASC
          LIMIT 2000`,
       )
@@ -169,6 +171,7 @@ export async function listPlatformEstate(
         customer_name: string | null;
         plan_name: string | null;
         pool_name: string | null;
+        platform_plan_name: string | null;
       }>(),
   ]);
 
@@ -207,6 +210,7 @@ export async function listPlatformEstate(
       planName: row.plan_name,
       poolName: row.pool_name,
       wholesalePlan: row.wholesale_plan,
+      platformPlanName: row.platform_plan_name,
     });
     simsByTenant.set(row.tenant_id, list);
     if (row.customer_id) {
@@ -219,7 +223,7 @@ export async function listPlatformEstate(
       sold.simCount += 1;
       if (row.state === "Active") sold.activeCount += 1;
       if (row.plan_name) sold.plans.add(row.plan_name);
-      if (row.wholesale_plan) sold.wholesale.add(row.wholesale_plan);
+      if (row.platform_plan_name) sold.wholesale.add(row.platform_plan_name);
       soldByCustomer.set(row.customer_id, sold);
     }
   }
@@ -241,7 +245,7 @@ export async function listPlatformEstate(
     const warehouseSims = sims.filter((sim) => !sim.customerName);
     const warehousePlans = new Map<string, number>();
     for (const sim of warehouseSims) {
-      const key = sim.wholesalePlan ?? "Unmapped";
+      const key = sim.platformPlanName ?? sim.wholesalePlan ?? "Unmapped";
       warehousePlans.set(key, (warehousePlans.get(key) ?? 0) + 1);
     }
     return {
