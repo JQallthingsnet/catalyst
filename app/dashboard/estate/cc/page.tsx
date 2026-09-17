@@ -59,7 +59,7 @@ export default async function CcSnapshotPage({
             {sync.lastPolledAt ? formatAuDateTime(sync.lastPolledAt) : "Never"}
           </p>
           <p className="mt-1 text-xs text-quiet">
-            {sync.autoPoll ? "Auto poll ON · cron every minute" : "Auto poll OFF"}
+            {sync.autoPoll ? "Auto poll ON · cron every 15 minutes" : "Auto poll OFF"}
             {" · "}
             {sync.configured ? "Secrets configured" : "Missing JASPER secrets"}
           </p>
