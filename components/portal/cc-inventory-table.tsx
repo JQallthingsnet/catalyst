@@ -1,12 +1,6 @@
 import { formatIccid } from "@/lib/portal/ids";
+import { formatAuDateTime } from "@/lib/portal/time";
 import type { CcDevice } from "@/lib/cc/devices";
-
-function formatCcDate(value: string | null): string {
-  if (!value) return "—";
-  const parsed = Date.parse(value.replace(" ", "T"));
-  if (Number.isNaN(parsed)) return value;
-  return new Date(parsed).toLocaleString("en-AU");
-}
 
 export function CcInventoryTable({ devices }: { devices: CcDevice[] }) {
   return (
@@ -35,8 +29,8 @@ export function CcInventoryTable({ devices }: { devices: CcDevice[] }) {
               <td className="px-4 py-3">{device.ratePlan ?? "—"}</td>
               <td className="px-4 py-3">{device.ctdUsageMb != null ? device.ctdUsageMb : "—"}</td>
               <td className="px-4 py-3">{device.inSession == null ? "—" : device.inSession ? "Yes" : "No"}</td>
-              <td className="px-4 py-3">{formatCcDate(device.dateActivated)}</td>
-              <td className="px-4 py-3">{formatCcDate(device.dateAdded)}</td>
+              <td className="px-4 py-3">{formatAuDateTime(device.dateActivated)}</td>
+              <td className="px-4 py-3">{formatAuDateTime(device.dateAdded)}</td>
             </tr>
           ))}
         </tbody>

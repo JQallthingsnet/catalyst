@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { CcInventoryTable } from "@/components/portal/cc-inventory-table";
+import { CcAutoPollToggle } from "@/components/portal/cc-auto-poll-toggle";
 import { SyncCcButton } from "@/components/portal/sync-cc-button";
 import { ccInventorySummary, countCcDevices, getCcSyncState, listCcDevices } from "@/lib/cc/devices";
 import { requirePrivilege } from "@/lib/portal/guard";
+import { formatAuDateTime } from "@/lib/portal/time";
 
 export default async function CcSnapshotPage({
   searchParams,
@@ -28,12 +30,12 @@ export default async function CcSnapshotPage({
         <div>
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 max-w-2xl text-sm text-quiet">
-            All SIMs as Control Center sees them, stored in D1. Production polls every minute until every list page and
-            every SIM detail is in the copy (one Control Center call at a time). Set <code>CC_AUTO_POLL=false</code>{" "}
-            locally if you need Control Center quiet while wiring APIs.
+            All SIMs as Control Center sees them, stored in D1. Use Auto poll to let the Worker cron fill every page and
+            SIM detail in the background. Sync runs one batch now.
           </p>
         </div>
-        <div className="w-full max-w-sm">
+        <div className="flex w-full max-w-sm flex-col gap-2">
+          <CcAutoPollToggle enabled={sync.autoPoll} />
           <SyncCcButton />
         </div>
       </div>
@@ -54,7 +56,7 @@ export default async function CcSnapshotPage({
         <article className="rounded-card border border-line bg-panel p-5">
           <p className="text-sm text-quiet">Last poll</p>
           <p className="mt-2 text-sm font-medium">
-            {sync.lastPolledAt ? new Date(sync.lastPolledAt).toLocaleString("en-AU") : "Never"}
+            {sync.lastPolledAt ? formatAuDateTime(sync.lastPolledAt) : "Never"}
           </p>
           <p className="mt-1 text-xs text-quiet">
             {sync.autoPoll ? "Auto poll ON · cron every minute" : "Auto poll OFF"}

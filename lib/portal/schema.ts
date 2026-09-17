@@ -42,7 +42,8 @@ const STATEMENTS = [
     last_error TEXT,
     last_total INTEGER,
     last_page INTEGER,
-    last_page_complete INTEGER NOT NULL DEFAULT 0
+    last_page_complete INTEGER NOT NULL DEFAULT 0,
+    auto_poll INTEGER NOT NULL DEFAULT 1
   )`,
 ];
 
@@ -63,6 +64,7 @@ const ALTERS = [
   `ALTER TABLE cc_devices ADD COLUMN date_added TEXT`,
   `ALTER TABLE cc_devices ADD COLUMN date_activated TEXT`,
   `ALTER TABLE cc_devices ADD COLUMN details_polled_at TEXT`,
+  `ALTER TABLE cc_sync_state ADD COLUMN auto_poll INTEGER NOT NULL DEFAULT 1`,
 ];
 
 export async function ensurePortalSchema(): Promise<void> {

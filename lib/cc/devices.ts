@@ -1,10 +1,13 @@
 import { getDB, isCcAutoPollEnabled } from "@/lib/env";
 import {
+  beginJasperBudget,
+  CcBudgetError,
   fetchJasperCtdUsage,
   fetchJasperDeviceDetails,
   fetchJasperDevicesPage,
   fetchJasperSessionInfo,
   jasperConfigured,
+  jasperHasBudget,
   type JasperDevice,
 } from "@/lib/cc/client";
 import { type SimState } from "@/lib/portal/catalogue";
@@ -14,8 +17,10 @@ const SYNC_ID = "devices";
 const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
-/** Auto poll (cron / production): keep going until the snapshot is complete, up to a Worker cron window. */
+/** Auto poll continues on the next cron; stay under the Worker subrequest cap. */
 const AUTO_BUDGET_MS = 12 * 60 * 1000;
+const JASPER_CALLS_MANUAL = 16;
+const JASPER_CALLS_AUTO = 80;
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /** Heartbeat: if an isolate dies, cron can resume after this window. */
 const LOCK_MS = 120_000;
@@ -102,7 +107,7 @@ export function mapCcStatus(status: string): SimState | null {
 export async function getCcSyncState(): Promise<CcSyncState> {
   const row = await getDB()
     .prepare(
-      `SELECT modified_since, next_page, locked_until, last_polled_at, last_error, last_total, last_page, last_page_complete
+      `SELECT modified_since, next_page, locked_until, last_polled_at, last_error, last_total, last_page, last_page_complete, auto_poll
        FROM cc_sync_state WHERE id = ?`,
     )
     .bind(SYNC_ID)
@@ -115,6 +120,7 @@ export async function getCcSyncState(): Promise<CcSyncState> {
       last_total: number | null;
       last_page: number | null;
       last_page_complete: number;
+      auto_poll: number | null;
     }>();
   return {
     modifiedSince: row?.modified_since ?? null,
@@ -125,14 +131,24 @@ export async function getCcSyncState(): Promise<CcSyncState> {
     lastTotal: row?.last_total ?? null,
     lastPage: row?.last_page ?? null,
     lastPageComplete: Boolean(row?.last_page_complete),
-    autoPoll: isCcAutoPollEnabled(),
+    autoPoll: Boolean(row?.auto_poll) && isCcAutoPollEnabled(),
     configured: jasperConfigured(),
   };
 }
 
-/** Cron entry. Production always polls; local can set CC_AUTO_POLL=false. */
+export async function setCcAutoPoll(enabled: boolean): Promise<void> {
+  await ensureSyncRow();
+  await getDB()
+    .prepare(`UPDATE cc_sync_state SET auto_poll = ? WHERE id = ?`)
+    .bind(enabled ? 1 : 0, SYNC_ID)
+    .run();
+}
+
+/** Cron entry. Runs when the Auto poll button is ON (and CC_AUTO_POLL is not false). */
 export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
-  if (!jasperConfigured() || !isCcAutoPollEnabled()) return null;
+  if (!jasperConfigured()) return null;
+  const state = await getCcSyncState();
+  if (!state.autoPoll) return null;
   return syncCcDevices({ unlimited: true });
 }
 
@@ -208,7 +224,9 @@ export async function ccInventorySummary(): Promise<{
 
 async function ensureSyncRow(): Promise<void> {
   await getDB()
-    .prepare(`INSERT INTO cc_sync_state (id, next_page, last_page_complete) VALUES (?, 1, 0) ON CONFLICT(id) DO NOTHING`)
+    .prepare(
+      `INSERT INTO cc_sync_state (id, next_page, last_page_complete, auto_poll) VALUES (?, 1, 0, 1) ON CONFLICT(id) DO NOTHING`,
+    )
     .bind(SYNC_ID)
     .run();
 }
@@ -302,8 +320,22 @@ async function overlaySim(
     usageMb?: number | null;
   },
 ): Promise<void> {
+  await overlaySimStatement(iccid, input).run();
+}
+
+function overlaySimStatement(
+  iccid: string,
+  input: {
+    status: string;
+    ratePlan?: string | null;
+    polledAt: string;
+    imsi?: string | null;
+    msisdn?: string | null;
+    usageMb?: number | null;
+  },
+) {
   const mapped = mapCcStatus(input.status);
-  await getDB()
+  return getDB()
     .prepare(
       `UPDATE sims
        SET wholesale_plan = COALESCE(?, wholesale_plan),
@@ -325,36 +357,40 @@ async function overlaySim(
       mapped,
       mapped,
       iccid,
-    )
-    .run();
+    );
 }
 
 async function persistDevices(devices: JasperDevice[], polledAt: string): Promise<number> {
   const db = getDB();
-  let upserted = 0;
+  const upserts: D1PreparedStatement[] = [];
+  const overlays: D1PreparedStatement[] = [];
   for (const device of devices) {
     const iccid = device.iccid.replace(/\s/g, "");
     if (!iccid) continue;
-    await db
-      .prepare(
-        `INSERT INTO cc_devices (iccid, status, rate_plan, communication_plan, polled_at)
+    upserts.push(
+      db
+        .prepare(
+          `INSERT INTO cc_devices (iccid, status, rate_plan, communication_plan, polled_at)
          VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(iccid) DO UPDATE SET
            status = excluded.status,
            rate_plan = excluded.rate_plan,
            communication_plan = excluded.communication_plan,
            polled_at = excluded.polled_at`,
-      )
-      .bind(iccid, device.status, device.ratePlan ?? null, device.communicationPlan ?? null, polledAt)
-      .run();
-    await overlaySim(iccid, {
-      status: device.status,
-      ratePlan: device.ratePlan,
-      polledAt,
-    });
-    upserted += 1;
+        )
+        .bind(iccid, device.status, device.ratePlan ?? null, device.communicationPlan ?? null, polledAt),
+    );
+    overlays.push(
+      overlaySimStatement(iccid, {
+        status: device.status,
+        ratePlan: device.ratePlan,
+        polledAt,
+      }),
+    );
   }
-  return upserted;
+  if (upserts.length > 0) await db.batch(upserts);
+  if (overlays.length > 0) await db.batch(overlays);
+  return upserts.length;
 }
 
 async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
@@ -374,7 +410,7 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     const devices = rows.results ?? [];
     if (devices.length === 0) break;
     for (const row of devices) {
-      if (Date.now() >= input.deadline) break;
+      if (Date.now() >= input.deadline || !jasperHasBudget(3)) return enriched;
       await enrichDevice(row.iccid);
       enriched += 1;
       if (enriched % 5 === 0) await heartbeatLock();
@@ -441,6 +477,7 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
   }
   const unlimited = Boolean(input?.unlimited);
   const deadline = Date.now() + (unlimited ? AUTO_BUDGET_MS : MANUAL_BUDGET_MS);
+  beginJasperBudget(unlimited ? JASPER_CALLS_AUTO : JASPER_CALLS_MANUAL);
   const locked = await acquireLock();
   if (!locked) throw new Error("A Control Center sync is already running.");
 
@@ -453,11 +490,11 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
   let details = 0;
   let lastPage = false;
   let totalCount = state.lastTotal ?? 0;
+  let fetchedPage = page;
 
   try {
-    let fetchedPage = page;
     const maxPages = unlimited ? Number.POSITIVE_INFINITY : MANUAL_PAGES_PER_RUN;
-    while (pages < maxPages && Date.now() < deadline) {
+    while (pages < maxPages && Date.now() < deadline && jasperHasBudget()) {
       // Identical search: same account, modifiedSince, pageSize=50; only pageNumber increases.
       const result = await fetchJasperDevicesPage({ modifiedSince, pageNumber: page });
       upserted += await persistDevices(result.devices, isoNow());
@@ -488,8 +525,25 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
 
     return { pages, upserted, details, lastPage, totalCount, nextPage: page };
   } catch (err) {
+    if (isSubrequestLimit(err) || err instanceof CcBudgetError) {
+      await releaseLock({
+        modifiedSince: lastPage ? pollStarted : modifiedSince,
+        nextPage: page,
+        lastPolledAt: isoNow(),
+        lastError: null,
+        lastTotal: totalCount,
+        lastPage: fetchedPage,
+        lastPageComplete: lastPage,
+      });
+      return { pages, upserted, details, lastPage, totalCount, nextPage: page };
+    }
     const message = err instanceof Error ? err.message : "Control Center sync failed.";
     await releaseLock({ lastError: message, lastPolledAt: isoNow() });
     throw err;
   }
+}
+
+function isSubrequestLimit(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /too many subrequests/i.test(message);
 }

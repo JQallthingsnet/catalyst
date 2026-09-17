@@ -48,7 +48,7 @@ CC is the radio source. Pages read D1, not Jasper. Super admin Dashboard and **C
 3. `GET /rws/api/v1/devices/{iccid}/ctdUsages` — cycle-to-date data bytes
 4. `GET /rws/api/v1/devices/{iccid}/sessionInfo` — in session
 
-One HTTP call at a time, at most 5/s. Production auto-polls on a Worker cron every minute until every page is stored and every SIM has details. Locally set `CC_AUTO_POLL=false` to keep Control Center quiet. Auth is HTTP Basic: Base64 of `JASPER_ACCOUNT_NAME:JASPER_API_KEY` (colon, no space). Optional `JASPER_ACCOUNT_ID` scopes the device search; if omitted, Control Center uses the account on that user name. Do not put these in `wrangler.jsonc`. No CDR history — snapshots overwrite in place.
+One HTTP call at a time, at most 5/s. Super admin **Auto poll** on the CC snapshot page turns the Worker cron on or off. While ON, each minute continues until every page is stored and every SIM has details, staying under the Worker subrequest cap. **Sync** is a one-off batch. Locally you can also set `CC_AUTO_POLL=false` to force cron off. Auth is HTTP Basic: Base64 of `JASPER_ACCOUNT_NAME:JASPER_API_KEY` (colon, no space). Optional `JASPER_ACCOUNT_ID` scopes the device search; if omitted, Control Center uses the account on that user name. Do not put these in `wrangler.jsonc`. No CDR history — snapshots overwrite in place.
 
 ## Auth
 

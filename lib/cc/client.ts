@@ -6,6 +6,24 @@ const MIN_INTERVAL_MS = 200;
 
 let lastCallAt = 0;
 let inFlight = false;
+let jasperCalls = 0;
+let jasperCallLimit = 0;
+
+export class CcBudgetError extends Error {
+  constructor() {
+    super("Control Center run reached the Worker subrequest budget.");
+    this.name = "CcBudgetError";
+  }
+}
+
+export function beginJasperBudget(maxCalls: number): void {
+  jasperCalls = 0;
+  jasperCallLimit = maxCalls;
+}
+
+export function jasperHasBudget(need = 1): boolean {
+  return jasperCalls + need <= jasperCallLimit;
+}
 
 export type JasperDevice = {
   iccid: string;
@@ -78,7 +96,9 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
   }
   if (inFlight) throw new Error("A Control Center request is already in flight.");
+  if (!jasperHasBudget()) throw new CcBudgetError();
   inFlight = true;
+  jasperCalls += 1;
   try {
     await throttle();
     const res = await fetch(`${apiBase()}${path}`, {
