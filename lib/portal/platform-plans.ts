@@ -1,5 +1,4 @@
 import { getDB } from "@/lib/env";
-import { commPlanById, wholesalePlanById } from "@/lib/portal/catalogue";
 import { newId } from "@/lib/portal/ids";
 import { loadTenant } from "@/lib/portal/tenant";
 
@@ -63,21 +62,21 @@ export async function createPlatformPlan(
 ): Promise<PlatformPlan> {
   const name = input.name.trim();
   if (name.length < 2) throw new Error("Enter a plan name.");
-  const cc = wholesalePlanById(input.ccRatePlan);
-  if (!cc) throw new Error("Unknown Control Center rate plan.");
-  const comm = commPlanById(input.commPlan);
-  if (!comm) throw new Error("Unknown communication plan.");
+  const ccRatePlan = input.ccRatePlan.trim();
+  if (!ccRatePlan) throw new Error("Enter the Control Center rate plan name.");
+  const commPlan = input.commPlan.trim();
+  if (!commPlan) throw new Error("Enter the communication plan.");
   const id = newId("pplan");
   const createdAt = new Date().toISOString();
   await getDB()
     .prepare("INSERT INTO platform_plans (id, name, cc_rate_plan, comm_plan, created_at) VALUES (?, ?, ?, ?, ?)")
-    .bind(id, name, cc.id, comm.id, createdAt)
+    .bind(id, name, ccRatePlan, commPlan, createdAt)
     .run();
   return {
     id,
     name,
-    ccRatePlan: cc.id,
-    commPlan: comm.id,
+    ccRatePlan,
+    commPlan,
     createdAt,
     assignedResellers: 0,
     simCount: 0,

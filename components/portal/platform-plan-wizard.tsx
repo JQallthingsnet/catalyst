@@ -1,19 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { COMM_PLANS, WHOLESALE_PLANS } from "@/lib/portal/catalogue";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 
 export function PlatformPlanWizard() {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
-  const [ccRatePlan, setCcRatePlan] = useState<string>(WHOLESALE_PLANS[0].id);
-  const [commPlan, setCommPlan] = useState<string>(COMM_PLANS[0].id);
+  const [ccRatePlan, setCcRatePlan] = useState("");
+  const [commPlan, setCommPlan] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const cc = WHOLESALE_PLANS.find((item) => item.id === ccRatePlan)!;
-  const comm = COMM_PLANS.find((item) => item.id === commPlan)!;
 
   async function submit() {
     setBusy(true);
@@ -45,8 +41,8 @@ export function PlatformPlanWizard() {
       summary={
         <>
           <p>{name || "Plan name"}</p>
-          <p>CC {cc.label}</p>
-          <p>{comm.label}</p>
+          <p>CC {ccRatePlan || "rate plan"}</p>
+          <p>{commPlan || "communication plan"}</p>
           <p className="text-ok">This is the plan between ATN and the reseller.</p>
         </>
       }
@@ -66,31 +62,21 @@ export function PlatformPlanWizard() {
         <div className="space-y-4">
           <label className="block text-sm">
             Control Center rate plan (ATN ↔ CC)
-            <select
+            <input
               value={ccRatePlan}
               onChange={(event) => setCcRatePlan(event.target.value)}
+              placeholder="Exactly as it appears in Control Center"
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
-            >
-              {WHOLESALE_PLANS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <label className="block text-sm">
             Communication plan
-            <select
+            <input
               value={commPlan}
               onChange={(event) => setCommPlan(event.target.value)}
+              placeholder="e.g. Data only"
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
-            >
-              {COMM_PLANS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+            />
           </label>
         </div>
       ) : null}
@@ -109,7 +95,7 @@ export function PlatformPlanWizard() {
         }}
         nextLabel={step < 2 ? "Continue" : "Create plan"}
         busy={busy}
-        disabled={!name.trim()}
+        disabled={!name.trim() || (step >= 1 && (!ccRatePlan.trim() || !commPlan.trim()))}
       />
     </WizardFrame>
   );

@@ -8,6 +8,7 @@ export type Privilege =
   | "platform.estate"
   | "wholesale.allocate"
   | "platform.plan"
+  | "platform.catalogue"
   | "order.create"
   | "plan.create"
   | "plan.edit"
@@ -27,6 +28,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "platform.estate",
     "wholesale.allocate",
     "platform.plan",
+    "platform.catalogue",
     "order.create",
     "plan.create",
     "plan.edit",
@@ -62,6 +64,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/estate/cc", label: "CC snapshot" },
     { href: "/dashboard/sims", label: "SIMs" },
     { href: "/dashboard/plans", label: "Plans" },
+    { href: "/dashboard/catalogue", label: "Catalogue" },
     { href: "/dashboard/pools", label: "Pools" },
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/orders", label: "Orders" },

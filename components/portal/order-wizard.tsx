@@ -1,20 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { SIM_SKUS } from "@/lib/portal/catalogue";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
+import type { SimSku } from "@/lib/portal/skus";
 
-export function OrderWizard() {
+export function OrderWizard({ skus }: { skus: SimSku[] }) {
   const [step, setStep] = useState(0);
-  const [skuId, setSkuId] = useState<string>(SIM_SKUS[0].id);
+  const [skuId, setSkuId] = useState<string>(skus[0]?.id ?? "");
   const [quantity, setQuantity] = useState(100);
   const [logistics, setLogistics] = useState("Warehouse AU");
   const [destination, setDestination] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const sku = SIM_SKUS.find((item) => item.id === skuId)!;
-  const esim = sku.formFactor === "eSIM";
+  const sku = skus.find((item) => item.id === skuId);
+  const esim = Boolean(sku?.formFactor.toLowerCase().includes("esim"));
 
   async function submit() {
     setBusy(true);
@@ -45,31 +45,36 @@ export function OrderWizard() {
       step={step}
       summary={
         <>
-          <p>{sku.name}</p>
+          <p>{sku?.name ?? "Choose a SKU"}</p>
           <p>{quantity} units</p>
           <p>{esim ? destination || "eSIM destination" : logistics}</p>
-          <p className="text-ok">ICCIDs reserved to this tenant on confirm.</p>
+          <p className="text-ok">Submitted to this tenant. ICCIDs come from Control Center, not a local reservation.</p>
         </>
       }
     >
       {step === 0 ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {SIM_SKUS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setSkuId(item.id)}
-              className={`rounded-card border p-4 text-left ${
-                skuId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
-              }`}
-            >
-              <p className="font-semibold">{item.name}</p>
-              <p className="mt-2 text-sm text-quiet">
-                {item.tech} · {item.region}
-              </p>
-              <p className="mt-2 text-xs text-quiet">{item.blurb}</p>
-            </button>
-          ))}
+        <div className="space-y-3">
+          {skus.length === 0 ? (
+            <p className="text-sm text-quiet">No SKUs yet. Ask a super admin to create them in Catalogue.</p>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {skus.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSkuId(item.id)}
+                className={`rounded-card border p-4 text-left ${
+                  skuId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
+                }`}
+              >
+                <p className="font-semibold">{item.name}</p>
+                <p className="mt-2 text-sm text-quiet">
+                  {item.tech} · {item.region}
+                </p>
+                {item.blurb ? <p className="mt-2 text-xs text-quiet">{item.blurb}</p> : null}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -112,8 +117,8 @@ export function OrderWizard() {
       {step === 2 ? (
         <div className="space-y-2 text-sm leading-6">
           <p>
-            Submit reserves ICCIDs to <strong>{sku.name}</strong> and marks the order Received after Control Center
-            accepts. States: Draft → Submitted → Accepted → Shipped → Received.
+            Submit an order for <strong>{sku?.name}</strong>. Control Center remains the source of ICCIDs. States: Draft
+            → Submitted → Accepted → Shipped → Received.
           </p>
         </div>
       ) : null}
@@ -127,7 +132,7 @@ export function OrderWizard() {
         }}
         nextLabel={step < 2 ? "Continue" : "Confirm order"}
         busy={busy}
-        disabled={esim && step === 1 && !destination}
+        disabled={!sku || (esim && step === 1 && !destination)}
       />
     </WizardFrame>
   );
