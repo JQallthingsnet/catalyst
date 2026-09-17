@@ -4,7 +4,7 @@ import { requirePrivilege } from "@/lib/portal/guard";
 import { inviteableRoles, listInvites } from "@/lib/portal/invites";
 import { listSuperAdmins } from "@/lib/portal/roles";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
-import { listPlatformTenants } from "@/lib/portal/tenant";
+import { excludeHomeTenant, listPlatformTenants } from "@/lib/portal/tenant";
 
 export default async function AdminPage() {
   const ctx = await requirePrivilege("admin");
@@ -23,7 +23,7 @@ export default async function AdminPage() {
       </p>
 
       <div className="mt-6">
-        <TenantDirectory tenants={tenants} currentId={ctx.tenantId} />
+        <TenantDirectory tenants={excludeHomeTenant(tenants, ctx.homeTenantId)} currentId={ctx.tenantId} />
       </div>
 
       <article className="mt-6 rounded-card border border-line bg-panel p-5">

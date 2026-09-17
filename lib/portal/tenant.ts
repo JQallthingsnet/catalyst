@@ -124,8 +124,12 @@ const EMPTY_ESTATE: PlatformEstate = {
   totals: { orgs: 0, sims: 0, active: 0, customers: 0 },
 };
 
+export function excludeHomeTenant<T extends { id: string }>(rows: T[], homeTenantId: string): T[] {
+  return rows.filter((row) => row.id !== homeTenantId);
+}
+
 export async function listPlatformEstate(
-  actor: { isSuperAdmin: boolean; role: string },
+  actor: { isSuperAdmin: boolean; role: string; homeTenantId?: string },
   query = "",
 ): Promise<PlatformEstate> {
   if (!actor.isSuperAdmin || actor.role !== "super_admin") return EMPTY_ESTATE;
@@ -265,8 +269,10 @@ export async function listPlatformEstate(
     };
   });
 
+  const resellers = actor.homeTenantId ? tenants.filter((tenant) => tenant.id !== actor.homeTenantId) : tenants;
+
   const filtered = q
-    ? tenants.filter((tenant) => {
+    ? resellers.filter((tenant) => {
         if (tenant.name.toLowerCase().includes(q)) return true;
         if (tenant.members.some((member) => member.email.toLowerCase().includes(q))) return true;
         if (
@@ -281,7 +287,7 @@ export async function listPlatformEstate(
         if (tenant.sims.some((sim) => sim.iccid.toLowerCase().replace(/\s/g, "").includes(iccidQ))) return true;
         return false;
       })
-    : tenants;
+    : resellers;
 
   const visible = q
     ? filtered.map((tenant) => {
@@ -307,10 +313,10 @@ export async function listPlatformEstate(
   return {
     tenants: visible,
     totals: {
-      orgs: tenants.length,
-      sims: tenants.reduce((sum, tenant) => sum + tenant.simCount, 0),
-      active: tenants.reduce((sum, tenant) => sum + tenant.activeCount, 0),
-      customers: tenants.reduce((sum, tenant) => sum + tenant.customerCount, 0),
+      orgs: resellers.length,
+      sims: resellers.reduce((sum, tenant) => sum + tenant.simCount, 0),
+      active: resellers.reduce((sum, tenant) => sum + tenant.activeCount, 0),
+      customers: resellers.reduce((sum, tenant) => sum + tenant.customerCount, 0),
     },
   };
 }

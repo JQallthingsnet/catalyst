@@ -75,8 +75,17 @@ async function nextIccidSeed(tenantId: string): Promise<number> {
   return (row?.c ?? 0) + 1;
 }
 
+const PLATFORM_HOME_NAME = "ATN Platform";
+
+async function ensureListedSuperAdminHomeName(tenantId: string, currentName: string): Promise<string> {
+  if (currentName.trim().toLowerCase() !== "my organisation") return currentName;
+  await getDB().prepare("UPDATE tenants SET name = ? WHERE id = ?").bind(PLATFORM_HOME_NAME, tenantId).run();
+  return PLATFORM_HOME_NAME;
+}
+
 export async function getOrCreatePortalContext(email: string): Promise<PortalContext> {
   const db = getDB();
+  const listed = await isListedSuperAdmin(email);
   const member = await db
     .prepare(
       `SELECT m.email, m.tenant_id, m.role, t.name
@@ -87,21 +96,21 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
     .first<{ email: string; tenant_id: string; role: PortalRole; name: string }>();
 
   if (member) {
+    const tenantName = listed ? await ensureListedSuperAdminHomeName(member.tenant_id, member.name) : member.name;
     return {
       email,
       tenantId: member.tenant_id,
-      tenantName: member.name,
+      tenantName,
       homeTenantId: member.tenant_id,
-      homeTenantName: member.name,
-      role: member.role,
-      isSuperAdmin: false,
+      homeTenantName: tenantName,
+      role: listed ? "super_admin" : member.role,
+      isSuperAdmin: listed,
     };
   }
 
   const tenantId = newId("ten");
   const now = new Date().toISOString();
-  const isSuperAdmin = await isListedSuperAdmin(email);
-  const tenantName = isSuperAdmin ? "ATN Platform" : "My organisation";
+  const tenantName = listed ? PLATFORM_HOME_NAME : "My organisation";
   await db.prepare("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)").bind(tenantId, tenantName, now).run();
   await db
     .prepare("INSERT INTO tenant_members (email, tenant_id, role) VALUES (?, ?, ?)")
@@ -113,8 +122,8 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
     tenantName,
     homeTenantId: tenantId,
     homeTenantName: tenantName,
-    role: "reseller_admin",
-    isSuperAdmin: false,
+    role: listed ? "super_admin" : "reseller_admin",
+    isSuperAdmin: listed,
   };
 }
 

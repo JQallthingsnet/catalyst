@@ -3,7 +3,7 @@ import { TenantDirectory } from "@/components/portal/tenant-directory";
 import { can } from "@/lib/portal/role-model";
 import { requirePortal } from "@/lib/portal/guard";
 import { dashboardSummary } from "@/lib/portal/repo";
-import { listPlatformTenants } from "@/lib/portal/tenant";
+import { excludeHomeTenant, listPlatformTenants } from "@/lib/portal/tenant";
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -21,6 +21,8 @@ export default async function DashboardPage() {
     dashboardSummary(ctx.tenantId),
     ctx.isSuperAdmin && ctx.role === "super_admin" ? listPlatformTenants(true) : Promise.resolve([]),
   ]);
+  const resellers = excludeHomeTenant(tenants, ctx.homeTenantId);
+  const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
   const maxMb = Math.max(...data.usage.map((row) => row.mb), 1);
 
   return (
@@ -45,12 +47,12 @@ export default async function DashboardPage() {
               Copy to retail
             </Link>
           ) : null}
-          {can(ctx.role, "pool.create") ? (
+          {can(ctx.role, "pool.create") && !onPlatform ? (
             <Link href="/dashboard/pools/new" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
               Create pool
             </Link>
           ) : null}
-          {can(ctx.role, "assign") ? (
+          {can(ctx.role, "assign") && !onPlatform ? (
             <Link href="/dashboard/sims/assign" className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent">
               Assign SIMs
             </Link>
@@ -58,9 +60,9 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {tenants.length > 0 ? (
+      {resellers.length > 0 || onPlatform ? (
         <div className="mt-6 space-y-3">
-          <TenantDirectory tenants={tenants} currentId={ctx.tenantId} />
+          <TenantDirectory tenants={resellers} currentId={ctx.tenantId} />
           <p className="text-sm text-quiet">
             See every customer and warehouse, or{" "}
             <Link href="/dashboard/estate" className="text-accent">
@@ -76,7 +78,13 @@ export default async function DashboardPage() {
       ) : null}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi label="SIMs active" value={data.simsActive.toLocaleString("en-AU")} />
+        <Kpi
+          label="SIMs active"
+          value={(onPlatform ? resellers.reduce((sum, item) => sum + item.simCount, 0) : data.simsActive).toLocaleString(
+            "en-AU",
+          )}
+          hint={onPlatform ? "Across resellers" : undefined}
+        />
         <Kpi label="Pool used" value={`${data.poolUsedPct}%`} hint={data.poolName} />
         <Kpi label="Open orders" value={String(data.openOrders)} />
         <Kpi label="Activations 24h" value={String(data.activations24h)} />
