@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { SIM_SKUS } from "@/lib/portal/catalogue";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
+import type { SimSku } from "@/lib/portal/skus";
 
 type Plan = { id: string; name: string };
 type Reseller = { id: string; name: string; planIds: string[] };
@@ -10,20 +10,22 @@ type Reseller = { id: string; name: string; planIds: string[] };
 export function AllocateWizard({
   resellers,
   plans,
+  skus,
 }: {
   resellers: Reseller[];
   plans: Plan[];
+  skus: SimSku[];
 }) {
   const [step, setStep] = useState(0);
   const [tenantId, setTenantId] = useState(resellers[0]?.id ?? "");
-  const [skuId, setSkuId] = useState<string>(SIM_SKUS[0].id);
+  const [skuId, setSkuId] = useState<string>(skus[0]?.id ?? "");
   const [quantity, setQuantity] = useState(500);
   const [platformPlanId, setPlatformPlanId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const reseller = resellers.find((item) => item.id === tenantId);
-  const sku = SIM_SKUS.find((item) => item.id === skuId)!;
+  const sku = skus.find((item) => item.id === skuId);
   const contracted = useMemo(
     () => plans.filter((plan) => reseller?.planIds.includes(plan.id)),
     [plans, reseller],
@@ -60,7 +62,7 @@ export function AllocateWizard({
       summary={
         <>
           <p>{reseller?.name ?? "Choose a reseller"}</p>
-          <p>{sku.name}</p>
+          <p>{sku?.name ?? "Choose a SKU"}</p>
           <p>{quantity} SIMs</p>
           <p>{plan?.name ?? "No contracted plan"}</p>
           <p className="text-ok">SIMs land in warehouse on this ATN plan.</p>
@@ -98,22 +100,29 @@ export function AllocateWizard({
       ) : null}
 
       {step === 1 ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {SIM_SKUS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setSkuId(item.id)}
-              className={`rounded-card border p-4 text-left ${
-                skuId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
-              }`}
-            >
-              <p className="font-semibold">{item.name}</p>
-              <p className="mt-2 text-sm text-quiet">
-                {item.tech} · {item.region}
-              </p>
-            </button>
-          ))}
+        <div className="space-y-3">
+          {skus.length === 0 ? (
+            <p className="text-sm text-quiet">
+              Create SKUs in Catalogue first. Super admin owns the product list.
+            </p>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {skus.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSkuId(item.id)}
+                className={`rounded-card border p-4 text-left ${
+                  skuId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
+                }`}
+              >
+                <p className="font-semibold">{item.name}</p>
+                <p className="mt-2 text-sm text-quiet">
+                  {item.tech} · {item.region}
+                </p>
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -159,7 +168,7 @@ export function AllocateWizard({
         }}
         nextLabel={step < 2 ? "Continue" : "Sell stock"}
         busy={busy}
-        disabled={(step === 0 && !tenantId) || (step === 2 && !plan)}
+        disabled={(step === 0 && !tenantId) || (step === 1 && !skuId) || (step === 2 && !plan)}
       />
     </WizardFrame>
   );

@@ -2,14 +2,16 @@ import Link from "next/link";
 import { AllocateWizard } from "@/components/portal/allocate-wizard";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { listAllTenantPlanIds, listPlatformPlans } from "@/lib/portal/platform-plans";
+import { listSimSkus } from "@/lib/portal/skus";
 import { listTenantOptions } from "@/lib/portal/tenant";
 
 export default async function AllocateStockPage() {
   const ctx = await requirePrivilege("wholesale.allocate");
-  const [resellers, plans, links] = await Promise.all([
+  const [resellers, plans, links, skus] = await Promise.all([
     listTenantOptions(),
     listPlatformPlans(),
     listAllTenantPlanIds(),
+    listSimSkus(),
   ]);
   const planIdsByTenant = new Map<string, string[]>();
   for (const link of links) {
@@ -33,6 +35,7 @@ export default async function AllocateStockPage() {
               planIds: planIdsByTenant.get(item.id) ?? [],
             }))}
           plans={plans.map((item) => ({ id: item.id, name: item.name }))}
+          skus={skus}
         />
       </div>
     </div>

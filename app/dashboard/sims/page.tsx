@@ -4,11 +4,10 @@ import { requirePortal } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import { listSims } from "@/lib/portal/repo";
 import { can, simFieldsForRole } from "@/lib/portal/role-model";
-import { WHOLESALE_PLANS } from "@/lib/portal/catalogue";
 
 function ccLabel(id: string | null) {
   if (!id) return "—";
-  return WHOLESALE_PLANS.find((item) => item.id === id)?.label ?? id;
+  return id;
 }
 
 export default async function SimsPage({

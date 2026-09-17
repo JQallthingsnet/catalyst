@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { OpenTenantButton } from "@/components/portal/tenant-switcher";
-import { WHOLESALE_PLANS } from "@/lib/portal/catalogue";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
@@ -17,7 +16,7 @@ function Kpi({ label, value }: { label: string; value: string }) {
 
 function wholesaleLabel(id: string | null) {
   if (!id) return "—";
-  return WHOLESALE_PLANS.find((item) => item.id === id)?.label ?? id;
+  return id;
 }
 
 export default async function EstatePage({
