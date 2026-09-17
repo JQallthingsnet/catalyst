@@ -20,7 +20,9 @@ export default async function AssignPage() {
       <div className="mt-4">
         <AssignWizard
           customers={customers.map((item) => ({ id: item.id, name: item.name }))}
-          plans={plans.map((item) => ({ id: item.id, name: item.name }))}
+          plans={plans
+            .filter((item) => item.platformPlanId)
+            .map((item) => ({ id: item.id, name: item.name }))}
           pools={pools.map((item) => ({ id: item.id, name: item.name }))}
           sims={sims.map((item) => ({ iccid: item.iccid, state: item.state, planName: item.planName }))}
         />

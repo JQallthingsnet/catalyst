@@ -1,11 +1,22 @@
 import Link from "next/link";
 import { AllocateWizard } from "@/components/portal/allocate-wizard";
 import { requirePrivilege } from "@/lib/portal/guard";
+import { listAllTenantPlanIds, listPlatformPlans } from "@/lib/portal/platform-plans";
 import { listTenantOptions } from "@/lib/portal/tenant";
 
 export default async function AllocateStockPage() {
-  await requirePrivilege("wholesale.allocate");
-  const resellers = await listTenantOptions();
+  const ctx = await requirePrivilege("wholesale.allocate");
+  const [resellers, plans, links] = await Promise.all([
+    listTenantOptions(),
+    listPlatformPlans(),
+    listAllTenantPlanIds(),
+  ]);
+  const planIdsByTenant = new Map<string, string[]>();
+  for (const link of links) {
+    const list = planIdsByTenant.get(link.tenantId) ?? [];
+    list.push(link.platformPlanId);
+    planIdsByTenant.set(link.tenantId, list);
+  }
 
   return (
     <div>
@@ -13,7 +24,16 @@ export default async function AllocateStockPage() {
         ← Estate
       </Link>
       <div className="mt-4">
-        <AllocateWizard resellers={resellers} />
+        <AllocateWizard
+          resellers={resellers
+            .filter((item) => item.id !== ctx.homeTenantId)
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+              planIds: planIdsByTenant.get(item.id) ?? [],
+            }))}
+          plans={plans.map((item) => ({ id: item.id, name: item.name }))}
+        />
       </div>
     </div>
   );

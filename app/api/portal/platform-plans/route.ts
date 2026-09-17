@@ -1,25 +1,28 @@
 import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
-import { createPlan } from "@/lib/portal/repo";
+import { assignPlatformPlanToTenant, createPlatformPlan } from "@/lib/portal/platform-plans";
 
 export async function POST(request: Request) {
   const ctx = await requirePortalApi();
   if (isResponse(ctx)) return ctx;
-  const denied = denyUnless(ctx, "plan.create");
+  const denied = denyUnless(ctx, "platform.plan");
   if (denied) return denied;
   try {
     const body = (await request.json()) as {
       name?: string;
+      ccRatePlan?: string;
+      commPlan?: string;
+      tenantId?: string;
       platformPlanId?: string;
-      inclusiveMb?: number;
-      pricePerSim?: number;
     };
-    if (!body.name?.trim()) return NextResponse.json({ error: "Plan name is required." }, { status: 400 });
-    const plan = await createPlan(ctx.tenantId, ctx.email, {
-      name: body.name.trim(),
-      platformPlanId: body.platformPlanId ?? "",
-      inclusiveMb: Number(body.inclusiveMb),
-      pricePerSim: Number(body.pricePerSim),
+    if (body.tenantId && body.platformPlanId) {
+      await assignPlatformPlanToTenant(ctx.email, body.tenantId, body.platformPlanId);
+      return NextResponse.json({ success: true });
+    }
+    const plan = await createPlatformPlan(ctx.email, {
+      name: body.name ?? "",
+      ccRatePlan: body.ccRatePlan ?? "",
+      commPlan: body.commPlan ?? "data",
     });
     return NextResponse.json({ success: true, plan });
   } catch (err) {

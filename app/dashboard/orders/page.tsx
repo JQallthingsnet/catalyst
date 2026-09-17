@@ -10,9 +10,15 @@ export default async function OrdersPage() {
     <div>
       <div className="flex items-end justify-between">
         <h1 className="text-3xl font-semibold">Orders</h1>
-        <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
-          Order SIMs
-        </Link>
+        {ctx.role === "super_admin" ? (
+          <Link href="/dashboard/estate/allocate" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+            Sell stock
+          </Link>
+        ) : (
+          <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+            Order SIMs
+          </Link>
+        )}
       </div>
       <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
         <table className="w-full text-left text-sm">

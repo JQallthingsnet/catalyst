@@ -13,15 +13,13 @@ export async function POST(request: Request) {
       tenantId?: string;
       skuId?: string;
       quantity?: number;
-      wholesalePlan?: string;
-      commPlan?: string;
+      platformPlanId?: string;
     };
     const order = await allocateWholesaleStock(ctx, {
       tenantId: body.tenantId ?? "",
       skuId: body.skuId ?? "",
       quantity: Number(body.quantity),
-      wholesalePlan: body.wholesalePlan ?? "",
-      commPlan: body.commPlan ?? "data",
+      platformPlanId: body.platformPlanId ?? "",
     });
     if (order.tenantId) await setActingTenantCookie(order.tenantId);
     return NextResponse.json({ success: true, order });
