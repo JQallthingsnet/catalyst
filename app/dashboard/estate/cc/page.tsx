@@ -28,8 +28,9 @@ export default async function CcSnapshotPage({
         <div>
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 max-w-2xl text-sm text-quiet">
-            All SIMs as Control Center sees them, stored in D1. Search devices, then Get Device Details, cycle-to-date
-            usage, and session info (one call at a time, page size 50). Sync again until IMSI / MSISDN / usage fill in.
+            All SIMs as Control Center sees them, stored in D1. Production polls every minute until every list page and
+            every SIM detail is in the copy (one Control Center call at a time). Set <code>CC_AUTO_POLL=false</code>{" "}
+            locally if you need Control Center quiet while wiring APIs.
           </p>
         </div>
         <div className="w-full max-w-sm">
@@ -55,7 +56,11 @@ export default async function CcSnapshotPage({
           <p className="mt-2 text-sm font-medium">
             {sync.lastPolledAt ? new Date(sync.lastPolledAt).toLocaleString("en-AU") : "Never"}
           </p>
-          <p className="mt-1 text-xs text-quiet">{sync.configured ? "Secrets configured" : "Missing JASPER secrets"}</p>
+          <p className="mt-1 text-xs text-quiet">
+            {sync.autoPoll ? "Auto poll ON · cron every minute" : "Auto poll OFF"}
+            {" · "}
+            {sync.configured ? "Secrets configured" : "Missing JASPER secrets"}
+          </p>
         </article>
       </div>
 

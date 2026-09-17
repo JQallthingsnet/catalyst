@@ -1,4 +1,4 @@
-import { getDB } from "@/lib/env";
+import { getDB, isCcAutoPollEnabled } from "@/lib/env";
 import {
   fetchJasperCtdUsage,
   fetchJasperDeviceDetails,
@@ -10,10 +10,15 @@ import {
 import { type SimState } from "@/lib/portal/catalogue";
 
 const SYNC_ID = "devices";
-/** Same GET /devices call; only pageNumber changes. Cap so one Worker invoke cannot run forever. */
-const PAGES_PER_RUN = 20;
-const DETAILS_PER_RUN = 8;
-const LOCK_MS = 90_000;
+/** Manual Sync while auto poll is off — keep the click short. */
+const MANUAL_PAGES_PER_RUN = 20;
+const MANUAL_DETAILS_PER_RUN = 8;
+const MANUAL_BUDGET_MS = 25_000;
+/** Auto poll (cron / production): keep going until the snapshot is complete, up to a Worker cron window. */
+const AUTO_BUDGET_MS = 12 * 60 * 1000;
+const DETAILS_STALE_MS = 15 * 60 * 1000;
+/** Heartbeat: if an isolate dies, cron can resume after this window. */
+const LOCK_MS = 120_000;
 
 export type CcDevice = {
   iccid: string;
@@ -39,6 +44,7 @@ export type CcSyncState = {
   lastTotal: number | null;
   lastPage: number | null;
   lastPageComplete: boolean;
+  autoPoll: boolean;
   configured: boolean;
 };
 
@@ -119,8 +125,15 @@ export async function getCcSyncState(): Promise<CcSyncState> {
     lastTotal: row?.last_total ?? null,
     lastPage: row?.last_page ?? null,
     lastPageComplete: Boolean(row?.last_page_complete),
+    autoPoll: isCcAutoPollEnabled(),
     configured: jasperConfigured(),
   };
+}
+
+/** Cron entry. Production always polls; local can set CC_AUTO_POLL=false. */
+export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
+  if (!jasperConfigured() || !isCcAutoPollEnabled()) return null;
+  return syncCcDevices({ unlimited: true });
 }
 
 export async function listCcDevices(query = "", limit = 200): Promise<CcDevice[]> {
@@ -213,6 +226,34 @@ async function acquireLock(): Promise<boolean> {
     .bind(until, SYNC_ID, now)
     .run();
   return (row.meta.changes ?? 0) > 0;
+}
+
+async function heartbeatLock(progress?: {
+  nextPage?: number;
+  lastTotal?: number;
+  lastPage?: number;
+  lastPageComplete?: boolean;
+}): Promise<void> {
+  const until = new Date(Date.now() + LOCK_MS).toISOString();
+  await getDB()
+    .prepare(
+      `UPDATE cc_sync_state
+       SET locked_until = ?,
+           next_page = COALESCE(?, next_page),
+           last_total = COALESCE(?, last_total),
+           last_page = COALESCE(?, last_page),
+           last_page_complete = COALESCE(?, last_page_complete)
+       WHERE id = ?`,
+    )
+    .bind(
+      until,
+      progress?.nextPage ?? null,
+      progress?.lastTotal ?? null,
+      progress?.lastPage ?? null,
+      progress?.lastPageComplete == null ? null : progress.lastPageComplete ? 1 : 0,
+      SYNC_ID,
+    )
+    .run();
 }
 
 async function releaseLock(patch: {
@@ -316,19 +357,29 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
   return upserted;
 }
 
-async function enrichStaleDevices(): Promise<number> {
-  const rows = await getDB()
-    .prepare(
-      `SELECT iccid FROM cc_devices
-       ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
-       LIMIT ?`,
-    )
-    .bind(DETAILS_PER_RUN)
-    .all<{ iccid: string }>();
+async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
+  const staleBefore = new Date(Date.now() - DETAILS_STALE_MS).toISOString();
+  const batch = input.unlimited ? 25 : MANUAL_DETAILS_PER_RUN;
   let enriched = 0;
-  for (const row of rows.results ?? []) {
-    await enrichDevice(row.iccid);
-    enriched += 1;
+  while (Date.now() < input.deadline) {
+    const rows = await getDB()
+      .prepare(
+        `SELECT iccid FROM cc_devices
+         WHERE details_polled_at IS NULL OR details_polled_at < ?
+         ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
+         LIMIT ?`,
+      )
+      .bind(staleBefore, batch)
+      .all<{ iccid: string }>();
+    const devices = rows.results ?? [];
+    if (devices.length === 0) break;
+    for (const row of devices) {
+      if (Date.now() >= input.deadline) break;
+      await enrichDevice(row.iccid);
+      enriched += 1;
+      if (enriched % 5 === 0) await heartbeatLock();
+    }
+    if (!input.unlimited) break;
   }
   return enriched;
 }
@@ -384,10 +435,12 @@ async function enrichDevice(iccid: string): Promise<void> {
   }
 }
 
-export async function syncCcDevices(): Promise<CcSyncResult> {
+export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<CcSyncResult> {
   if (!jasperConfigured()) {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
   }
+  const unlimited = Boolean(input?.unlimited);
+  const deadline = Date.now() + (unlimited ? AUTO_BUDGET_MS : MANUAL_BUDGET_MS);
   const locked = await acquireLock();
   if (!locked) throw new Error("A Control Center sync is already running.");
 
@@ -403,7 +456,8 @@ export async function syncCcDevices(): Promise<CcSyncResult> {
 
   try {
     let fetchedPage = page;
-    while (pages < PAGES_PER_RUN) {
+    const maxPages = unlimited ? Number.POSITIVE_INFINITY : MANUAL_PAGES_PER_RUN;
+    while (pages < maxPages && Date.now() < deadline) {
       // Identical search: same account, modifiedSince, pageSize=50; only pageNumber increases.
       const result = await fetchJasperDevicesPage({ modifiedSince, pageNumber: page });
       upserted += await persistDevices(result.devices, isoNow());
@@ -413,12 +467,14 @@ export async function syncCcDevices(): Promise<CcSyncResult> {
       fetchedPage = result.pageNumber;
       if (result.lastPage) {
         page = 1;
+        await heartbeatLock({ nextPage: 1, lastTotal: totalCount, lastPage: fetchedPage, lastPageComplete: true });
         break;
       }
       page += 1;
+      await heartbeatLock({ nextPage: page, lastTotal: totalCount, lastPage: fetchedPage, lastPageComplete: false });
     }
 
-    details = await enrichStaleDevices();
+    details = await enrichStaleDevices({ unlimited, deadline });
 
     await releaseLock({
       modifiedSince: lastPage ? pollStarted : modifiedSince,

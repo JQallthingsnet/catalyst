@@ -18,3 +18,5 @@ AUTH_DEV_RETURN_CODE=true
 # JASPER_API_KEY=your-cc-api-key
 # Optional device-search account id (omit to use the username's account):
 # JASPER_ACCOUNT_ID=
+# Leave unset in production (auto poll is on). Local quiet while wiring APIs:
+# CC_AUTO_POLL=false
