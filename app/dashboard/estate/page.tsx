@@ -32,38 +32,39 @@ export default async function EstatePage({
 
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 max-w-2xl">
           <p className="text-sm text-quiet">ACMA key-information view</p>
           <h1 className="mt-1 text-3xl font-semibold">Estate</h1>
-          <p className="mt-2 max-w-2xl text-sm text-quiet">
+          <p className="mt-2 text-sm text-quiet">
             Who each reseller sold to, on which retail plan, and which SIMs are still in their warehouse.
             Sell stock from ATN first; the reseller assigns those SIMs to a customer.
           </p>
         </div>
-        <div className="flex w-full max-w-md flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/dashboard/estate/cc"
-            className="rounded-card border border-line px-4 py-2.5 text-center text-sm hover:border-accent"
+            className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent"
           >
             CC snapshot
           </Link>
           <Link
             href="/dashboard/estate/allocate"
-            className="rounded-card bg-accent px-4 py-2.5 text-center text-sm font-medium text-canvas"
+            className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-canvas"
           >
-            Sell stock to reseller
+            Sell stock
           </Link>
-          <form action="/dashboard/estate">
-            <input
-              name="q"
-              defaultValue={query}
-              placeholder="Search organisation, customer, plan, ICCID, or member"
-              className="w-full rounded-card border border-line bg-panel px-4 py-2.5 text-sm text-ink outline-none placeholder:text-quiet focus:border-accent"
-            />
-          </form>
         </div>
       </div>
+
+      <form action="/dashboard/estate" className="mt-5">
+        <input
+          name="q"
+          defaultValue={query}
+          placeholder="Search organisation, customer, plan, ICCID, or member"
+          className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm text-ink outline-none placeholder:text-quiet focus:border-accent"
+        />
+      </form>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi label="Organisations" value={String(estate.totals.orgs)} />
