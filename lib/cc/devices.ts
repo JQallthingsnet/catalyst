@@ -105,6 +105,64 @@ export function mapCcStatus(status: string): SimState | null {
   return null;
 }
 
+const CC_FREE_STATUSES = "('INVENTORY','TEST_READY','ACTIVATION_READY','READY')";
+const CC_STATUS_KEY = `UPPER(REPLACE(REPLACE(TRIM(d.status), '-', '_'), ' ', '_'))`;
+
+export type CcFreeDevice = {
+  iccid: string;
+  status: string;
+  imsi: string | null;
+  msisdn: string | null;
+  ctdUsageMb: number | null;
+};
+
+function ccFreeStockWhere(): string {
+  return `${CC_STATUS_KEY} IN ${CC_FREE_STATUSES}
+         AND UPPER(TRIM(IFNULL(d.rate_plan, ''))) = UPPER(TRIM(?))
+         AND UPPER(TRIM(IFNULL(d.communication_plan, ''))) = UPPER(TRIM(?))
+         AND NOT EXISTS (SELECT 1 FROM sims s WHERE s.iccid = d.iccid)`;
+}
+
+export async function countAvailableCcStock(ccRatePlan: string, commPlan: string): Promise<number> {
+  const row = await getDB()
+    .prepare(`SELECT COUNT(*) AS c FROM cc_devices d WHERE ${ccFreeStockWhere()}`)
+    .bind(ccRatePlan, commPlan)
+    .first<{ c: number }>();
+  return row?.c ?? 0;
+}
+
+export async function pickAvailableCcDevices(
+  ccRatePlan: string,
+  commPlan: string,
+  quantity: number,
+): Promise<CcFreeDevice[]> {
+  const rows = await getDB()
+    .prepare(
+      `SELECT d.iccid, d.status, d.imsi, d.msisdn, d.ctd_usage_mb
+       FROM cc_devices d
+       WHERE ${ccFreeStockWhere()}
+       ORDER BY CASE WHEN d.date_added IS NULL OR TRIM(d.date_added) = '' THEN 1 ELSE 0 END,
+                d.date_added ASC,
+                d.iccid ASC
+       LIMIT ?`,
+    )
+    .bind(ccRatePlan, commPlan, quantity)
+    .all<{
+      iccid: string;
+      status: string;
+      imsi: string | null;
+      msisdn: string | null;
+      ctd_usage_mb: number | null;
+    }>();
+  return (rows.results ?? []).map((row) => ({
+    iccid: row.iccid,
+    status: row.status,
+    imsi: row.imsi,
+    msisdn: row.msisdn,
+    ctdUsageMb: row.ctd_usage_mb,
+  }));
+}
+
 export async function getCcSyncState(): Promise<CcSyncState> {
   const row = await getDB()
     .prepare(

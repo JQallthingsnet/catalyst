@@ -74,6 +74,7 @@ const ALTERS = [
   `ALTER TABLE cc_devices ADD COLUMN date_activated TEXT`,
   `ALTER TABLE cc_devices ADD COLUMN details_polled_at TEXT`,
   `ALTER TABLE cc_sync_state ADD COLUMN auto_poll INTEGER NOT NULL DEFAULT 1`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS sims_iccid ON sims (iccid)`,
 ];
 
 export async function ensurePortalSchema(): Promise<void> {

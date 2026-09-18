@@ -26,7 +26,7 @@ Every SIM can carry three plan records. They are different commercial relationsh
 
 1. Super admin **creates catalogue SKUs** (form factor products) under Catalogue, then **creates** an ATN plan and maps it to a Control Center rate plan (typed as it appears in CC).
 2. Super admin **assigns the contract** (same Plan 1, same T&Cs) to a reseller. No SIMs move. The reseller is allowed to buy that plan.
-3. Super admin **sells stock** into that reseller’s warehouse. Each SIM is tagged with that ATN plan when it lands. Sell stock is refused until the contract exists.
+3. Super admin **sells stock** into that reseller’s warehouse. Catalyst takes free ICCIDs from the Control Center copy (same CC rate plan and communication plan, Inventory/Ready, not already in a warehouse), oldest first. Sell stock is refused until the contract exists and enough free SIMs are in the copy.
 4. **Bought** means SIMs on that plan exist in the warehouse. A signed contract with an empty warehouse is contracted, not buying.
 5. Reseller admin **copies** a contracted ATN plan into a retail plan (name, data allowance, price) for operators to sell.
 6. Operator **assigns** a warehouse SIM to a customer and a retail plan. At that moment the SIM has no retail plan yet; it already has the ATN plan from step 3.

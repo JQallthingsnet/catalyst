@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AllocateWizard } from "@/components/portal/allocate-wizard";
+import { countAvailableCcStock } from "@/lib/cc/devices";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { listAllTenantPlanIds, listPlatformPlans } from "@/lib/portal/platform-plans";
 import { listSimSkus } from "@/lib/portal/skus";
@@ -19,6 +20,10 @@ export default async function AllocateStockPage() {
     list.push(link.platformPlanId);
     planIdsByTenant.set(link.tenantId, list);
   }
+  const availableEntries = await Promise.all(
+    plans.map(async (plan) => [plan.id, await countAvailableCcStock(plan.ccRatePlan, plan.commPlan)] as const),
+  );
+  const availableByPlanId = Object.fromEntries(availableEntries);
 
   return (
     <div>
@@ -34,7 +39,11 @@ export default async function AllocateStockPage() {
               name: item.name,
               planIds: planIdsByTenant.get(item.id) ?? [],
             }))}
-          plans={plans.map((item) => ({ id: item.id, name: item.name }))}
+          plans={plans.map((item) => ({
+            id: item.id,
+            name: item.name,
+            available: availableByPlanId[item.id] ?? 0,
+          }))}
           skus={skus}
         />
       </div>

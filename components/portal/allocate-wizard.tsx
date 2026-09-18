@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 import type { SimSku } from "@/lib/portal/skus";
 
-type Plan = { id: string; name: string };
+type Plan = { id: string; name: string; available: number };
 type Reseller = { id: string; name: string; planIds: string[] };
 
 export function AllocateWizard({
@@ -19,7 +19,7 @@ export function AllocateWizard({
   const [step, setStep] = useState(0);
   const [tenantId, setTenantId] = useState(resellers[0]?.id ?? "");
   const [skuId, setSkuId] = useState<string>(skus[0]?.id ?? "");
-  const [quantity, setQuantity] = useState(500);
+  const [quantity, setQuantity] = useState(1);
   const [platformPlanId, setPlatformPlanId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,7 +65,7 @@ export function AllocateWizard({
           <p>{sku?.name ?? "Choose a SKU"}</p>
           <p>{quantity} SIMs</p>
           <p>{plan?.name ?? "No contracted plan"}</p>
-          <p className="text-ok">SIMs land in warehouse on this ATN plan.</p>
+          <p className="text-ok">Free ICCIDs from the Control Center copy land in this reseller warehouse.</p>
         </>
       }
     >
@@ -128,12 +128,16 @@ export function AllocateWizard({
 
       {step === 2 ? (
         <div className="space-y-4">
+          <p className="text-sm text-quiet">
+            Quantity takes the oldest unused Control Center SIMs on this ATN plan (Inventory / Ready). Already sold
+            ICCIDs are skipped.
+          </p>
           <label className="block text-sm">
             Quantity
             <input
               type="number"
               min={1}
-              max={5000}
+              max={Math.max(1, plan?.available ?? 1)}
               value={quantity}
               onChange={(event) => setQuantity(Number(event.target.value))}
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
@@ -143,16 +147,27 @@ export function AllocateWizard({
             ATN plan (this reseller)
             <select
               value={plan?.id ?? ""}
-              onChange={(event) => setPlatformPlanId(event.target.value)}
+              onChange={(event) => {
+                const nextId = event.target.value;
+                setPlatformPlanId(nextId);
+                const nextPlan = contracted.find((item) => item.id === nextId);
+                if (nextPlan) setQuantity((current) => Math.min(Math.max(1, current), Math.max(1, nextPlan.available)));
+              }}
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             >
               {contracted.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name}
+                  {item.name} · {item.available.toLocaleString("en-AU")} free in CC
                 </option>
               ))}
             </select>
           </label>
+          {plan ? (
+            <p className={plan.available > 0 ? "text-sm text-quiet" : "text-sm text-danger"}>
+              {plan.available.toLocaleString("en-AU")} free SIM{plan.available === 1 ? "" : "s"} on this plan in the CC
+              copy.
+            </p>
+          ) : null}
           {contracted.length === 0 ? (
             <p className="text-sm text-danger">Assign a plan to this reseller on Plans before selling stock.</p>
           ) : null}
@@ -163,12 +178,20 @@ export function AllocateWizard({
       <WizardActions
         onBack={step > 0 ? () => setStep(step - 1) : undefined}
         onNext={() => {
-          if (step < 2) setStep(step + 1);
-          else void submit();
+          if (step < 2) {
+            if (step === 1 && plan) {
+              setQuantity((current) => Math.min(Math.max(1, current), Math.max(1, plan.available)));
+            }
+            setStep(step + 1);
+          } else void submit();
         }}
         nextLabel={step < 2 ? "Continue" : "Sell stock"}
         busy={busy}
-        disabled={(step === 0 && !tenantId) || (step === 1 && !skuId) || (step === 2 && !plan)}
+        disabled={
+          (step === 0 && !tenantId) ||
+          (step === 1 && !skuId) ||
+          (step === 2 && (!plan || plan.available < 1 || quantity < 1 || quantity > plan.available))
+        }
       />
     </WizardFrame>
   );

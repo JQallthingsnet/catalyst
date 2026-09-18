@@ -1,10 +1,11 @@
 import { getDB } from "@/lib/env";
 import { runCcMutation } from "@/lib/cc/adapter";
+import { pickAvailableCcDevices } from "@/lib/cc/devices";
 import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
 import { getSimSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import { loadTenant } from "@/lib/portal/tenant";
-import { newId, padIccid } from "@/lib/portal/ids";
+import { newId } from "@/lib/portal/ids";
 import { type PortalRole } from "@/lib/portal/role-model";
 import { isListedSuperAdmin } from "@/lib/portal/roles";
 
@@ -69,14 +70,6 @@ export type Order = {
 };
 export type AuditEvent = { id: string; action: string; detail: string; createdAt: string };
 export type UsagePoint = { day: string; mb: number };
-
-async function nextIccidSeed(tenantId: string): Promise<number> {
-  const row = await getDB()
-    .prepare("SELECT COUNT(*) as c FROM sims WHERE tenant_id = ?")
-    .bind(tenantId)
-    .first<{ c: number }>();
-  return (row?.c ?? 0) + 1;
-}
 
 const PLATFORM_HOME_NAME = "ATN Platform";
 
@@ -506,6 +499,18 @@ export async function allocateWholesaleStock(
   if (!contracted) throw new Error("Assign this plan to the reseller (contract) before selling stock.");
   if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
 
+  const devices = await pickAvailableCcDevices(platformPlan.cc_rate_plan, platformPlan.comm_plan, input.quantity);
+  if (devices.length < input.quantity) {
+    if (devices.length === 0) {
+      throw new Error(
+        `No free SIMs in the Control Center copy for ${platformPlan.name} (CC ${platformPlan.cc_rate_plan} · ${platformPlan.comm_plan}). Poll CC first, or they are already in a warehouse.`,
+      );
+    }
+    throw new Error(
+      `Only ${devices.length.toLocaleString("en-AU")} free SIM${devices.length === 1 ? "" : "s"} on ${platformPlan.name} in Control Center. Reduce quantity to ${devices.length}.`,
+    );
+  }
+
   const id = newId("ord");
   const now = new Date().toISOString();
   const logistics = "ATN wholesale";
@@ -529,6 +534,7 @@ export async function allocateWholesaleStock(
       platformPlanId: platformPlan.id,
       wholesalePlan: platformPlan.cc_rate_plan,
       commPlan: platformPlan.comm_plan,
+      iccids: devices.map((device) => device.iccid),
     },
     correlationId: `wholesale-${id}`,
   });
@@ -537,21 +543,34 @@ export async function allocateWholesaleStock(
   }
 
   const dbInsert = getDB();
-  let n = await nextIccidSeed(tenant.id);
-  const inserts = [];
-  for (let i = 0; i < input.quantity; i += 1) {
-    inserts.push(
-      dbInsert
-        .prepare(
-          `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, platform_plan_id, created_at)
-           VALUES (?, ?, ?, ?, 'Ready', NULL, NULL, NULL, ?, ?, ?, ?)`,
-        )
-        .bind(newId("sim"), tenant.id, padIccid(n), sku.formFactor, id, platformPlan.cc_rate_plan, platformPlan.id, now),
-    );
-    n += 1;
-  }
-  for (let i = 0; i < inserts.length; i += 40) {
-    await dbInsert.batch(inserts.slice(i, i + 40));
+  const inserts = devices.map((device) =>
+    dbInsert
+      .prepare(
+        `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, platform_plan_id, created_at, imsi, msisdn, current_volume_mb, cc_status, cc_polled_at)
+         VALUES (?, ?, ?, ?, 'Ready', NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        newId("sim"),
+        tenant.id,
+        device.iccid,
+        sku.formFactor,
+        id,
+        platformPlan.cc_rate_plan,
+        platformPlan.id,
+        now,
+        device.imsi,
+        device.msisdn,
+        device.ctdUsageMb,
+        device.status,
+        now,
+      ),
+  );
+  try {
+    for (let i = 0; i < inserts.length; i += 40) {
+      await dbInsert.batch(inserts.slice(i, i + 40));
+    }
+  } catch {
+    throw new Error("A SIM was taken by another sale. Try again.");
   }
 
   await writeAudit(
