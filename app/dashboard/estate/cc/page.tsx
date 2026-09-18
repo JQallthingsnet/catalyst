@@ -2,24 +2,100 @@ import Link from "next/link";
 import { CcInventoryTable } from "@/components/portal/cc-inventory-table";
 import { CcAutoPollToggle } from "@/components/portal/cc-auto-poll-toggle";
 import { SyncCcButton } from "@/components/portal/sync-cc-button";
-import { ccInventorySummary, countCcDevices, getCcSyncState, listCcDevices } from "@/lib/cc/devices";
+import {
+  ccFilterActive,
+  ccInventorySummary,
+  countCcDevices,
+  getCcSyncState,
+  listCcDevices,
+  listCcFilterOptions,
+  normalizeCcFilter,
+  type CcDeviceFilter,
+} from "@/lib/cc/devices";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { formatAuDateTime } from "@/lib/portal/time";
+
+const PAGE_SIZE = 50;
+
+function snapshotQuery(filter: CcDeviceFilter, page = 1): string {
+  const sp = new URLSearchParams();
+  if (filter.query) sp.set("q", filter.query);
+  if (filter.status) sp.set("status", filter.status);
+  if (filter.ratePlan) sp.set("ratePlan", filter.ratePlan);
+  if (filter.communicationPlan) sp.set("commPlan", filter.communicationPlan);
+  if (filter.inSession) sp.set("inSession", filter.inSession);
+  if (page > 1) sp.set("page", String(page));
+  const value = sp.toString();
+  return value ? `/dashboard/estate/cc?${value}` : "/dashboard/estate/cc";
+}
+
+function FilterSelect({
+  name,
+  label,
+  value,
+  options,
+  allLabel,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  options: Array<string | { value: string; label: string }>;
+  allLabel: string;
+}) {
+  return (
+    <label className="block text-xs font-medium text-quiet">
+      {label}
+      <select
+        name={name}
+        defaultValue={value}
+        className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
+      >
+        <option value="">{allLabel}</option>
+        {options.map((option) => {
+          const optionValue = typeof option === "string" ? option : option.value;
+          const optionLabel = typeof option === "string" ? option : option.label;
+          return (
+            <option key={optionValue} value={optionValue}>
+              {optionLabel}
+            </option>
+          );
+        })}
+      </select>
+    </label>
+  );
+}
 
 export default async function CcSnapshotPage({
   searchParams,
 }: {
-  searchParams?: { q?: string } | Promise<{ q?: string }>;
+  searchParams?:
+    | { q?: string; page?: string; status?: string; ratePlan?: string; commPlan?: string; inSession?: string }
+    | Promise<{ q?: string; page?: string; status?: string; ratePlan?: string; commPlan?: string; inSession?: string }>;
 }) {
   await requirePrivilege("platform.estate");
   const params = await Promise.resolve(searchParams ?? {});
-  const query = params.q ?? "";
-  const [sync, devices, total, summary] = await Promise.all([
+  const filter = normalizeCcFilter({
+    query: params.q,
+    status: params.status,
+    ratePlan: params.ratePlan,
+    communicationPlan: params.commPlan,
+    inSession: params.inSession === "yes" || params.inSession === "no" ? params.inSession : "",
+  });
+  const filtered = ccFilterActive(filter);
+  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const [sync, devices, listed, summary, options] = await Promise.all([
     getCcSyncState(),
-    listCcDevices(query),
-    countCcDevices(),
+    listCcDevices(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+    filtered ? countCcDevices(filter) : Promise.resolve(null),
     ccInventorySummary(),
+    listCcFilterOptions(),
   ]);
+  const total = summary.total;
+  const listedCount = listed ?? total;
+  const pageCount = Math.max(1, Math.ceil(listedCount / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const from = listedCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const to = Math.min(currentPage * PAGE_SIZE, listedCount);
 
   return (
     <div>
@@ -30,8 +106,8 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            All SIMs as Control Center sees them, stored in D1. Columns follow the CC device list (rate plan and
-            communication plan are both shown). Auto poll fills pages in the background; Sync runs one batch now.
+            Copy of Control Center in D1. Filter by the same fields CC uses (status, plans, session). Search is ICCID,
+            IMSI, or MSISDN.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -70,17 +146,94 @@ export default async function CcSnapshotPage({
         <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{sync.lastError}</p>
       ) : null}
 
-      <form action="/dashboard/estate/cc" className="mt-6">
-        <input
-          name="q"
-          defaultValue={query}
-          placeholder="Search ICCID, IMSI, or MSISDN"
-          className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm"
-        />
+      <form action="/dashboard/estate/cc" className="mt-6 rounded-card border border-line bg-panel p-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <label className="block text-xs font-medium text-quiet sm:col-span-2 xl:col-span-1">
+            Search
+            <input
+              name="q"
+              defaultValue={filter.query ?? ""}
+              placeholder="ICCID, IMSI, or MSISDN"
+              className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
+            />
+          </label>
+          <FilterSelect
+            name="status"
+            label="SIM status"
+            value={filter.status ?? ""}
+            options={options.statuses}
+            allLabel="All statuses"
+          />
+          <FilterSelect
+            name="ratePlan"
+            label="Rate plan"
+            value={filter.ratePlan ?? ""}
+            options={options.ratePlans}
+            allLabel="All rate plans"
+          />
+          <FilterSelect
+            name="commPlan"
+            label="Communication plan"
+            value={filter.communicationPlan ?? ""}
+            options={options.communicationPlans}
+            allLabel="All comm plans"
+          />
+          <FilterSelect
+            name="inSession"
+            label="In session"
+            value={filter.inSession ?? ""}
+            options={[
+              { value: "yes", label: "Yes" },
+              { value: "no", label: "No" },
+            ]}
+            allLabel="All"
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-canvas"
+          >
+            Apply filters
+          </button>
+          {filtered ? (
+            <Link
+              href="/dashboard/estate/cc"
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent"
+            >
+              Clear
+            </Link>
+          ) : null}
+        </div>
       </form>
 
       <div className="mt-4">
-        <CcInventoryTable devices={devices} />
+        <CcInventoryTable devices={devices} empty={filtered ? "No devices match these filters." : undefined} />
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-quiet">
+        <p>
+          {listedCount === 0
+            ? "No rows"
+            : `Showing ${from.toLocaleString("en-AU")}–${to.toLocaleString("en-AU")} of ${listedCount.toLocaleString("en-AU")}${filtered ? " matching" : ""}`}
+        </p>
+        <div className="flex gap-2">
+          {currentPage > 1 ? (
+            <Link
+              href={snapshotQuery(filter, currentPage - 1)}
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 hover:border-accent"
+            >
+              Previous
+            </Link>
+          ) : null}
+          {currentPage < pageCount ? (
+            <Link
+              href={snapshotQuery(filter, currentPage + 1)}
+              className="inline-flex h-10 items-center rounded-full border border-line px-4 hover:border-accent"
+            >
+              Next
+            </Link>
+          ) : null}
+        </div>
       </div>
     </div>
   );

@@ -6,7 +6,13 @@ function Cell({ value, mono = false }: { value: string; mono?: boolean }) {
   return <span className={mono ? "font-mono" : undefined}>{value || "—"}</span>;
 }
 
-export function CcInventoryTable({ devices }: { devices: CcDevice[] }) {
+export function CcInventoryTable({
+  devices,
+  empty = "No devices in the Control Center copy yet.",
+}: {
+  devices: CcDevice[];
+  empty?: string;
+}) {
   return (
     <div className="overflow-x-auto rounded-card border border-line bg-panel">
       <table className="w-full min-w-full text-left text-sm">
@@ -52,7 +58,7 @@ export function CcInventoryTable({ devices }: { devices: CcDevice[] }) {
           ))}
         </tbody>
       </table>
-      {devices.length === 0 ? <p className="px-4 py-8 text-sm text-quiet">No devices in the Control Center copy yet.</p> : null}
+      {devices.length === 0 ? <p className="px-4 py-8 text-sm text-quiet">{empty}</p> : null}
     </div>
   );
 }

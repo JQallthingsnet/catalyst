@@ -158,33 +158,26 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   }
 }
 
-export async function listCcDevices(query = "", limit = 200): Promise<CcDevice[]> {
-  const q = query.trim();
-  const rows = await getDB()
-    .prepare(
-      `SELECT iccid, status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, in_session,
-              date_added, date_activated, polled_at, details_polled_at
-       FROM cc_devices
-       WHERE ? = '' OR iccid LIKE ? OR IFNULL(imsi,'') LIKE ? OR IFNULL(msisdn,'') LIKE ?
-       ORDER BY polled_at DESC, iccid ASC
-       LIMIT ?`,
-    )
-    .bind(q, `%${q.replace(/\s/g, "")}%`, `%${q}%`, `%${q}%`, limit)
-    .all<{
-      iccid: string;
-      status: string;
-      rate_plan: string | null;
-      communication_plan: string | null;
-      imsi: string | null;
-      msisdn: string | null;
-      ctd_usage_mb: number | null;
-      in_session: number | null;
-      date_added: string | null;
-      date_activated: string | null;
-      polled_at: string;
-      details_polled_at: string | null;
-    }>();
-  return (rows.results ?? []).map((row) => ({
+const CC_DEVICE_COLUMNS = `iccid, status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, in_session,
+              date_added, date_activated, polled_at, details_polled_at`;
+
+type CcDeviceRow = {
+  iccid: string;
+  status: string;
+  rate_plan: string | null;
+  communication_plan: string | null;
+  imsi: string | null;
+  msisdn: string | null;
+  ctd_usage_mb: number | null;
+  in_session: number | null;
+  date_added: string | null;
+  date_activated: string | null;
+  polled_at: string;
+  details_polled_at: string | null;
+};
+
+function mapCcDevice(row: CcDeviceRow): CcDevice {
+  return {
     iccid: row.iccid,
     status: row.status,
     ratePlan: row.rate_plan,
@@ -197,12 +190,134 @@ export async function listCcDevices(query = "", limit = 200): Promise<CcDevice[]
     dateActivated: row.date_activated,
     polledAt: row.polled_at,
     detailsPolledAt: row.details_polled_at,
-  }));
+  };
 }
 
-export async function countCcDevices(): Promise<number> {
-  const row = await getDB().prepare("SELECT COUNT(*) as c FROM cc_devices").first<{ c: number }>();
+export type CcDeviceFilter = {
+  query?: string;
+  status?: string;
+  ratePlan?: string;
+  communicationPlan?: string;
+  inSession?: "yes" | "no" | "";
+};
+
+export type CcFilterOptions = {
+  statuses: string[];
+  ratePlans: string[];
+  communicationPlans: string[];
+};
+
+function clipFilter(value: string | undefined, max = 80): string {
+  return (value ?? "").trim().slice(0, max);
+}
+
+export function normalizeCcFilter(input: string | CcDeviceFilter = {}): CcDeviceFilter {
+  if (typeof input === "string") return { query: clipFilter(input) };
+  const inSession = input.inSession === "yes" || input.inSession === "no" ? input.inSession : "";
+  return {
+    query: clipFilter(input.query),
+    status: clipFilter(input.status),
+    ratePlan: clipFilter(input.ratePlan),
+    communicationPlan: clipFilter(input.communicationPlan),
+    inSession,
+  };
+}
+
+export function ccFilterActive(filter: CcDeviceFilter): boolean {
+  const normalized = normalizeCcFilter(filter);
+  return Boolean(
+    normalized.query || normalized.status || normalized.ratePlan || normalized.communicationPlan || normalized.inSession,
+  );
+}
+
+function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string | number)[] } {
+  const normalized = normalizeCcFilter(filter);
+  const clauses: string[] = [];
+  const binds: (string | number)[] = [];
+  if (normalized.query) {
+    clauses.push("(iccid LIKE ? OR IFNULL(imsi,'') LIKE ? OR IFNULL(msisdn,'') LIKE ?)");
+    const q = normalized.query;
+    binds.push(`%${q.replace(/\s/g, "")}%`, `%${q}%`, `%${q}%`);
+  }
+  if (normalized.status) {
+    clauses.push("UPPER(status) = UPPER(?)");
+    binds.push(normalized.status);
+  }
+  if (normalized.ratePlan) {
+    clauses.push("rate_plan = ?");
+    binds.push(normalized.ratePlan);
+  }
+  if (normalized.communicationPlan) {
+    clauses.push("communication_plan = ?");
+    binds.push(normalized.communicationPlan);
+  }
+  if (normalized.inSession === "yes") clauses.push("in_session = 1");
+  if (normalized.inSession === "no") clauses.push("in_session = 0");
+  return {
+    sql: clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "",
+    binds,
+  };
+}
+
+export async function listCcDevices(
+  queryOrFilter: string | CcDeviceFilter = "",
+  limit = 50,
+  offset = 0,
+): Promise<CcDevice[]> {
+  const { sql, binds } = ccWhere(queryOrFilter);
+  const safeLimit = Math.max(1, Math.min(limit, 100));
+  const safeOffset = Math.max(0, offset);
+  const rows = await getDB()
+    .prepare(
+      `SELECT ${CC_DEVICE_COLUMNS}
+       FROM cc_devices${sql}
+       ORDER BY polled_at DESC, iccid ASC
+       LIMIT ? OFFSET ?`,
+    )
+    .bind(...binds, safeLimit, safeOffset)
+    .all<CcDeviceRow>();
+  return (rows.results ?? []).map(mapCcDevice);
+}
+
+export async function countCcDevices(queryOrFilter: string | CcDeviceFilter = ""): Promise<number> {
+  const { sql, binds } = ccWhere(queryOrFilter);
+  const row = await getDB()
+    .prepare(`SELECT COUNT(*) as c FROM cc_devices${sql}`)
+    .bind(...binds)
+    .first<{ c: number }>();
   return row?.c ?? 0;
+}
+
+export async function listCcFilterOptions(): Promise<CcFilterOptions> {
+  const db = getDB();
+  const [statuses, ratePlans, communicationPlans] = await Promise.all([
+    db
+      .prepare(
+        `SELECT DISTINCT status AS value FROM cc_devices
+         WHERE status IS NOT NULL AND TRIM(status) != ''
+         ORDER BY status COLLATE NOCASE`,
+      )
+      .all<{ value: string }>(),
+    db
+      .prepare(
+        `SELECT DISTINCT rate_plan AS value FROM cc_devices
+         WHERE rate_plan IS NOT NULL AND TRIM(rate_plan) != ''
+         ORDER BY rate_plan COLLATE NOCASE`,
+      )
+      .all<{ value: string }>(),
+    db
+      .prepare(
+        `SELECT DISTINCT communication_plan AS value FROM cc_devices
+         WHERE communication_plan IS NOT NULL AND TRIM(communication_plan) != ''
+         ORDER BY communication_plan COLLATE NOCASE`,
+      )
+      .all<{ value: string }>(),
+  ]);
+  return {
+    statuses: (statuses.results ?? []).map((row) => row.value),
+    ratePlans: (ratePlans.results ?? []).map((row) => row.value),
+    communicationPlans: (communicationPlans.results ?? []).map((row) => row.value),
+  };
 }
 
 export async function ccInventorySummary(): Promise<{
