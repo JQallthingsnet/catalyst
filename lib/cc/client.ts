@@ -16,6 +16,13 @@ export class CcBudgetError extends Error {
   }
 }
 
+export class CcBusyError extends Error {
+  constructor() {
+    super("A Control Center request is already in flight.");
+    this.name = "CcBusyError";
+  }
+}
+
 export function beginJasperBudget(maxCalls: number): void {
   jasperCalls = 0;
   jasperCallLimit = maxCalls;
@@ -95,7 +102,7 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
   if (!jasperConfigured()) {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
   }
-  if (inFlight) throw new Error("A Control Center request is already in flight.");
+  if (inFlight) throw new CcBusyError();
   if (!jasperHasBudget()) throw new CcBudgetError();
   inFlight = true;
   jasperCalls += 1;

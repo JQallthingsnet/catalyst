@@ -2,6 +2,7 @@ import { getDB, isCcAutoPollEnabled } from "@/lib/env";
 import {
   beginJasperBudget,
   CcBudgetError,
+  CcBusyError,
   fetchJasperCtdUsage,
   fetchJasperDeviceDetails,
   fetchJasperDevicesPage,
@@ -22,8 +23,8 @@ const AUTO_BUDGET_MS = 12 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 const JASPER_CALLS_AUTO = 80;
 const DETAILS_STALE_MS = 15 * 60 * 1000;
-/** Heartbeat: if an isolate dies, cron can resume after this window. */
-const LOCK_MS = 120_000;
+/** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */
+const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 
 export type CcDevice = {
   iccid: string;
@@ -127,7 +128,7 @@ export async function getCcSyncState(): Promise<CcSyncState> {
     nextPage: row?.next_page ?? 1,
     lockedUntil: row?.locked_until ?? null,
     lastPolledAt: row?.last_polled_at ?? null,
-    lastError: row?.last_error ?? null,
+    lastError: isOverlapError(row?.last_error) ? null : (row?.last_error ?? null),
     lastTotal: row?.last_total ?? null,
     lastPage: row?.last_page ?? null,
     lastPageComplete: Boolean(row?.last_page_complete),
@@ -149,7 +150,12 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   if (!jasperConfigured()) return null;
   const state = await getCcSyncState();
   if (!state.autoPoll) return null;
-  return syncCcDevices({ unlimited: true });
+  try {
+    return await syncCcDevices({ unlimited: true });
+  } catch (err) {
+    if (err instanceof CcBusyError) return null;
+    throw err;
+  }
 }
 
 export async function listCcDevices(query = "", limit = 200): Promise<CcDevice[]> {
@@ -479,7 +485,7 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
   const deadline = Date.now() + (unlimited ? AUTO_BUDGET_MS : MANUAL_BUDGET_MS);
   beginJasperBudget(unlimited ? JASPER_CALLS_AUTO : JASPER_CALLS_MANUAL);
   const locked = await acquireLock();
-  if (!locked) throw new Error("A Control Center sync is already running.");
+  if (!locked) throw new CcBusyError();
 
   const state = await getCcSyncState();
   const pollStarted = isoNow().replace(/\.\d{3}Z$/, "+00:00");
@@ -525,6 +531,10 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
 
     return { pages, upserted, details, lastPage, totalCount, nextPage: page };
   } catch (err) {
+    if (err instanceof CcBusyError) {
+      await dropLock();
+      throw err;
+    }
     if (isSubrequestLimit(err) || err instanceof CcBudgetError) {
       await releaseLock({
         modifiedSince: lastPage ? pollStarted : modifiedSince,
@@ -541,6 +551,26 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
     await releaseLock({ lastError: message, lastPolledAt: isoNow() });
     throw err;
   }
+}
+
+function isOverlapError(message: string | null | undefined): boolean {
+  if (!message) return false;
+  return /already in flight|already running/i.test(message);
+}
+
+async function dropLock(): Promise<void> {
+  await getDB()
+    .prepare(
+      `UPDATE cc_sync_state
+       SET locked_until = NULL,
+           last_error = CASE
+             WHEN last_error LIKE '%already in flight%' OR last_error LIKE '%already running%' THEN NULL
+             ELSE last_error
+           END
+       WHERE id = ?`,
+    )
+    .bind(SYNC_ID)
+    .run();
 }
 
 function isSubrequestLimit(err: unknown): boolean {
