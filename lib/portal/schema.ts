@@ -1,4 +1,5 @@
 import { getDB } from "@/lib/env";
+import { resetPortalColumnCache } from "@/lib/portal/d1-compat";
 
 let ready = false;
 
@@ -83,16 +84,8 @@ const ALTERS = [
 
 export async function ensurePortalSchema(): Promise<void> {
   const db = getDB();
-  if (!ready) {
-    for (const sql of STATEMENTS) {
-      try {
-        await db.prepare(sql).run();
-      } catch {
-        // Table/index may already exist or be incompatible on older D1 — alters below patch gaps.
-      }
-    }
-    ready = true;
-  }
+  resetPortalColumnCache();
+
   for (const sql of ALTERS) {
     try {
       await db.prepare(sql).run();
@@ -100,4 +93,17 @@ export async function ensurePortalSchema(): Promise<void> {
       // Column or index already exists.
     }
   }
+
+  if (!ready) {
+    for (const sql of STATEMENTS) {
+      try {
+        await db.prepare(sql).run();
+      } catch {
+        // Table/index may already exist on older D1.
+      }
+    }
+    ready = true;
+  }
+
+  resetPortalColumnCache();
 }

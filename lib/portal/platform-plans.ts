@@ -52,52 +52,97 @@ function mapPlan(row: {
 }
 
 export async function listPlatformPlans(): Promise<PlatformPlan[]> {
-  const rows = await getDB()
-    .prepare(
-      `SELECT p.id, p.name, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
-              p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
-              (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
-              (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
-       FROM platform_plans p
-       ORDER BY IFNULL(p.active, 1) DESC, p.name COLLATE NOCASE`,
-    )
-    .all<{
-      id: string;
-      name: string;
-      supplier: string;
-      cc_rate_plan: string;
-      comm_plan: string;
-      created_at: string;
-      active: number;
-      assigned_resellers: number;
-      sim_count: number;
-    }>();
-  return (rows.results ?? []).map(mapPlan);
+  const db = getDB();
+  try {
+    const rows = await db
+      .prepare(
+        `SELECT p.id, p.name, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+                p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
+                (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
+         FROM platform_plans p
+         ORDER BY IFNULL(p.active, 1) DESC, p.name COLLATE NOCASE`,
+      )
+      .all<{
+        id: string;
+        name: string;
+        supplier: string;
+        cc_rate_plan: string;
+        comm_plan: string;
+        created_at: string;
+        active: number;
+        assigned_resellers: number;
+        sim_count: number;
+      }>();
+    return (rows.results ?? []).map(mapPlan);
+  } catch {
+    const rows = await db
+      .prepare(
+        `SELECT p.id, p.name, p.cc_rate_plan, p.comm_plan, p.created_at,
+                (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
+         FROM platform_plans p
+         ORDER BY p.name COLLATE NOCASE`,
+      )
+      .all<{
+        id: string;
+        name: string;
+        cc_rate_plan: string;
+        comm_plan: string;
+        created_at: string;
+        assigned_resellers: number;
+        sim_count: number;
+      }>();
+    return (rows.results ?? []).map((row) => mapPlan({ ...row, supplier: null, active: 1 }));
+  }
 }
 
 export async function getPlatformPlan(id: string): Promise<PlatformPlan | null> {
-  const row = await getDB()
-    .prepare(
-      `SELECT p.id, p.name, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
-              p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
-              (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
-              (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
-       FROM platform_plans p
-       WHERE p.id = ?`,
-    )
-    .bind(id)
-    .first<{
-      id: string;
-      name: string;
-      supplier: string;
-      cc_rate_plan: string;
-      comm_plan: string;
-      created_at: string;
-      active: number;
-      assigned_resellers: number;
-      sim_count: number;
-    }>();
-  return row ? mapPlan(row) : null;
+  const db = getDB();
+  try {
+    const row = await db
+      .prepare(
+        `SELECT p.id, p.name, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+                p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
+                (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
+         FROM platform_plans p
+         WHERE p.id = ?`,
+      )
+      .bind(id)
+      .first<{
+        id: string;
+        name: string;
+        supplier: string;
+        cc_rate_plan: string;
+        comm_plan: string;
+        created_at: string;
+        active: number;
+        assigned_resellers: number;
+        sim_count: number;
+      }>();
+    return row ? mapPlan(row) : null;
+  } catch {
+    const row = await db
+      .prepare(
+        `SELECT p.id, p.name, p.cc_rate_plan, p.comm_plan, p.created_at,
+                (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
+         FROM platform_plans p
+         WHERE p.id = ?`,
+      )
+      .bind(id)
+      .first<{
+        id: string;
+        name: string;
+        cc_rate_plan: string;
+        comm_plan: string;
+        created_at: string;
+        assigned_resellers: number;
+        sim_count: number;
+      }>();
+    return row ? mapPlan({ ...row, supplier: null, active: 1 }) : null;
+  }
 }
 
 async function assertResellerTenant(tenantId: string, homeTenantId?: string) {

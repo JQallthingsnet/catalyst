@@ -1,4 +1,5 @@
 import { getDB } from "@/lib/env";
+import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { runCcMutation } from "@/lib/cc/adapter";
 import { pickAvailableCcDevices } from "@/lib/cc/devices";
 import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
@@ -89,11 +90,16 @@ async function ensurePlatformHasNoCustomers(homeTenantId: string): Promise<void>
 export async function getOrCreatePortalContext(email: string): Promise<PortalContext> {
   const db = getDB();
   const listed = await isListedSuperAdmin(email);
+  const tenantsHaveActive = await portalTableHasColumn("tenants", "active");
   const member = await db
     .prepare(
-      `SELECT m.email, m.tenant_id, m.role, t.name, IFNULL(t.active, 1) AS active
-       FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
-       WHERE m.email = ?`,
+      tenantsHaveActive
+        ? `SELECT m.email, m.tenant_id, m.role, t.name, IFNULL(t.active, 1) AS active
+           FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
+           WHERE m.email = ?`
+        : `SELECT m.email, m.tenant_id, m.role, t.name, 1 AS active
+           FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
+           WHERE m.email = ?`,
     )
     .bind(email)
     .first<{ email: string; tenant_id: string; role: PortalRole; name: string; active: number }>();
