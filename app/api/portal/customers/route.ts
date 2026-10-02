@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const denied = denyUnless(ctx, "customer.create");
     if (denied) return denied;
     if (!body.name?.trim()) return NextResponse.json({ error: "Customer name is required." }, { status: 400 });
-    const customer = await createCustomer(ctx.tenantId, ctx.email, body.name.trim());
+    const customer = await createCustomer(ctx.tenantId, ctx.email, body.name.trim(), ctx.homeTenantId);
     return NextResponse.json({ success: true, customer });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Save failed." }, { status: 400 });

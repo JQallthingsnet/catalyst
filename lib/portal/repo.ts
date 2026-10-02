@@ -79,6 +79,13 @@ async function ensureListedSuperAdminHomeName(tenantId: string, currentName: str
   return PLATFORM_HOME_NAME;
 }
 
+/** ATN Platform is not a reseller — strip leftover demo/end-customer rows from the home tenant. */
+async function ensurePlatformHasNoCustomers(homeTenantId: string): Promise<void> {
+  const db = getDB();
+  await db.prepare("UPDATE sims SET customer_id = NULL WHERE tenant_id = ?").bind(homeTenantId).run();
+  await db.prepare("DELETE FROM customers WHERE tenant_id = ?").bind(homeTenantId).run();
+}
+
 export async function getOrCreatePortalContext(email: string): Promise<PortalContext> {
   const db = getDB();
   const listed = await isListedSuperAdmin(email);
@@ -96,6 +103,7 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
       throw new Error("This organisation has been deactivated. Contact ATN support.");
     }
     const tenantName = listed ? await ensureListedSuperAdminHomeName(member.tenant_id, member.name) : member.name;
+    if (listed) await ensurePlatformHasNoCustomers(member.tenant_id);
     return {
       email,
       tenantId: member.tenant_id,
@@ -369,7 +377,15 @@ export async function listAudit(tenantId: string): Promise<AuditEvent[]> {
   }));
 }
 
-export async function createCustomer(tenantId: string, actorEmail: string, name: string): Promise<Customer> {
+export async function createCustomer(
+  tenantId: string,
+  actorEmail: string,
+  name: string,
+  homeTenantId?: string,
+): Promise<Customer> {
+  if (homeTenantId && tenantId === homeTenantId) {
+    throw new Error("Customers belong to reseller organisations, not ATN Platform.");
+  }
   const id = newId("cus");
   const now = new Date().toISOString();
   await getDB()
