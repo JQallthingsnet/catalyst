@@ -1,16 +1,17 @@
 import { InviteForm } from "@/components/portal/invite-form";
 import { TenantDirectory } from "@/components/portal/tenant-directory";
 import { requirePrivilege } from "@/lib/portal/guard";
-import { inviteableRoles, listInvites } from "@/lib/portal/invites";
+import { inviteableRoles, listAllInvites } from "@/lib/portal/invites";
 import { listSuperAdmins } from "@/lib/portal/roles";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
 import { excludeHomeTenant, listPlatformTenants } from "@/lib/portal/tenant";
+import { formatAuDateTime } from "@/lib/portal/time";
 
 export default async function AdminPage() {
   const ctx = await requirePrivilege("admin");
   const [admins, invites, tenants] = await Promise.all([
     listSuperAdmins(),
-    listInvites(ctx.tenantId),
+    listAllInvites(50),
     listPlatformTenants(ctx.isSuperAdmin),
   ]);
 
@@ -18,8 +19,9 @@ export default async function AdminPage() {
     <div>
       <h1 className="text-3xl font-semibold">Admin</h1>
       <p className="mt-2 text-sm text-quiet">
-        See every reseller organisation here. Invites go to the current organisation unless you name a new one.
-        Use <span className="text-ink">View as</span> to preview reseller roles.
+        Manage every reseller here: rename (same as their Settings organisation name), Open to preview as that
+        reseller, and send invites. Use <span className="text-ink">View as</span> Reseller admin to use their
+        Settings for that org only.
       </p>
 
       <div className="mt-6">
@@ -60,14 +62,22 @@ export default async function AdminPage() {
 
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
         <h2 className="font-semibold">Recent invites</h2>
+        <p className="mt-1 text-sm text-quiet">
+          All organisations — including invites sent by reseller admins from Settings.
+        </p>
         <ul className="mt-4 space-y-2 text-sm">
           {invites.length === 0 ? <li className="text-quiet">None yet.</li> : null}
           {invites.map((invite) => (
-            <li key={invite.id} className="flex justify-between rounded-xl border border-line px-3 py-2">
-              <span>
-                {invite.email} · {VIEW_ROLES.find((item) => item.id === invite.role)?.label}
-              </span>
-              <span className="text-quiet">{invite.invitedBy}</span>
+            <li key={invite.id} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-line px-3 py-2">
+              <div>
+                <p>
+                  {invite.email} · {VIEW_ROLES.find((item) => item.id === invite.role)?.label}
+                </p>
+                <p className="mt-0.5 text-xs text-quiet">
+                  {invite.tenantName ?? "—"} · {formatAuDateTime(invite.createdAt)}
+                </p>
+              </div>
+              <span className="text-quiet">by {invite.invitedBy}</span>
             </li>
           ))}
         </ul>

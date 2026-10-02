@@ -69,7 +69,6 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/orders", label: "Orders" },
     { href: "/dashboard/usage", label: "Usage" },
-    { href: "/dashboard/settings", label: "Settings" },
     { href: "/dashboard/admin", label: "Admin" },
   ],
   reseller_admin: [

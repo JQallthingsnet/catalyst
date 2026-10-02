@@ -13,6 +13,8 @@ export type Invite = {
   role: PortalRole;
   invitedBy: string;
   createdAt: string;
+  tenantId?: string;
+  tenantName?: string;
 };
 
 export function inviteableRoles(role: PortalRole): PortalRole[] {
@@ -36,6 +38,37 @@ export async function listInvites(tenantId: string): Promise<Invite[]> {
     role: row.role,
     invitedBy: row.invited_by,
     createdAt: row.created_at,
+  }));
+}
+
+/** Platform log: every invite, including those sent by reseller admins. */
+export async function listAllInvites(limit = 50): Promise<Invite[]> {
+  const rows = await getDB()
+    .prepare(
+      `SELECT i.id, i.email, i.role, i.invited_by, i.created_at, i.tenant_id, t.name AS tenant_name
+       FROM invites i
+       LEFT JOIN tenants t ON t.id = i.tenant_id
+       ORDER BY i.created_at DESC
+       LIMIT ?`,
+    )
+    .bind(limit)
+    .all<{
+      id: string;
+      email: string;
+      role: PortalRole;
+      invited_by: string;
+      created_at: string;
+      tenant_id: string;
+      tenant_name: string | null;
+    }>();
+  return (rows.results ?? []).map((row) => ({
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    invitedBy: row.invited_by,
+    createdAt: row.created_at,
+    tenantId: row.tenant_id,
+    tenantName: row.tenant_name ?? row.tenant_id,
   }));
 }
 

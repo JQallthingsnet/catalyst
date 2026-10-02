@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { InviteForm } from "@/components/portal/invite-form";
 import { NameForm } from "@/components/portal/name-form";
 import { requirePrivilege } from "@/lib/portal/guard";
@@ -6,6 +8,12 @@ import { VIEW_ROLES } from "@/lib/portal/role-model";
 
 export default async function SettingsPage() {
   const ctx = await requirePrivilege("settings");
+
+  // Platform invites and org renames live on Admin — avoid a second confusing Settings there.
+  if (ctx.role === "super_admin") {
+    redirect("/dashboard/admin");
+  }
+
   const roles = inviteableRoles(ctx.role);
   const [members, invites] = await Promise.all([listTenantMembers(ctx.tenantId), listInvites(ctx.tenantId)]);
 
@@ -13,12 +21,15 @@ export default async function SettingsPage() {
     <div>
       <h1 className="text-3xl font-semibold">Settings</h1>
       <p className="mt-1 text-sm text-quiet">
-        Tenant {ctx.tenantId} · Viewing as {ctx.role.replace(/_/g, " ")}
-        {ctx.isSuperAdmin ? " (you are a super admin)" : ""}
+        {ctx.tenantName}
+        {ctx.isSuperAdmin ? " · Previewing as reseller admin" : ""}
       </p>
+
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
         <h2 className="font-semibold">Organisation name</h2>
-        <p className="mt-1 text-sm text-quiet">Shown in the top bar. Currently {ctx.tenantName}.</p>
+        <p className="mt-1 text-sm text-quiet">
+          Shown top left in your portal (with “Supported by ATN Catalyst”). Currently {ctx.tenantName}.
+        </p>
         <div className="mt-4">
           <NameForm kind="tenant" placeholder={ctx.tenantName} button="Save name" />
         </div>
@@ -28,8 +39,8 @@ export default async function SettingsPage() {
         <article className="mt-4 rounded-card border border-line bg-panel p-5">
           <h2 className="font-semibold">Invite team</h2>
           <p className="mt-1 text-sm text-quiet">
-            Reseller admins invite operators. Super admins can also invite reseller admins. An email is sent with a sign-in
-            link.
+            Invite operators into <span className="text-ink">{ctx.tenantName}</span>. They only see this
+            organisation’s SIMs and customers.
           </p>
           <InviteForm roles={roles} />
           <ul className="mt-4 space-y-2 text-sm">
@@ -46,10 +57,15 @@ export default async function SettingsPage() {
         </article>
       ) : null}
 
-      <article className="mt-4 rounded-card border border-line bg-panel p-5 text-sm leading-6 text-quiet">
-        Control Center sandbox mapping and CSS tokens are Phase 0. Live CC mutations run as idempotent jobs with a
-        correlation id. This portal does not bind to Cisco Catalyst Center or Webex Control Hub.
-      </article>
+      {ctx.isSuperAdmin ? (
+        <p className="mt-4 text-sm text-quiet">
+          To create another reseller or invite an operator into a different org, use{" "}
+          <Link href="/dashboard/admin" className="text-accent">
+            Admin
+          </Link>{" "}
+          (switch View as back to Super admin).
+        </p>
+      ) : null}
     </div>
   );
 }
