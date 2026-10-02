@@ -93,7 +93,7 @@ export function PlatformPlanWizard({
             </select>
           </label>
           <label className="block text-sm">
-            Supplier rate plan / TCode (Rate Plan New)
+            Rate plan
             <input
               value={ccRatePlan}
               onChange={(event) => setCcRatePlan(event.target.value)}
@@ -101,7 +101,7 @@ export function PlatformPlanWizard({
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             />
             <span className="mt-1 block text-xs text-quiet">
-              For Control Center this must match the Jasper rate plan / TCode used when SIMs are transferred.
+              Must match the supplier’s rate plan name (for Control Center, the Jasper rate plan / TCode).
             </span>
           </label>
           <label className="block text-sm">

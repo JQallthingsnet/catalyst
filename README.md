@@ -8,7 +8,7 @@ Visual theme follows allthingsnet.io. Interaction follows Atomic-style 3-step wi
 
 ## Contract book
 
-**Contract** (`/dashboard/contracts`) is what ATN has signed with each reseller (Rate Plan New + remarks). Super admin manages the book; **reseller admin only** can open Contract to refer to their lines (operators cannot). The same ATN plans appear under **Plans**, where super admin maps each line to a **supplier** rate plan (Cisco IoT Control Center, Singapore Telecom, China Mobile, or Other). A reseller with zero bound plans cannot receive sell stock. Mark one Rate Plan New as **default** for bulk transfers (must match Jasper TCode when supplier is Control Center). Rate-plan change windows for activated SIMs (24th-of-month cut-off, one change per month, billing mismatch flags) are specified but not automated yet.
+**Contract** (`/dashboard/contracts`) is what ATN has signed with each reseller (rate plan + remarks). Super admin manages the book; **reseller admin only** can open Contract to refer to their lines (operators cannot). The same ATN plans appear under **Plans**, where super admin maps each line to a **supplier** rate plan (Cisco IoT Control Center, Singapore Telecom, China Mobile, or Other). A reseller with zero bound plans cannot receive sell stock. Mark one rate plan as **default** for bulk transfers (must match Jasper TCode when supplier is Control Center). Rate-plan change windows for activated SIMs (24th-of-month cut-off, one change per month, billing mismatch flags) are specified but not automated yet.
 
 ## Plans (three layers)
 

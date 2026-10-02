@@ -21,7 +21,7 @@ export function WizardFrame({
           <li
             key={label}
             className={`rounded-full px-3 py-1 ${
-              index === step ? "bg-accent text-canvas" : index < step ? "bg-panel-2 text-ok" : "bg-panel text-quiet"
+              index === step ? "bg-accent text-on-accent" : index < step ? "bg-panel-2 text-ok" : "bg-panel text-quiet"
             }`}
           >
             {index + 1}. {label}
@@ -63,7 +63,7 @@ export function WizardActions({
         type="button"
         onClick={onNext}
         disabled={busy || disabled}
-        className="rounded-card bg-accent px-4 py-2.5 text-sm font-medium text-canvas disabled:opacity-40"
+        className="rounded-card bg-accent px-4 py-2.5 text-sm font-medium text-on-accent disabled:opacity-40"
       >
         {busy ? "Working…" : nextLabel}
       </button>

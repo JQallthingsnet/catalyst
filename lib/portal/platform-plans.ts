@@ -382,7 +382,7 @@ export async function setDefaultContractPlan(
       tenantId,
       actorEmail,
       "plan",
-      `Default Rate Plan New: ${plan?.ccRatePlan ?? platformPlanId}`,
+      `Default plan: ${plan?.ccRatePlan ?? platformPlanId}`,
       new Date().toISOString(),
     )
     .run();
@@ -404,7 +404,7 @@ export type ContractBookEntry = {
   }[];
 };
 
-/** Master-admin contract book: reseller → Rate Plan New rows. */
+/** Master-admin contract book: reseller → rate plans. */
 export async function listContractBook(homeTenantId: string): Promise<ContractBookEntry[]> {
   const db = getDB();
   const tenants = await db
