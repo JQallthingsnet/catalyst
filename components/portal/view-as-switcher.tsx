@@ -14,7 +14,13 @@ export function ViewAsSwitcher({ role }: { role: PortalRole }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: next }),
     });
-    if (pathname.startsWith("/dashboard/admin") && next !== "super_admin") {
+    // Platform-only routes disappear under reseller preview.
+    if (
+      next !== "super_admin" &&
+      (pathname.startsWith("/dashboard/admin") ||
+        pathname.startsWith("/dashboard/estate") ||
+        pathname.startsWith("/dashboard/catalogue"))
+    ) {
       router.push("/dashboard");
       router.refresh();
       return;
