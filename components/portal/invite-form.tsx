@@ -108,11 +108,11 @@ export function InviteForm({
             required
             value={organisationName}
             onChange={(event) => setOrganisationName(event.target.value)}
-            placeholder="e.g. JerryQ — shown top left in their portal"
+            placeholder="Organisation or brand name"
             className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
           />
           <span className="mt-1 block text-xs text-quiet">
-            This is their brand in the sidebar, with “Supported by ATN Catalyst” underneath.
+            Shown top left in their portal, with “Supported by ATN Catalyst” underneath.
           </span>
         </label>
       ) : null}
