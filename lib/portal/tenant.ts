@@ -393,6 +393,48 @@ export async function setTenantActive(
   return { ...existing, active };
 }
 
+/**
+ * Permanent removal. Org must already be deactivated. Cascades portal data for that tenant.
+ * Does not touch the Control Center device copy (cc_devices).
+ */
+export async function deleteResellerOrganisation(
+  tenantId: string,
+  homeTenantId: string,
+  confirmName: string,
+): Promise<{ id: string; name: string }> {
+  if (tenantId === homeTenantId) {
+    throw new Error("ATN Platform cannot be deleted.");
+  }
+  const existing = await loadTenant(tenantId);
+  if (!existing) throw new Error("Organisation not found.");
+  if (existing.active) {
+    throw new Error("Deactivate the organisation first, then delete.");
+  }
+  if (confirmName.trim() !== existing.name) {
+    throw new Error("Type the organisation name exactly to confirm deletion.");
+  }
+
+  const db = getDB();
+  const id = existing.id;
+  // Order: dependents that reference other tenant rows, then membership, then tenant.
+  const statements = [
+    db.prepare("DELETE FROM sims WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM orders WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM pools WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM plans WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM customers WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM cc_jobs WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM audit_events WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM usage_daily WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM invites WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM tenant_plan_assignments WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM tenant_members WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM tenants WHERE id = ?").bind(id),
+  ];
+  await db.batch(statements);
+  return { id: existing.id, name: existing.name };
+}
+
 export async function requireOwned<T extends { id: string }>(
   table: "customers" | "plans" | "pools",
   id: string,

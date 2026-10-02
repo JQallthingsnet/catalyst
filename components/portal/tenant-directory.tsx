@@ -127,6 +127,52 @@ function DeactivateOrgButton({ tenantId, name, active }: { tenantId: string; nam
   );
 }
 
+function DeleteOrgButton({ tenantId, name }: { tenantId: string; name: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function remove() {
+    const typed = window.prompt(
+      `Permanently delete ${name}? This removes members, SIMs, customers, plans, orders, and invites for that org. Type the organisation name to confirm.`,
+    );
+    if (typed == null) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/portal/tenants", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, confirmName: typed }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Delete failed.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Delete failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void remove()}
+        className="text-sm text-danger disabled:opacity-40"
+      >
+        {busy ? "…" : "Delete"}
+      </button>
+      {error ? <p className="max-w-48 text-right text-xs text-danger">{error}</p> : null}
+    </div>
+  );
+}
+
 export function TenantDirectory({
   tenants,
   currentId,
@@ -146,7 +192,7 @@ export function TenantDirectory({
       <p className="mt-1 text-sm text-quiet">
         Organisation totals. Estate shows every customer and SIM. Open an organisation to preview as that reseller.
         {manage
-          ? " Rename updates the top-left brand. Deactivate blocks member sign-in without deleting data."
+          ? " Rename updates the top-left brand. Deactivate blocks sign-in. Delete (after deactivate) permanently removes the org and its members."
           : null}
       </p>
       <div className="mt-4 overflow-x-auto">
@@ -189,6 +235,7 @@ export function TenantDirectory({
                       {manage ? (
                         <DeactivateOrgButton tenantId={tenant.id} name={tenant.name} active={tenant.active} />
                       ) : null}
+                      {manage && !tenant.active ? <DeleteOrgButton tenantId={tenant.id} name={tenant.name} /> : null}
                       <OpenTenantButton tenantId={tenant.id} current={tenant.id === currentId} />
                     </div>
                   </td>
