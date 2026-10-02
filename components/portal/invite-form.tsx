@@ -22,6 +22,11 @@ export function InviteForm({ roles, allowNewOrganisation = false }: { roles: Por
     setBusy(true);
     setError("");
     setOk("");
+    if (creatingOrg && !organisationName.trim()) {
+      setError("Enter the organisation name. It is shown top left in their portal.");
+      setBusy(false);
+      return;
+    }
     try {
       const res = await fetch("/api/portal/invites", {
         method: "POST",
@@ -81,12 +86,19 @@ export function InviteForm({ roles, allowNewOrganisation = false }: { roles: Por
         </button>
       </div>
       {creatingOrg ? (
-        <input
-          value={organisationName}
-          onChange={(event) => setOrganisationName(event.target.value)}
-          placeholder="New organisation name (optional)"
-          className="w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
-        />
+        <label className="block text-sm">
+          Organisation name
+          <input
+            required
+            value={organisationName}
+            onChange={(event) => setOrganisationName(event.target.value)}
+            placeholder="e.g. JerryQ — shown top left in their portal"
+            className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
+          />
+          <span className="mt-1 block text-xs text-quiet">
+            This is their brand in the sidebar, with “Supported by ATN Catalyst” underneath.
+          </span>
+        </label>
       ) : null}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {ok ? <p className="text-sm text-ok">{ok}</p> : null}

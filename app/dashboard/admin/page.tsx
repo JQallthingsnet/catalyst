@@ -23,14 +23,18 @@ export default async function AdminPage() {
       </p>
 
       <div className="mt-6">
-        <TenantDirectory tenants={excludeHomeTenant(tenants, ctx.homeTenantId)} currentId={ctx.tenantId} />
+        <TenantDirectory
+          tenants={excludeHomeTenant(tenants, ctx.homeTenantId)}
+          currentId={ctx.tenantId}
+          canRename
+        />
       </div>
 
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
         <h2 className="font-semibold">Send invite</h2>
         <p className="mt-1 text-sm text-quiet">
-          Super admin, reseller admin, or operator. For a new reseller, choose reseller admin and enter an
-          organisation name.
+          Super admin, reseller admin, or operator. Creating a reseller needs an organisation name — that name
+          appears top left in their portal.
         </p>
         <InviteForm roles={inviteableRoles(ctx.role)} allowNewOrganisation />
       </article>

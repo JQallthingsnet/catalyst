@@ -17,10 +17,22 @@ export function PortalShell({
     <div className="min-h-screen bg-canvas text-ink">
       <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-line bg-panel md:flex md:flex-col">
         <div className="px-5 py-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">ATN Catalyst</p>
-          <p className="mt-2 text-sm text-quiet">
-            {ctx.role === "super_admin" ? "ATN operations" : ctx.role === "reseller_operator" ? "Operator" : "Reseller portal"}
-          </p>
+          {ctx.role === "super_admin" ? (
+            <>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">ATN Catalyst</p>
+              <p className="mt-2 text-sm text-quiet">ATN operations</p>
+            </>
+          ) : (
+            <>
+              <p className="truncate text-base font-semibold tracking-tight text-ink" title={ctx.tenantName}>
+                {ctx.tenantName}
+              </p>
+              <p className="mt-1 text-xs text-quiet">
+                {ctx.role === "reseller_operator" ? "Operator · " : ""}
+                Supported by ATN Catalyst
+              </p>
+            </>
+          )}
         </div>
         <PortalNav role={ctx.role} />
       </aside>

@@ -335,6 +335,22 @@ export async function createResellerOrganisation(name: string): Promise<TenantRe
   return { id, name: trimmed, createdAt };
 }
 
+export async function renameResellerOrganisation(
+  tenantId: string,
+  name: string,
+  homeTenantId: string,
+): Promise<TenantRecord> {
+  if (tenantId === homeTenantId) {
+    throw new Error("ATN Platform cannot be renamed here.");
+  }
+  const trimmed = name.trim();
+  if (trimmed.length < 2) throw new Error("Enter an organisation name.");
+  const existing = await loadTenant(tenantId);
+  if (!existing) throw new Error("Organisation not found.");
+  await getDB().prepare("UPDATE tenants SET name = ? WHERE id = ?").bind(trimmed, tenantId).run();
+  return { ...existing, name: trimmed };
+}
+
 export async function requireOwned<T extends { id: string }>(
   table: "customers" | "plans" | "pools",
   id: string,

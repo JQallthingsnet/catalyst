@@ -66,6 +66,11 @@ export async function createAndSendInvite(input: {
   let tenantId = input.ctx.tenantId;
   let tenantName = input.ctx.tenantName;
   const organisationName = input.organisationName?.trim();
+  if (input.role === "reseller_admin" && input.ctx.isSuperAdmin && input.ctx.role === "super_admin") {
+    if (!organisationName) {
+      throw new Error("Enter the reseller organisation name. It appears top left in their portal.");
+    }
+  }
   if (organisationName) {
     if (!input.ctx.isSuperAdmin || input.role !== "reseller_admin") {
       throw new Error("Only a super admin can create a reseller organisation.");
