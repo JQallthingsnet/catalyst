@@ -29,7 +29,7 @@ export function AssignPlanForm({
         setError(data.error ?? "Could not assign plan.");
         return;
       }
-      setOk("Plan assigned to this reseller.");
+      setOk("Reseller bound to this plan.");
       window.location.reload();
     } catch {
       setError("Could not assign plan.");
@@ -38,7 +38,9 @@ export function AssignPlanForm({
     }
   }
 
-  if (resellers.length === 0) return <p className="text-sm text-quiet">No organisations yet.</p>;
+  if (resellers.length === 0) {
+    return <p className="mt-3 text-sm text-quiet">All active resellers are already bound, or none exist yet.</p>;
+  }
 
   return (
     <form
@@ -60,7 +62,7 @@ export function AssignPlanForm({
         ))}
       </select>
       <button type="submit" disabled={busy} className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas disabled:opacity-40">
-        {busy ? "Saving…" : "Assign contract"}
+        {busy ? "Saving…" : "Bind reseller"}
       </button>
       {error ? <p className="w-full text-sm text-danger">{error}</p> : null}
       {ok ? <p className="w-full text-sm text-ok">{ok}</p> : null}
