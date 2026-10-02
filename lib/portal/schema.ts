@@ -82,17 +82,19 @@ const ALTERS = [
 ];
 
 export async function ensurePortalSchema(): Promise<void> {
-  if (ready) return;
   const db = getDB();
-  for (const sql of STATEMENTS) {
-    await db.prepare(sql).run();
+  if (!ready) {
+    for (const sql of STATEMENTS) {
+      await db.prepare(sql).run();
+    }
+    ready = true;
   }
+  // Always attempt alters so new columns land on long-lived Worker isolates / older D1 DBs.
   for (const sql of ALTERS) {
     try {
       await db.prepare(sql).run();
     } catch {
-      // Column already exists on databases created with the current schema.
+      // Column or index already exists.
     }
   }
-  ready = true;
 }

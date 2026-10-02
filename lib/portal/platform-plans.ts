@@ -420,38 +420,70 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
 
 /** Reseller-admin view: only this organisation’s signed contract lines. */
 export async function listResellerContract(tenantId: string): Promise<ContractBookEntry["plans"]> {
-  const rows = await getDB()
-    .prepare(
-      `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-              p.name AS remarks, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
-              p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
-       FROM tenant_plan_assignments a
-       JOIN platform_plans p ON p.id = a.platform_plan_id
-       WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
-       ORDER BY IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
-    )
-    .bind(tenantId)
-    .all<{
-      platform_plan_id: string;
-      is_default: number;
-      remarks: string;
-      supplier: string;
-      cc_rate_plan: string;
-      comm_plan: string;
-      plan_active: number;
-      sim_count: number;
-    }>();
-  return (rows.results ?? []).map((row) => ({
-    platformPlanId: row.platform_plan_id,
-    ratePlanNew: row.cc_rate_plan,
-    remarks: row.remarks,
-    supplier: row.supplier,
-    commPlan: row.comm_plan,
-    active: Boolean(row.plan_active),
-    isDefault: Boolean(row.is_default),
-    simCount: row.sim_count,
-  }));
+  const db = getDB();
+  try {
+    const rows = await db
+      .prepare(
+        `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
+                p.name AS remarks, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+                p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
+                (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+         FROM tenant_plan_assignments a
+         JOIN platform_plans p ON p.id = a.platform_plan_id
+         WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
+         ORDER BY IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
+      )
+      .bind(tenantId)
+      .all<{
+        platform_plan_id: string;
+        is_default: number;
+        remarks: string;
+        supplier: string;
+        cc_rate_plan: string;
+        comm_plan: string;
+        plan_active: number;
+        sim_count: number;
+      }>();
+    return (rows.results ?? []).map((row) => ({
+      platformPlanId: row.platform_plan_id,
+      ratePlanNew: row.cc_rate_plan,
+      remarks: row.remarks,
+      supplier: row.supplier,
+      commPlan: row.comm_plan,
+      active: Boolean(row.plan_active),
+      isDefault: Boolean(row.is_default),
+      simCount: row.sim_count,
+    }));
+  } catch {
+    // Older D1 before supplier / is_default / active alters — still show the contract book.
+    const rows = await db
+      .prepare(
+        `SELECT a.platform_plan_id, p.name AS remarks, p.cc_rate_plan, p.comm_plan,
+                (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+         FROM tenant_plan_assignments a
+         JOIN platform_plans p ON p.id = a.platform_plan_id
+         WHERE a.tenant_id = ?
+         ORDER BY p.cc_rate_plan COLLATE NOCASE`,
+      )
+      .bind(tenantId)
+      .all<{
+        platform_plan_id: string;
+        remarks: string;
+        cc_rate_plan: string;
+        comm_plan: string;
+        sim_count: number;
+      }>();
+    return (rows.results ?? []).map((row) => ({
+      platformPlanId: row.platform_plan_id,
+      ratePlanNew: row.cc_rate_plan,
+      remarks: row.remarks,
+      supplier: "Cisco IoT Control Center",
+      commPlan: row.comm_plan,
+      active: true,
+      isDefault: false,
+      simCount: row.sim_count,
+    }));
+  }
 }
 
 export async function tenantHasPlatformPlan(tenantId: string, platformPlanId: string): Promise<boolean> {
