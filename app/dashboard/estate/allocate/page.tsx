@@ -14,11 +14,11 @@ export default async function AllocateStockPage() {
     listAllTenantPlanIds(),
     listSimSkus(),
   ]);
-  const planIdsByTenant = new Map<string, string[]>();
+  const linksByTenant = new Map<string, { platformPlanId: string; isDefault: boolean }[]>();
   for (const link of links) {
-    const list = planIdsByTenant.get(link.tenantId) ?? [];
-    list.push(link.platformPlanId);
-    planIdsByTenant.set(link.tenantId, list);
+    const list = linksByTenant.get(link.tenantId) ?? [];
+    list.push({ platformPlanId: link.platformPlanId, isDefault: link.isDefault });
+    linksByTenant.set(link.tenantId, list);
   }
   const availableEntries = await Promise.all(
     plans.map(async (plan) => [plan.id, await countAvailableCcStock(plan.ccRatePlan, plan.commPlan)] as const),
@@ -34,14 +34,20 @@ export default async function AllocateStockPage() {
         <AllocateWizard
           resellers={resellers
             .filter((item) => item.id !== ctx.homeTenantId)
-            .map((item) => ({
-              id: item.id,
-              name: item.name,
-              planIds: planIdsByTenant.get(item.id) ?? [],
-            }))}
+            .map((item) => {
+              const tenantLinks = linksByTenant.get(item.id) ?? [];
+              const defaultPlanId =
+                tenantLinks.find((link) => link.isDefault)?.platformPlanId ?? tenantLinks[0]?.platformPlanId ?? "";
+              return {
+                id: item.id,
+                name: item.name,
+                planIds: tenantLinks.map((link) => link.platformPlanId),
+                defaultPlanId,
+              };
+            })}
           plans={plans.map((item) => ({
             id: item.id,
-            name: item.name,
+            name: `${item.ccRatePlan} · ${item.name}`,
             available: availableByPlanId[item.id] ?? 0,
           }))}
           skus={skus}
