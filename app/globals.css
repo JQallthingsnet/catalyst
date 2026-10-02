@@ -6,7 +6,7 @@
   --color-panel-2: #121b2e;
   --color-line: #1c2740;
   --color-accent: #2ee6d6;
-  --color-on-accent: #041016;
+  --color-accent-ink: #041016;
   --color-ink: #f4f7fb;
   --color-quiet: #9aa6b8;
   --color-ok: #3ddc97;
@@ -39,4 +39,9 @@ select,
 textarea,
 button {
   font: inherit;
+}
+
+/* Cyan CTAs must use dark type — body/link inherit is near-white. */
+.bg-accent {
+  color: var(--color-accent-ink);
 }

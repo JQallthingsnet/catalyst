@@ -43,7 +43,7 @@ export function NameForm({ kind, placeholder, button }: { kind: "customer" | "te
         placeholder={placeholder}
         className="min-w-56 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
       />
-      <button type="submit" disabled={busy || !name.trim()} className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent disabled:opacity-40">
+      <button type="submit" disabled={busy || !name.trim()} className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40">
         {busy ? "Saving…" : button}
       </button>
       {error ? <p className="w-full text-sm text-danger">{error}</p> : null}

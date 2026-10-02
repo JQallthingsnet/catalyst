@@ -182,7 +182,7 @@ export function LoginForm() {
           <button
             type="submit"
             disabled={loading || !email.trim()}
-            className="w-full rounded-card bg-accent px-4 py-3 text-sm font-medium text-on-accent disabled:opacity-50"
+            className="w-full rounded-card bg-accent px-4 py-3 text-sm font-medium text-accent-ink disabled:opacity-50"
           >
             {loading ? "Sending…" : "Send passcode"}
           </button>
@@ -235,7 +235,7 @@ export function LoginForm() {
               type="button"
               disabled={loading || codeString.length !== AUTH_CODE_LEN}
               onClick={() => void handleVerify(codeString)}
-              className="flex-1 rounded-card bg-accent px-4 py-3 text-sm font-medium text-on-accent disabled:opacity-50"
+              className="flex-1 rounded-card bg-accent px-4 py-3 text-sm font-medium text-accent-ink disabled:opacity-50"
             >
               {loading ? "Checking…" : "Sign in"}
             </button>

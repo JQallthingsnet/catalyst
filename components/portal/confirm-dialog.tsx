@@ -60,7 +60,7 @@ export function ConfirmDialog({
   const confirmClass =
     tone === "danger"
       ? "bg-danger text-canvas hover:opacity-90"
-      : "bg-accent text-on-accent hover:opacity-90";
+      : "bg-accent text-accent-ink hover:opacity-90";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">

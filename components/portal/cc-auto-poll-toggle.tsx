@@ -38,7 +38,7 @@ export function CcAutoPollToggle({ enabled }: { enabled: boolean }) {
         disabled={busy}
         onClick={() => void toggle()}
         className={`inline-flex h-10 items-center rounded-full px-4 text-sm font-medium disabled:opacity-40 ${
-          on ? "bg-accent text-on-accent" : "border border-line text-ink hover:border-accent"
+          on ? "bg-accent text-accent-ink" : "border border-line text-ink hover:border-accent"
         }`}
       >
         {busy ? "Updating…" : on ? "Auto poll ON" : "Auto poll OFF"}
