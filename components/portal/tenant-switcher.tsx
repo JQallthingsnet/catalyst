@@ -1,7 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 export function TenantSwitcher({
   tenants,
   currentId,
@@ -11,16 +9,16 @@ export function TenantSwitcher({
   currentId: string;
   homeTenantId: string;
 }) {
-  const router = useRouter();
   const resellers = tenants.filter((tenant) => tenant.id !== homeTenantId);
 
   async function onChange(tenantId: string) {
-    await fetch("/api/portal/acting-tenant", {
+    const res = await fetch("/api/portal/acting-tenant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tenantId }),
     });
-    router.refresh();
+    if (!res.ok) return;
+    window.location.assign("/dashboard");
   }
 
   if (resellers.length === 0) {
@@ -48,16 +46,15 @@ export function TenantSwitcher({
 }
 
 export function OpenTenantButton({ tenantId, current }: { tenantId: string; current: boolean }) {
-  const router = useRouter();
-
   async function open() {
-    await fetch("/api/portal/acting-tenant", {
+    const res = await fetch("/api/portal/acting-tenant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tenantId, viewAsReseller: true }),
     });
-    router.push("/dashboard");
-    router.refresh();
+    if (!res.ok) return;
+    // Full reload so View as + Manage reseller cookies apply to layout/nav.
+    window.location.assign("/dashboard");
   }
 
   return (

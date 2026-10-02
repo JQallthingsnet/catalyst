@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { isResponse, requirePortalApi } from "@/lib/portal/api";
-import {
-  clearActingTenantCookie,
-  parseViewRole,
-  setActingTenantCookie,
-  setViewAsCookie,
-} from "@/lib/portal/roles";
+import { applyPortalCookies, parseViewRole } from "@/lib/portal/roles";
 import { excludeHomeTenant, listTenantOptions } from "@/lib/portal/tenant";
 
 export async function POST(request: Request) {
@@ -18,29 +13,36 @@ export async function POST(request: Request) {
   const role = parseViewRole(body.role);
   if (!role) return NextResponse.json({ error: "Unknown role." }, { status: 400 });
 
-  await setViewAsCookie(role);
-
   if (role === "super_admin") {
-    await clearActingTenantCookie();
-    return NextResponse.json({ success: true, role, tenantId: ctx.homeTenantId });
+    return applyPortalCookies(NextResponse.json({ success: true, role, tenantId: ctx.homeTenantId }), {
+      viewAs: "super_admin",
+      actingTenantId: null,
+    });
   }
 
   // Reseller preview must land on a real reseller, never ATN Platform.
   if (ctx.tenantId !== ctx.homeTenantId) {
-    return NextResponse.json({ success: true, role, tenantId: ctx.tenantId });
+    return applyPortalCookies(NextResponse.json({ success: true, role, tenantId: ctx.tenantId }), {
+      viewAs: role,
+      actingTenantId: ctx.tenantId,
+    });
   }
 
   const resellers = excludeHomeTenant(await listTenantOptions(), ctx.homeTenantId);
   if (resellers[0]) {
-    await setActingTenantCookie(resellers[0].id);
-    return NextResponse.json({ success: true, role, tenantId: resellers[0].id });
+    return applyPortalCookies(NextResponse.json({ success: true, role, tenantId: resellers[0].id }), {
+      viewAs: role,
+      actingTenantId: resellers[0].id,
+    });
   }
 
-  await clearActingTenantCookie();
-  return NextResponse.json({
-    success: true,
-    role,
-    tenantId: ctx.homeTenantId,
-    warning: "No reseller organisations yet. Create one from Admin first.",
-  });
+  return applyPortalCookies(
+    NextResponse.json({
+      success: true,
+      role,
+      tenantId: ctx.homeTenantId,
+      warning: "No reseller organisations yet. Create one from Admin first.",
+    }),
+    { viewAs: role, actingTenantId: null },
+  );
 }

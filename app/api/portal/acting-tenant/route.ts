@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isResponse, requirePortalApi } from "@/lib/portal/api";
-import { clearActingTenantCookie, setActingTenantCookie, setViewAsCookie } from "@/lib/portal/roles";
+import { applyPortalCookies } from "@/lib/portal/roles";
 import { loadTenant } from "@/lib/portal/tenant";
 
 export async function POST(request: Request) {
@@ -21,8 +21,9 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    await clearActingTenantCookie();
-    return NextResponse.json({ success: true, tenantId: ctx.homeTenantId });
+    return applyPortalCookies(NextResponse.json({ success: true, tenantId: ctx.homeTenantId }), {
+      actingTenantId: null,
+    });
   }
 
   const tenant = await loadTenant(tenantId);
@@ -31,11 +32,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "ATN Platform is not a reseller organisation." }, { status: 400 });
   }
 
-  // Opening a reseller from Estate/Admin while in super admin view → preview as reseller admin.
-  if (ctx.role === "super_admin" || body.viewAsReseller) {
-    await setViewAsCookie("reseller_admin");
-  }
-
-  await setActingTenantCookie(tenant.id);
-  return NextResponse.json({ success: true, tenantId: tenant.id, role: "reseller_admin" });
+  const openAsReseller = ctx.role === "super_admin" || Boolean(body.viewAsReseller);
+  return applyPortalCookies(
+    NextResponse.json({
+      success: true,
+      tenantId: tenant.id,
+      role: openAsReseller ? "reseller_admin" : ctx.role,
+    }),
+    {
+      actingTenantId: tenant.id,
+      viewAs: openAsReseller ? "reseller_admin" : undefined,
+    },
+  );
 }

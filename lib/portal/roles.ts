@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { normalizeEmail, isValidEmail } from "@/lib/auth/codes";
 import { getDB, getEnv } from "@/lib/env";
 import { ACTING_TENANT_COOKIE, parseViewRole, VIEW_AS_COOKIE, type PortalRole } from "@/lib/portal/role-model";
@@ -75,14 +76,16 @@ export async function getViewAsCookie(): Promise<PortalRole | null> {
   return parseViewRole((await cookies()).get(VIEW_AS_COOKIE)?.value);
 }
 
+const COOKIE_BASE = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 60 * 60 * 24 * 30,
+};
+
 export async function setViewAsCookie(role: PortalRole): Promise<void> {
-  (await cookies()).set(VIEW_AS_COOKIE, role, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  (await cookies()).set(VIEW_AS_COOKIE, role, COOKIE_BASE);
 }
 
 export async function clearViewAsCookie(): Promise<void> {
@@ -95,15 +98,27 @@ export async function getActingTenantCookie(): Promise<string | null> {
 }
 
 export async function setActingTenantCookie(tenantId: string): Promise<void> {
-  (await cookies()).set(ACTING_TENANT_COOKIE, tenantId, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  (await cookies()).set(ACTING_TENANT_COOKIE, tenantId, COOKIE_BASE);
 }
 
 export async function clearActingTenantCookie(): Promise<void> {
   (await cookies()).delete(ACTING_TENANT_COOKIE);
+}
+
+/** Attach portal cookies to a Route Handler response (reliable Set-Cookie on Workers). */
+export function applyPortalCookies(
+  response: NextResponse,
+  patch: { viewAs?: PortalRole | null; actingTenantId?: string | null },
+): NextResponse {
+  if (patch.viewAs === null) {
+    response.cookies.delete(VIEW_AS_COOKIE);
+  } else if (patch.viewAs) {
+    response.cookies.set(VIEW_AS_COOKIE, patch.viewAs, COOKIE_BASE);
+  }
+  if (patch.actingTenantId === null) {
+    response.cookies.delete(ACTING_TENANT_COOKIE);
+  } else if (patch.actingTenantId) {
+    response.cookies.set(ACTING_TENANT_COOKIE, patch.actingTenantId, COOKIE_BASE);
+  }
+  return response;
 }

@@ -1,31 +1,25 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { PortalRole } from "@/lib/portal/role-model";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
 
 export function ViewAsSwitcher({ role }: { role: PortalRole }) {
-  const router = useRouter();
   const pathname = usePathname();
 
   async function onChange(next: string) {
-    await fetch("/api/portal/view-as", {
+    const res = await fetch("/api/portal/view-as", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role: next }),
     });
-    // Platform-only routes disappear under reseller preview.
-    if (
+    if (!res.ok) return;
+    const leavePlatform =
       next !== "super_admin" &&
       (pathname.startsWith("/dashboard/admin") ||
         pathname.startsWith("/dashboard/estate") ||
-        pathname.startsWith("/dashboard/catalogue"))
-    ) {
-      router.push("/dashboard");
-      router.refresh();
-      return;
-    }
-    router.refresh();
+        pathname.startsWith("/dashboard/catalogue"));
+    window.location.assign(leavePlatform ? "/dashboard" : pathname || "/dashboard");
   }
 
   return (
