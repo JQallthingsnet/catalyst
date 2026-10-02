@@ -12,8 +12,9 @@
  */
 import { getDB } from "@/lib/env";
 import { newId } from "@/lib/portal/ids";
+import { isListedSuperAdmin } from "@/lib/portal/roles";
 
-export type TenantRecord = { id: string; name: string; createdAt: string };
+export type TenantRecord = { id: string; name: string; createdAt: string; active: boolean };
 
 export type PlatformTenant = TenantRecord & {
   simCount: number;
@@ -29,18 +30,37 @@ export async function membershipTenantId(email: string): Promise<string | null> 
   return row?.tenant_id ?? null;
 }
 
-export async function loadTenant(id: string): Promise<TenantRecord | null> {
+/** Invite-only: listed super admin, or member of an active organisation. */
+export async function canEmailSignIn(email: string): Promise<boolean> {
+  if (await isListedSuperAdmin(email)) return true;
   const row = await getDB()
-    .prepare("SELECT id, name, created_at FROM tenants WHERE id = ?")
-    .bind(id)
-    .first<{ id: string; name: string; created_at: string }>();
-  if (!row) return null;
-  return { id: row.id, name: row.name, createdAt: row.created_at };
+    .prepare(
+      `SELECT m.tenant_id
+       FROM tenant_members m
+       JOIN tenants t ON t.id = m.tenant_id
+       WHERE m.email = ? AND IFNULL(t.active, 1) = 1`,
+    )
+    .bind(email)
+    .first<{ tenant_id: string }>();
+  return Boolean(row);
 }
 
-export async function listTenantOptions(): Promise<{ id: string; name: string }[]> {
+export async function loadTenant(id: string): Promise<TenantRecord | null> {
+  const row = await getDB()
+    .prepare("SELECT id, name, created_at, IFNULL(active, 1) AS active FROM tenants WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; name: string; created_at: string; active: number }>();
+  if (!row) return null;
+  return { id: row.id, name: row.name, createdAt: row.created_at, active: Boolean(row.active) };
+}
+
+export async function listTenantOptions(activeOnly = true): Promise<{ id: string; name: string }[]> {
   const rows = await getDB()
-    .prepare("SELECT id, name FROM tenants ORDER BY name COLLATE NOCASE")
+    .prepare(
+      activeOnly
+        ? `SELECT id, name FROM tenants WHERE IFNULL(active, 1) = 1 ORDER BY name COLLATE NOCASE`
+        : `SELECT id, name FROM tenants ORDER BY name COLLATE NOCASE`,
+    )
     .all<{ id: string; name: string }>();
   return rows.results ?? [];
 }
@@ -49,17 +69,18 @@ export async function listPlatformTenants(isSuperAdmin: boolean): Promise<Platfo
   if (!isSuperAdmin) return [];
   const rows = await getDB()
     .prepare(
-      `SELECT t.id, t.name, t.created_at,
+      `SELECT t.id, t.name, t.created_at, IFNULL(t.active, 1) AS active,
               (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
               (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
               (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count
        FROM tenants t
-       ORDER BY t.name COLLATE NOCASE`,
+       ORDER BY IFNULL(t.active, 1) DESC, t.name COLLATE NOCASE`,
     )
     .all<{
       id: string;
       name: string;
       created_at: string;
+      active: number;
       sim_count: number;
       customer_count: number;
       member_count: number;
@@ -68,6 +89,7 @@ export async function listPlatformTenants(isSuperAdmin: boolean): Promise<Platfo
     id: row.id,
     name: row.name,
     createdAt: row.created_at,
+    active: Boolean(row.active),
     simCount: row.sim_count,
     customerCount: row.customer_count,
     memberCount: row.member_count,
@@ -331,8 +353,11 @@ export async function createResellerOrganisation(name: string): Promise<TenantRe
   if (trimmed.length < 2) throw new Error("Enter an organisation name.");
   const id = newId("ten");
   const createdAt = new Date().toISOString();
-  await getDB().prepare("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)").bind(id, trimmed, createdAt).run();
-  return { id, name: trimmed, createdAt };
+  await getDB()
+    .prepare("INSERT INTO tenants (id, name, created_at, active) VALUES (?, ?, ?, 1)")
+    .bind(id, trimmed, createdAt)
+    .run();
+  return { id, name: trimmed, createdAt, active: true };
 }
 
 export async function renameResellerOrganisation(
@@ -349,6 +374,23 @@ export async function renameResellerOrganisation(
   if (!existing) throw new Error("Organisation not found.");
   await getDB().prepare("UPDATE tenants SET name = ? WHERE id = ?").bind(trimmed, tenantId).run();
   return { ...existing, name: trimmed };
+}
+
+export async function setTenantActive(
+  tenantId: string,
+  active: boolean,
+  homeTenantId: string,
+): Promise<TenantRecord> {
+  if (tenantId === homeTenantId) {
+    throw new Error("ATN Platform cannot be deactivated.");
+  }
+  const existing = await loadTenant(tenantId);
+  if (!existing) throw new Error("Organisation not found.");
+  await getDB()
+    .prepare("UPDATE tenants SET active = ? WHERE id = ?")
+    .bind(active ? 1 : 0, tenantId)
+    .run();
+  return { ...existing, active };
 }
 
 export async function requireOwned<T extends { id: string }>(

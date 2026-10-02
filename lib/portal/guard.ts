@@ -1,5 +1,5 @@
 import { ensureAuthSchema } from "@/lib/auth/schema";
-import { getSession } from "@/lib/auth/session";
+import { clearSessionCookie, getSession } from "@/lib/auth/session";
 import { resolvePortalContext } from "@/lib/portal/access";
 import { can, type Privilege } from "@/lib/portal/roles";
 import { ensurePortalSchema } from "@/lib/portal/schema";
@@ -11,7 +11,13 @@ export async function requirePortal(): Promise<PortalContext> {
   if (!session) redirect("/");
   await ensureAuthSchema();
   await ensurePortalSchema();
-  return resolvePortalContext(session.email);
+  try {
+    return await resolvePortalContext(session.email);
+  } catch {
+    // Deactivated org or uninvited session — drop cookie and send to login.
+    await clearSessionCookie();
+    redirect("/");
+  }
 }
 
 export async function requirePrivilege(privilege: Privilege): Promise<PortalContext> {

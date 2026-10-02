@@ -117,6 +117,7 @@ export async function createAndSendInvite(input: {
     }
     const org = await loadTenant(organisationId);
     if (!org) throw new Error("Organisation not found.");
+    if (!org.active) throw new Error("That organisation is deactivated. Reactivate it before inviting.");
     tenantId = org.id;
     tenantName = org.name;
   }

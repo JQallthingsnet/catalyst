@@ -3,7 +3,7 @@ import { getDB } from "@/lib/env";
 let ready = false;
 
 const STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS tenants (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS tenants (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)`,
   `CREATE TABLE IF NOT EXISTS tenant_members (email TEXT NOT NULL, tenant_id TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (email, tenant_id))`,
   `CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, inclusive_mb INTEGER NOT NULL, overage TEXT NOT NULL, roaming TEXT NOT NULL, wholesale_plan TEXT NOT NULL, comm_plan TEXT NOT NULL, platform_plan_id TEXT, price_per_sim REAL, created_at TEXT NOT NULL)`,
@@ -75,6 +75,7 @@ const ALTERS = [
   `ALTER TABLE cc_devices ADD COLUMN details_polled_at TEXT`,
   `ALTER TABLE cc_sync_state ADD COLUMN auto_poll INTEGER NOT NULL DEFAULT 1`,
   `CREATE UNIQUE INDEX IF NOT EXISTS sims_iccid ON sims (iccid)`,
+  `ALTER TABLE tenants ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
 ];
 
 export async function ensurePortalSchema(): Promise<void> {

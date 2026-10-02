@@ -84,14 +84,17 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
   const listed = await isListedSuperAdmin(email);
   const member = await db
     .prepare(
-      `SELECT m.email, m.tenant_id, m.role, t.name
+      `SELECT m.email, m.tenant_id, m.role, t.name, IFNULL(t.active, 1) AS active
        FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
        WHERE m.email = ?`,
     )
     .bind(email)
-    .first<{ email: string; tenant_id: string; role: PortalRole; name: string }>();
+    .first<{ email: string; tenant_id: string; role: PortalRole; name: string; active: number }>();
 
   if (member) {
+    if (!member.active && !listed) {
+      throw new Error("This organisation has been deactivated. Contact ATN support.");
+    }
     const tenantName = listed ? await ensureListedSuperAdminHomeName(member.tenant_id, member.name) : member.name;
     return {
       email,
@@ -104,10 +107,18 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
     };
   }
 
+  // Invite-only: only listed super admins may bootstrap without a prior invite.
+  if (!listed) {
+    throw new Error("This email has not been invited to Catalyst.");
+  }
+
   const tenantId = newId("ten");
   const now = new Date().toISOString();
-  const tenantName = listed ? PLATFORM_HOME_NAME : "My organisation";
-  await db.prepare("INSERT INTO tenants (id, name, created_at) VALUES (?, ?, ?)").bind(tenantId, tenantName, now).run();
+  const tenantName = PLATFORM_HOME_NAME;
+  await db
+    .prepare("INSERT INTO tenants (id, name, created_at, active) VALUES (?, ?, ?, 1)")
+    .bind(tenantId, tenantName, now)
+    .run();
   await db
     .prepare("INSERT INTO tenant_members (email, tenant_id, role) VALUES (?, ?, ?)")
     .bind(email, tenantId, "reseller_admin")
@@ -118,8 +129,8 @@ export async function getOrCreatePortalContext(email: string): Promise<PortalCon
     tenantName,
     homeTenantId: tenantId,
     homeTenantName: tenantName,
-    role: listed ? "super_admin" : "reseller_admin",
-    isSuperAdmin: listed,
+    role: "super_admin",
+    isSuperAdmin: true,
   };
 }
 
