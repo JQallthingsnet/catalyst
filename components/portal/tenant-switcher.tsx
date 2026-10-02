@@ -1,20 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { PortalRole } from "@/lib/portal/role-model";
 
 export function TenantSwitcher({
   tenants,
   currentId,
   homeTenantId,
-  homeTenantName,
-  role,
 }: {
   tenants: { id: string; name: string }[];
   currentId: string;
   homeTenantId: string;
-  homeTenantName: string;
-  role: PortalRole;
 }) {
   const router = useRouter();
   const resellers = tenants.filter((tenant) => tenant.id !== homeTenantId);
@@ -28,25 +23,8 @@ export function TenantSwitcher({
     router.refresh();
   }
 
-  if (role === "super_admin") {
-    return (
-      <label className="flex min-w-0 items-center gap-2 text-xs text-quiet">
-        Manage reseller
-        <select
-          value={homeTenantId}
-          disabled
-          className="max-w-44 truncate rounded-xl border border-line bg-panel px-2 py-1.5 text-ink disabled:opacity-70"
-        >
-          <option value={homeTenantId}>{homeTenantName}</option>
-        </select>
-      </label>
-    );
-  }
-
   if (resellers.length === 0) {
-    return (
-      <p className="hidden text-xs text-quiet lg:block">No reseller orgs yet</p>
-    );
+    return <p className="hidden text-xs text-quiet lg:block">No reseller orgs yet</p>;
   }
 
   const value = resellers.some((tenant) => tenant.id === currentId) ? currentId : resellers[0].id;
