@@ -11,6 +11,7 @@
  * - View-as only changes privileges for listed super admins; it does not change tenantId.
  */
 import { getDB } from "@/lib/env";
+import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { newId } from "@/lib/portal/ids";
 import { isListedSuperAdmin } from "@/lib/portal/roles";
 
@@ -33,12 +34,15 @@ export async function membershipTenantId(email: string): Promise<string | null> 
 /** Invite-only: listed super admin, or member of an active organisation. */
 export async function canEmailSignIn(email: string): Promise<boolean> {
   if (await isListedSuperAdmin(email)) return true;
+  const hasActive = await portalTableHasColumn("tenants", "active");
   const row = await getDB()
     .prepare(
-      `SELECT m.tenant_id
-       FROM tenant_members m
-       JOIN tenants t ON t.id = m.tenant_id
-       WHERE m.email = ? AND IFNULL(t.active, 1) = 1`,
+      hasActive
+        ? `SELECT m.tenant_id
+           FROM tenant_members m
+           JOIN tenants t ON t.id = m.tenant_id
+           WHERE m.email = ? AND IFNULL(t.active, 1) = 1`
+        : `SELECT m.tenant_id FROM tenant_members m WHERE m.email = ?`,
     )
     .bind(email)
     .first<{ tenant_id: string }>();
@@ -46,8 +50,13 @@ export async function canEmailSignIn(email: string): Promise<boolean> {
 }
 
 export async function loadTenant(id: string): Promise<TenantRecord | null> {
+  const hasActive = await portalTableHasColumn("tenants", "active");
   const row = await getDB()
-    .prepare("SELECT id, name, created_at, IFNULL(active, 1) AS active FROM tenants WHERE id = ?")
+    .prepare(
+      hasActive
+        ? "SELECT id, name, created_at, IFNULL(active, 1) AS active FROM tenants WHERE id = ?"
+        : "SELECT id, name, created_at, 1 AS active FROM tenants WHERE id = ?",
+    )
     .bind(id)
     .first<{ id: string; name: string; created_at: string; active: number }>();
   if (!row) return null;
@@ -55,9 +64,10 @@ export async function loadTenant(id: string): Promise<TenantRecord | null> {
 }
 
 export async function listTenantOptions(activeOnly = true): Promise<{ id: string; name: string }[]> {
+  const hasActive = await portalTableHasColumn("tenants", "active");
   const rows = await getDB()
     .prepare(
-      activeOnly
+      activeOnly && hasActive
         ? `SELECT id, name FROM tenants WHERE IFNULL(active, 1) = 1 ORDER BY name COLLATE NOCASE`
         : `SELECT id, name FROM tenants ORDER BY name COLLATE NOCASE`,
     )
@@ -67,14 +77,22 @@ export async function listTenantOptions(activeOnly = true): Promise<{ id: string
 
 export async function listPlatformTenants(isSuperAdmin: boolean): Promise<PlatformTenant[]> {
   if (!isSuperAdmin) return [];
+  const hasActive = await portalTableHasColumn("tenants", "active");
   const rows = await getDB()
     .prepare(
-      `SELECT t.id, t.name, t.created_at, IFNULL(t.active, 1) AS active,
-              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
-              (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
-              (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count
-       FROM tenants t
-       ORDER BY IFNULL(t.active, 1) DESC, t.name COLLATE NOCASE`,
+      hasActive
+        ? `SELECT t.id, t.name, t.created_at, IFNULL(t.active, 1) AS active,
+                  (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
+                  (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
+                  (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count
+           FROM tenants t
+           ORDER BY IFNULL(t.active, 1) DESC, t.name COLLATE NOCASE`
+        : `SELECT t.id, t.name, t.created_at, 1 AS active,
+                  (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
+                  (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
+                  (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count
+           FROM tenants t
+           ORDER BY t.name COLLATE NOCASE`,
     )
     .all<{
       id: string;
