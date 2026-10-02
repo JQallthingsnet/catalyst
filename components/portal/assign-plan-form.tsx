@@ -61,7 +61,7 @@ export function AssignPlanForm({
           </option>
         ))}
       </select>
-      <button type="submit" disabled={busy} className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent disabled:opacity-40">
+      <button type="submit" disabled={busy} className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40">
         {busy ? "Saving…" : "Bind reseller"}
       </button>
       {error ? <p className="w-full text-sm text-danger">{error}</p> : null}

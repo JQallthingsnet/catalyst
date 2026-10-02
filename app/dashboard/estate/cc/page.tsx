@@ -192,7 +192,7 @@ export default async function CcSnapshotPage({
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="submit"
-            className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-on-accent"
+            className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
           >
             Apply filters
           </button>
