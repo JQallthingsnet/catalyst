@@ -522,6 +522,7 @@ export async function allocateWholesaleStock(
   if (!sku) throw new Error("Unknown catalogue item.");
   const platformPlan = await loadPlatformPlanRecord(input.platformPlanId);
   if (!platformPlan) throw new Error("Plan not found.");
+  if (!platformPlan.active) throw new Error("This ATN plan is deactivated.");
   const contracted = await tenantHasPlatformPlan(tenant.id, platformPlan.id);
   if (!contracted) throw new Error("Assign this plan to the reseller (contract) before selling stock.");
   if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");

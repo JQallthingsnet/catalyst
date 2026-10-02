@@ -9,6 +9,7 @@ export type Privilege =
   | "wholesale.allocate"
   | "platform.plan"
   | "platform.catalogue"
+  | "contract.view"
   | "order.create"
   | "plan.create"
   | "plan.edit"
@@ -29,6 +30,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "wholesale.allocate",
     "platform.plan",
     "platform.catalogue",
+    "contract.view",
     "order.create",
     "plan.create",
     "plan.edit",
@@ -53,6 +55,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "lifecycle",
     "settings",
     "invite.operator",
+    "contract.view",
   ],
   reseller_operator: ["assign", "lifecycle"],
 };
@@ -63,6 +66,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/estate", label: "Estate" },
     { href: "/dashboard/estate/cc", label: "CC snapshot" },
     { href: "/dashboard/sims", label: "SIMs" },
+    { href: "/dashboard/contracts", label: "Contract" },
     { href: "/dashboard/plans", label: "Plans" },
     { href: "/dashboard/catalogue", label: "Catalogue" },
     { href: "/dashboard/pools", label: "Pools" },
@@ -74,6 +78,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
   reseller_admin: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/sims", label: "SIMs" },
+    { href: "/dashboard/contracts", label: "Contract" },
     { href: "/dashboard/plans", label: "Plans" },
     { href: "/dashboard/pools", label: "Pools" },
     { href: "/dashboard/customers", label: "Customers" },

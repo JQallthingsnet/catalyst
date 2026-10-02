@@ -1,0 +1,1 @@
+ALTER TABLE platform_plans ADD COLUMN active INTEGER NOT NULL DEFAULT 1;

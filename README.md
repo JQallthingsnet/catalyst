@@ -6,6 +6,10 @@ Requires **Node.js 22+**.
 
 Visual theme follows allthingsnet.io. Interaction follows Atomic-style 3-step wizards. Control Center is the source of radio/SIM state; Catalyst D1 is the source of tenants, customers, plans, orders, and commercial pools.
 
+## Contract book
+
+**Contract** (`/dashboard/contracts`) is what ATN has signed with each reseller (Rate Plan New + remarks). Super admin manages the book; **reseller admin only** can open Contract to refer to their lines (operators cannot). The same ATN plans appear under **Plans**, where super admin maps each line to a **supplier** rate plan (Cisco IoT Control Center, Singapore Telecom, China Mobile, or Other). A reseller with zero bound plans cannot receive sell stock. Mark one Rate Plan New as **default** for bulk transfers (must match Jasper TCode when supplier is Control Center). Rate-plan change windows for activated SIMs (24th-of-month cut-off, one change per month, billing mismatch flags) are specified but not automated yet.
+
 ## Plans (three layers)
 
 Every SIM can carry three plan records. They are different commercial relationships, not three SKUs of the same product.
@@ -13,7 +17,7 @@ Every SIM can carry three plan records. They are different commercial relationsh
 | Layer | Who it is between | What it is |
 | --- | --- | --- |
 | Control Center rate plan | ATN ↔ Cisco IoT Control Center | Network / radio mapping. Super admin only. |
-| ATN plan (Plan 1) | ATN ↔ reseller | The contracted wholesale plan. Same T&Cs for every reseller who is assigned it. Assigning Plan 1 to Acme vs Beta does **not** create Plan 1A / 1B as new SKUs. |
+| ATN plan (Plan 1) | ATN ↔ reseller | The contracted wholesale plan. Created by super admin and **bound** to one or more resellers; only those resellers see it. Same T&Cs for every bound reseller. |
 | Retail plan | Reseller ↔ end customer | A copy of an ATN plan with a customer-facing name, MB per SIM, and price per SIM. |
 
 **Who sees which layer**
@@ -24,8 +28,8 @@ Every SIM can carry three plan records. They are different commercial relationsh
 
 **How stock gets onto a plan**
 
-1. Super admin **creates catalogue SKUs** (form factor products) under Catalogue, then **creates** an ATN plan and maps it to a Control Center rate plan (typed as it appears in CC).
-2. Super admin **assigns the contract** (same Plan 1, same T&Cs) to a reseller. No SIMs move. The reseller is allowed to buy that plan.
+1. Super admin **creates catalogue SKUs** (form factor products) under Catalogue, then **creates** an ATN plan (mapped to a Control Center rate plan) and **binds** the reseller(s) on that contract. Unbound resellers never see the plan. Super admin can later bind/unbind, **deactivate** (hides from resellers; blocks sell/retail copy), or **delete** (after deactivate, no SIMs left, confirm by typing the plan name).
+2. Binding the contract does **not** move SIMs. The reseller is allowed to buy that plan.
 3. Super admin **sells stock** into that reseller’s warehouse. Catalyst takes free ICCIDs from the Control Center copy (same CC rate plan and communication plan, Inventory/Ready, not already in a warehouse), oldest first. Sell stock is refused until the contract exists and enough free SIMs are in the copy.
 4. **Bought** means SIMs on that plan exist in the warehouse. A signed contract with an empty warehouse is contracted, not buying.
 5. Reseller admin **copies** a contracted ATN plan into a retail plan (name, data allowance, price) for operators to sell.
