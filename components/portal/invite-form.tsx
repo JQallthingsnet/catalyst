@@ -5,15 +5,25 @@ import { useRouter } from "next/navigation";
 import type { PortalRole } from "@/lib/portal/role-model";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
 
-export function InviteForm({ roles, allowNewOrganisation = false }: { roles: PortalRole[]; allowNewOrganisation?: boolean }) {
+export function InviteForm({
+  roles,
+  allowNewOrganisation = false,
+  organisations = [],
+}: {
+  roles: PortalRole[];
+  allowNewOrganisation?: boolean;
+  organisations?: { id: string; name: string }[];
+}) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<PortalRole>(roles[0] ?? "reseller_operator");
   const [organisationName, setOrganisationName] = useState("");
+  const [organisationId, setOrganisationId] = useState(organisations[0]?.id ?? "");
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
   const router = useRouter();
   const creatingOrg = allowNewOrganisation && role === "reseller_admin";
+  const bindingOrg = allowNewOrganisation && role === "reseller_operator";
   const newOrgName = creatingOrg ? organisationName.trim() : "";
 
   if (roles.length === 0) return null;
@@ -27,6 +37,11 @@ export function InviteForm({ roles, allowNewOrganisation = false }: { roles: Por
       setBusy(false);
       return;
     }
+    if (bindingOrg && !organisationId) {
+      setError("Choose which reseller organisation this operator belongs to.");
+      setBusy(false);
+      return;
+    }
     try {
       const res = await fetch("/api/portal/invites", {
         method: "POST",
@@ -35,6 +50,7 @@ export function InviteForm({ roles, allowNewOrganisation = false }: { roles: Por
           email,
           role,
           organisationName: newOrgName || undefined,
+          organisationId: bindingOrg ? organisationId : undefined,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -45,7 +61,7 @@ export function InviteForm({ roles, allowNewOrganisation = false }: { roles: Por
       setEmail("");
       setOrganisationName("");
       setOk(`Invite email sent to ${email}.`);
-      if (newOrgName) router.refresh();
+      router.refresh();
     } catch {
       setError("Invite failed.");
     } finally {
@@ -98,6 +114,28 @@ export function InviteForm({ roles, allowNewOrganisation = false }: { roles: Por
           <span className="mt-1 block text-xs text-quiet">
             This is their brand in the sidebar, with “Supported by ATN Catalyst” underneath.
           </span>
+        </label>
+      ) : null}
+      {bindingOrg ? (
+        <label className="block text-sm">
+          Reseller organisation
+          {organisations.length === 0 ? (
+            <p className="mt-2 text-sm text-danger">Create a reseller first (invite a reseller admin with an organisation name).</p>
+          ) : (
+            <select
+              required
+              value={organisationId}
+              onChange={(event) => setOrganisationId(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
+            >
+              {organisations.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="mt-1 block text-xs text-quiet">Operators only see this organisation’s SIMs and customers.</span>
         </label>
       ) : null}
       {error ? <p className="text-sm text-danger">{error}</p> : null}

@@ -33,10 +33,17 @@ export default async function AdminPage() {
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
         <h2 className="font-semibold">Send invite</h2>
         <p className="mt-1 text-sm text-quiet">
-          Super admin, reseller admin, or operator. Creating a reseller needs an organisation name — that name
-          appears top left in their portal.
+          Super admin joins ATN Platform. Reseller admin creates a new organisation (name shown top left). Operator
+          must be bound to an existing reseller.
         </p>
-        <InviteForm roles={inviteableRoles(ctx.role)} allowNewOrganisation />
+        <InviteForm
+          roles={inviteableRoles(ctx.role)}
+          allowNewOrganisation
+          organisations={excludeHomeTenant(tenants, ctx.homeTenantId).map((item) => ({
+            id: item.id,
+            name: item.name,
+          }))}
+        />
       </article>
 
       <article className="mt-6 rounded-card border border-line bg-panel p-5">

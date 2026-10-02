@@ -8,7 +8,12 @@ export async function POST(request: Request) {
   const ctx = await requirePortalApi();
   if (isResponse(ctx)) return ctx;
   try {
-    const body = (await request.json()) as { email?: string; role?: string; organisationName?: string };
+    const body = (await request.json()) as {
+      email?: string;
+      role?: string;
+      organisationName?: string;
+      organisationId?: string;
+    };
     const role = parseViewRole(body.role);
     if (!role || !inviteableRoles(ctx.role).includes(role)) {
       return NextResponse.json({ error: "You cannot invite that role." }, { status: 403 });
@@ -20,8 +25,9 @@ export async function POST(request: Request) {
       role,
       signInUrl: origin,
       organisationName: body.organisationName,
+      organisationId: body.organisationId,
     });
-    if (body.organisationName?.trim() && ctx.isSuperAdmin) {
+    if ((body.organisationName?.trim() || body.organisationId?.trim()) && ctx.isSuperAdmin) {
       await setActingTenantCookie(created.tenantId);
     }
     return NextResponse.json({ success: true, tenantId: created.tenantId });

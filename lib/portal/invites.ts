@@ -5,7 +5,7 @@ import { newId } from "@/lib/portal/ids";
 import { writeAudit, type PortalContext } from "@/lib/portal/repo";
 import { addSuperAdmin } from "@/lib/portal/roles";
 import { can, type PortalRole } from "@/lib/portal/role-model";
-import { createResellerOrganisation, membershipTenantId } from "@/lib/portal/tenant";
+import { createResellerOrganisation, loadTenant, membershipTenantId } from "@/lib/portal/tenant";
 
 export type Invite = {
   id: string;
@@ -53,6 +53,7 @@ export async function createAndSendInvite(input: {
   role: PortalRole;
   signInUrl: string;
   organisationName?: string;
+  organisationId?: string;
 }): Promise<{ tenantId: string; tenantName: string }> {
   const allowed = inviteableRoles(input.ctx.role);
   if (!allowed.includes(input.role)) {
@@ -66,11 +67,27 @@ export async function createAndSendInvite(input: {
   let tenantId = input.ctx.tenantId;
   let tenantName = input.ctx.tenantName;
   const organisationName = input.organisationName?.trim();
+  const organisationId = input.organisationId?.trim();
+
   if (input.role === "reseller_admin" && input.ctx.isSuperAdmin && input.ctx.role === "super_admin") {
     if (!organisationName) {
       throw new Error("Enter the reseller organisation name. It appears top left in their portal.");
     }
   }
+
+  if (input.role === "reseller_operator" && input.ctx.isSuperAdmin && input.ctx.role === "super_admin") {
+    if (!organisationId) {
+      throw new Error("Choose which reseller organisation this operator belongs to.");
+    }
+    if (organisationId === input.ctx.homeTenantId) {
+      throw new Error("Operators must belong to a reseller organisation, not ATN Platform.");
+    }
+    const org = await loadTenant(organisationId);
+    if (!org) throw new Error("Organisation not found.");
+    tenantId = org.id;
+    tenantName = org.name;
+  }
+
   if (organisationName) {
     if (!input.ctx.isSuperAdmin || input.role !== "reseller_admin") {
       throw new Error("Only a super admin can create a reseller organisation.");
