@@ -18,7 +18,7 @@ export default async function CataloguePage() {
         </div>
         <Link
           href="/dashboard/catalogue/new"
-          className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-canvas"
+          className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-on-accent"
         >
           Create SKU
         </Link>
