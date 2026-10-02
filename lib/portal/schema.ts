@@ -85,11 +85,14 @@ export async function ensurePortalSchema(): Promise<void> {
   const db = getDB();
   if (!ready) {
     for (const sql of STATEMENTS) {
-      await db.prepare(sql).run();
+      try {
+        await db.prepare(sql).run();
+      } catch {
+        // Table/index may already exist or be incompatible on older D1 — alters below patch gaps.
+      }
     }
     ready = true;
   }
-  // Always attempt alters so new columns land on long-lived Worker isolates / older D1 DBs.
   for (const sql of ALTERS) {
     try {
       await db.prepare(sql).run();

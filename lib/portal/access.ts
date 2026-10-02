@@ -1,11 +1,9 @@
 import { getOrCreatePortalContext, type PortalContext } from "@/lib/portal/repo";
 import {
-  clearActingTenantCookie,
   effectiveRole,
   getActingTenantCookie,
   getViewAsCookie,
   isListedSuperAdmin,
-  setActingTenantCookie,
 } from "@/lib/portal/roles";
 import { excludeHomeTenant, listTenantOptions, loadTenant } from "@/lib/portal/tenant";
 
@@ -21,8 +19,6 @@ export async function resolvePortalContext(email: string): Promise<PortalContext
 
   // Super admin view: always ATN Platform. Ignore any leftover acting-tenant cookie.
   if (role === "super_admin") {
-    const actingId = await getActingTenantCookie();
-    if (actingId) await clearActingTenantCookie();
     return {
       ...home,
       isSuperAdmin: true,
@@ -48,7 +44,7 @@ export async function resolvePortalContext(email: string): Promise<PortalContext
   const resellers = excludeHomeTenant(await listTenantOptions(), home.homeTenantId);
   const fallback = resellers[0] ? await loadTenant(resellers[0].id) : null;
   if (fallback) {
-    await setActingTenantCookie(fallback.id);
+    // Do not set cookies here — Server Components cannot mutate cookies on GET (Workers 500).
     return {
       ...home,
       isSuperAdmin: true,
@@ -58,7 +54,6 @@ export async function resolvePortalContext(email: string): Promise<PortalContext
     };
   }
 
-  await clearActingTenantCookie();
   return {
     ...home,
     isSuperAdmin: true,
