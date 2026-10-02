@@ -16,15 +16,15 @@ export default async function PlansPage() {
           <div>
             <h1 className="text-3xl font-semibold">Plans</h1>
             <p className="mt-1 text-sm text-quiet">
-              ATN wholesale plans with supplier mapping (Control Center, Singapore Telecom, China Mobile, …). The same
-              lines appear on{" "}
+              Map ATN plans upward to your suppliers (Control Center, Singapore Telecom, China Mobile, …). Bind those
+              plans to resellers on{" "}
               <Link href="/dashboard/contracts" className="text-accent">
                 Contract
-              </Link>{" "}
-              for bound resellers.
+              </Link>
+              .
             </p>
           </div>
-          <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+          <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent">
             Create ATN plan
           </Link>
         </div>
@@ -76,7 +76,8 @@ export default async function PlansPage() {
         <div>
           <h1 className="text-3xl font-semibold">Plans</h1>
           <p className="mt-1 text-sm text-quiet">
-            Copy a contracted ATN line into a retail plan (name, data per SIM, price) for operators. See signed lines on{" "}
+            Map contracted rate plans downward into retail plans (name, data per SIM, price) for your
+            operators and end customers. Your signed lines are on{" "}
             <Link href="/dashboard/contracts" className="text-accent">
               Contract
             </Link>
@@ -84,7 +85,7 @@ export default async function PlansPage() {
           </p>
         </div>
         {can(ctx.role, "plan.create") ? (
-          <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+          <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent">
             Copy to retail
           </Link>
         ) : null}
