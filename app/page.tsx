@@ -17,8 +17,8 @@ export default async function Home() {
             Order SIMs, plans, and pools for your customers.
           </h1>
           <p className="mt-4 text-lg leading-8 text-quiet">
-            Multi-tenant MVNE portal for resellers. Enter your email for an 8-digit passcode. First sign-in registers
-            you to your tenant.
+            Multi-tenant MVNE portal for resellers. Enter an invited email for an 8-digit passcode. New accounts are
+            created by Admin or reseller invites — not by self-registration.
           </p>
         </section>
         <LoginForm />

@@ -28,7 +28,7 @@ export default async function AdminPage() {
         <TenantDirectory
           tenants={excludeHomeTenant(tenants, ctx.homeTenantId)}
           currentId={ctx.tenantId}
-          canRename
+          canManage
         />
       </div>
 
@@ -41,10 +41,12 @@ export default async function AdminPage() {
         <InviteForm
           roles={inviteableRoles(ctx.role)}
           allowNewOrganisation
-          organisations={excludeHomeTenant(tenants, ctx.homeTenantId).map((item) => ({
-            id: item.id,
-            name: item.name,
-          }))}
+          organisations={excludeHomeTenant(tenants, ctx.homeTenantId)
+            .filter((item) => item.active)
+            .map((item) => ({
+              id: item.id,
+              name: item.name,
+            }))}
         />
       </article>
 

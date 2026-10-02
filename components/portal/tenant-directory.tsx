@@ -78,27 +78,83 @@ function RenameOrgButton({ tenantId, name }: { tenantId: string; name: string })
   );
 }
 
+function DeactivateOrgButton({ tenantId, name, active }: { tenantId: string; name: string; active: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function toggle() {
+    const next = !active;
+    const ok = window.confirm(
+      next
+        ? `Reactivate ${name}? Members will be able to sign in again.`
+        : `Deactivate ${name}? Members will not be able to sign in until you reactivate.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/portal/tenants", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, active: next }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Update failed.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Update failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void toggle()}
+        className={`text-sm disabled:opacity-40 ${active ? "text-danger" : "text-accent"}`}
+      >
+        {busy ? "…" : active ? "Deactivate" : "Reactivate"}
+      </button>
+      {error ? <p className="text-xs text-danger">{error}</p> : null}
+    </div>
+  );
+}
+
 export function TenantDirectory({
   tenants,
   currentId,
+  canManage = false,
   canRename = false,
 }: {
   tenants: PlatformTenant[];
   currentId: string;
+  canManage?: boolean;
+  /** @deprecated use canManage */
   canRename?: boolean;
 }) {
+  const manage = canManage || canRename;
   return (
     <article className="rounded-card border border-line bg-panel p-5">
       <h2 className="font-semibold">All organisations</h2>
       <p className="mt-1 text-sm text-quiet">
         Organisation totals. Estate shows every customer and SIM. Open an organisation to preview as that reseller.
-        {canRename ? " Rename updates the name shown top left in their portal." : null}
+        {manage
+          ? " Rename updates the top-left brand. Deactivate blocks member sign-in without deleting data."
+          : null}
       </p>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="text-xs uppercase tracking-wide text-quiet">
             <tr>
               <th className="pb-2 font-medium">Organisation</th>
+              <th className="pb-2 font-medium">Status</th>
               <th className="pb-2 font-medium">SIMs</th>
               <th className="pb-2 font-medium">Customers</th>
               <th className="pb-2 font-medium">Members</th>
@@ -108,7 +164,7 @@ export function TenantDirectory({
           <tbody>
             {tenants.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-3 text-quiet">
+                <td colSpan={6} className="py-3 text-quiet">
                   No organisations yet.
                 </td>
               </tr>
@@ -116,15 +172,23 @@ export function TenantDirectory({
               tenants.map((tenant) => (
                 <tr key={tenant.id} className="border-t border-line">
                   <td className="py-3">
-                    <p className="text-ink">{tenant.name}</p>
+                    <p className={tenant.active ? "text-ink" : "text-quiet"}>{tenant.name}</p>
                     <p className="text-xs text-quiet">{tenant.id}</p>
+                  </td>
+                  <td className="py-3">
+                    <span className={tenant.active ? "text-ok" : "text-danger"}>
+                      {tenant.active ? "Active" : "Deactivated"}
+                    </span>
                   </td>
                   <td className="py-3">{tenant.simCount}</td>
                   <td className="py-3">{tenant.customerCount}</td>
                   <td className="py-3">{tenant.memberCount}</td>
                   <td className="py-3">
                     <div className="flex flex-wrap items-center justify-end gap-3">
-                      {canRename ? <RenameOrgButton tenantId={tenant.id} name={tenant.name} /> : null}
+                      {manage ? <RenameOrgButton tenantId={tenant.id} name={tenant.name} /> : null}
+                      {manage ? (
+                        <DeactivateOrgButton tenantId={tenant.id} name={tenant.name} active={tenant.active} />
+                      ) : null}
                       <OpenTenantButton tenantId={tenant.id} current={tenant.id === currentId} />
                     </div>
                   </td>

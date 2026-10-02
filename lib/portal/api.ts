@@ -1,5 +1,5 @@
 import { ensureAuthSchema } from "@/lib/auth/schema";
-import { getSession } from "@/lib/auth/session";
+import { clearSessionCookie, getSession } from "@/lib/auth/session";
 import { resolvePortalContext } from "@/lib/portal/access";
 import { can, type Privilege } from "@/lib/portal/roles";
 import { ensurePortalSchema } from "@/lib/portal/schema";
@@ -11,7 +11,15 @@ export async function requirePortalApi(): Promise<PortalContext | NextResponse> 
   if (!session) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   await ensureAuthSchema();
   await ensurePortalSchema();
-  return resolvePortalContext(session.email);
+  try {
+    return await resolvePortalContext(session.email);
+  } catch (err) {
+    await clearSessionCookie();
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Sign in required." },
+      { status: 403 },
+    );
+  }
 }
 
 export function isResponse(value: PortalContext | NextResponse): value is NextResponse {

@@ -12,7 +12,9 @@ import { AuthRateLimitBucket, checkRateLimit } from "@/lib/auth/rate-limit";
 import { upsertAuthCode } from "@/lib/auth/repository";
 import { getClientIP, isBrowserRequest } from "@/lib/auth/request";
 import { ensureAuthSchema } from "@/lib/auth/schema";
+import { ensurePortalSchema } from "@/lib/portal/schema";
 import { isDevCodeEnabled } from "@/lib/env";
+import { canEmailSignIn } from "@/lib/portal/tenant";
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +29,17 @@ export async function POST(request: Request) {
     }
 
     await ensureAuthSchema();
+    await ensurePortalSchema();
+
+    if (!(await canEmailSignIn(email))) {
+      return NextResponse.json(
+        {
+          error:
+            "This email is not invited, or its organisation is deactivated. Ask your admin for an invite.",
+        },
+        { status: 403 },
+      );
+    }
 
     const emailLimit = await checkRateLimit({
       bucket: AuthRateLimitBucket.sendCodeEmail,

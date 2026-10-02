@@ -11,6 +11,8 @@ import { getClientIP, isBrowserRequest } from "@/lib/auth/request";
 import { ensureAuthSchema } from "@/lib/auth/schema";
 import { setSessionCookie } from "@/lib/auth/session";
 import { timingSafeEqual } from "@/lib/auth/crypto";
+import { ensurePortalSchema } from "@/lib/portal/schema";
+import { canEmailSignIn } from "@/lib/portal/tenant";
 
 export async function POST(request: Request) {
   try {
@@ -27,6 +29,17 @@ export async function POST(request: Request) {
     }
 
     await ensureAuthSchema();
+    await ensurePortalSchema();
+
+    if (!(await canEmailSignIn(email))) {
+      return NextResponse.json(
+        {
+          error:
+            "This email is not invited, or its organisation is deactivated. Ask your admin for an invite.",
+        },
+        { status: 403 },
+      );
+    }
 
     const emailLimit = await checkRateLimit({
       bucket: AuthRateLimitBucket.verifyCodeEmail,

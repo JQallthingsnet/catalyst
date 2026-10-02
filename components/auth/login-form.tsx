@@ -153,7 +153,7 @@ export function LoginForm() {
       </h2>
       <p className="mt-2 text-sm leading-6 text-quiet">
         {step === "email"
-          ? "We’ll send an 8-digit passcode to this address. First sign-in creates your tenant."
+          ? "We’ll send an 8-digit passcode if this email has been invited."
           : `Code sent to ${email}. It is valid for 5 minutes.`}
       </p>
 
