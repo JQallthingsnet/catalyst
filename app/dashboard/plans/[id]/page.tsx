@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { AssignPlanForm } from "@/components/portal/assign-plan-form";
+import { PlatformPlanLifecycle } from "@/components/portal/platform-plan-lifecycle";
+import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import {
@@ -7,7 +9,7 @@ import {
   listPlatformPlanResellers,
   listPlatformPlanTopSims,
 } from "@/lib/portal/platform-plans";
-import { listTenantOptions } from "@/lib/portal/tenant";
+import { excludeHomeTenant, listTenantOptions } from "@/lib/portal/tenant";
 import { notFound } from "next/navigation";
 
 export default async function PlatformPlanPage({ params }: { params: { id: string } | Promise<{ id: string }> }) {
@@ -20,23 +22,32 @@ export default async function PlatformPlanPage({ params }: { params: { id: strin
     listTenantOptions(),
     listPlatformPlanTopSims(plan.id, 10),
   ]);
+  const boundIds = new Set(resellers.map((item) => item.tenantId));
+  const unbound = excludeHomeTenant(allTenants, ctx.homeTenantId).filter((item) => !boundIds.has(item.id));
   const buying = resellers.filter((item) => item.simCount > 0);
   const usageMb = resellers.reduce((sum, item) => sum + item.usageMb, 0);
 
   return (
     <div>
-      <Link href="/dashboard/plans" className="text-sm text-quiet hover:text-accent">
-        ← Plans
-      </Link>
-      <h1 className="mt-4 text-3xl font-semibold">{plan.name}</h1>
-      <p className="mt-1 text-sm text-quiet">
-        ATN ↔ reseller plan. CC {plan.ccRatePlan} · {plan.commPlan}
-      </p>
-      <p className="mt-2 text-xs text-quiet">Opened as {ctx.tenantName}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link href="/dashboard/plans" className="text-sm text-quiet hover:text-accent">
+            ← Plans
+          </Link>
+          <h1 className="mt-4 text-3xl font-semibold">{plan.name}</h1>
+          <p className="mt-1 text-sm text-quiet">
+            Supplier {plan.supplier} · Rate plan {plan.ccRatePlan} · {plan.commPlan}
+          </p>
+          <p className={`mt-2 text-sm ${plan.active ? "text-ok" : "text-danger"}`}>
+            {plan.active ? "Active" : "Deactivated"}
+          </p>
+        </div>
+        <PlatformPlanLifecycle planId={plan.id} name={plan.name} active={plan.active} simCount={plan.simCount} />
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">Resellers contracted</p>
+          <p className="text-sm text-quiet">Resellers bound</p>
           <p className="mt-2 text-3xl font-semibold">{resellers.length}</p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
@@ -49,17 +60,20 @@ export default async function PlatformPlanPage({ params }: { params: { id: strin
         </article>
       </div>
 
-      <article className="mt-6 rounded-card border border-line bg-panel p-5">
-        <h2 className="font-semibold">Assign contract</h2>
-        <p className="mt-1 text-sm text-quiet">Same T&amp;Cs. Does not create a new plan SKU.</p>
-        <AssignPlanForm
-          platformPlanId={plan.id}
-          resellers={allTenants.filter((item) => item.id !== ctx.homeTenantId)}
-        />
-      </article>
+      {plan.active ? (
+        <article className="mt-6 rounded-card border border-line bg-panel p-5">
+          <h2 className="font-semibold">Bind another reseller</h2>
+          <p className="mt-1 text-sm text-quiet">Only bound resellers can see or buy this plan.</p>
+          <AssignPlanForm platformPlanId={plan.id} resellers={unbound} />
+        </article>
+      ) : (
+        <p className="mt-6 rounded-card border border-line bg-panel px-4 py-3 text-sm text-quiet">
+          Reactivate to bind more resellers or sell stock.
+        </p>
+      )}
 
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
-        <h2 className="font-semibold">Resellers</h2>
+        <h2 className="font-semibold">Bound resellers</h2>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="text-quiet">
@@ -69,6 +83,7 @@ export default async function PlatformPlanPage({ params }: { params: { id: strin
                 <th className="py-2">With customer</th>
                 <th className="py-2">Warehouse</th>
                 <th className="py-2">Usage</th>
+                <th className="py-2" />
               </tr>
             </thead>
             <tbody>
@@ -79,6 +94,14 @@ export default async function PlatformPlanPage({ params }: { params: { id: strin
                   <td className="py-2">{row.assignedCount}</td>
                   <td className="py-2">{row.warehouseCount}</td>
                   <td className="py-2">{row.usageMb} MB</td>
+                  <td className="py-2 text-right">
+                    <UnassignPlanButton
+                      platformPlanId={plan.id}
+                      tenantId={row.tenantId}
+                      tenantName={row.tenantName}
+                      simCount={row.simCount}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -5,7 +5,7 @@ import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 import type { SimSku } from "@/lib/portal/skus";
 
 type Plan = { id: string; name: string; available: number };
-type Reseller = { id: string; name: string; planIds: string[] };
+type Reseller = { id: string; name: string; planIds: string[]; defaultPlanId: string };
 
 export function AllocateWizard({
   resellers,
@@ -20,7 +20,7 @@ export function AllocateWizard({
   const [tenantId, setTenantId] = useState(resellers[0]?.id ?? "");
   const [skuId, setSkuId] = useState<string>(skus[0]?.id ?? "");
   const [quantity, setQuantity] = useState(1);
-  const [platformPlanId, setPlatformPlanId] = useState("");
+  const [platformPlanId, setPlatformPlanId] = useState(resellers[0]?.defaultPlanId ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +30,12 @@ export function AllocateWizard({
     () => plans.filter((plan) => reseller?.planIds.includes(plan.id)),
     [plans, reseller],
   );
-  const plan = contracted.find((item) => item.id === platformPlanId) ?? contracted[0];
+  const selectedPlanId = platformPlanId && contracted.some((plan) => plan.id === platformPlanId)
+    ? platformPlanId
+    : reseller?.defaultPlanId && contracted.some((plan) => plan.id === reseller.defaultPlanId)
+      ? reseller.defaultPlanId
+      : contracted[0]?.id ?? "";
+  const plan = contracted.find((item) => item.id === selectedPlanId);
 
   async function submit() {
     setBusy(true);
@@ -39,7 +44,7 @@ export function AllocateWizard({
       const res = await fetch("/api/portal/wholesale", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, skuId, quantity, platformPlanId: plan?.id }),
+        body: JSON.stringify({ tenantId, skuId, quantity, platformPlanId: selectedPlanId || plan?.id }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
@@ -83,7 +88,7 @@ export function AllocateWizard({
                 type="button"
                 onClick={() => {
                   setTenantId(item.id);
-                  setPlatformPlanId("");
+                  setPlatformPlanId(item.defaultPlanId);
                 }}
                 className={`rounded-card border p-4 text-left ${
                   tenantId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
@@ -91,7 +96,9 @@ export function AllocateWizard({
               >
                 <p className="font-semibold">{item.name}</p>
                 <p className="mt-1 text-xs text-quiet">
-                  {item.planIds.length} contracted plan{item.planIds.length === 1 ? "" : "s"}
+                  {item.planIds.length
+                    ? `${item.planIds.length} contracted Rate Plan New`
+                    : "No contract — bind on Contract first"}
                 </p>
               </button>
             ))}
@@ -144,9 +151,9 @@ export function AllocateWizard({
             />
           </label>
           <label className="block text-sm">
-            ATN plan (this reseller)
+            ATN plan / Rate Plan New (this reseller)
             <select
-              value={plan?.id ?? ""}
+              value={selectedPlanId}
               onChange={(event) => {
                 const nextId = event.target.value;
                 setPlatformPlanId(nextId);
@@ -158,6 +165,7 @@ export function AllocateWizard({
               {contracted.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name} · {item.available.toLocaleString("en-AU")} free in CC
+                  {item.id === reseller?.defaultPlanId ? " · default" : ""}
                 </option>
               ))}
             </select>
@@ -169,7 +177,9 @@ export function AllocateWizard({
             </p>
           ) : null}
           {contracted.length === 0 ? (
-            <p className="text-sm text-danger">Assign a plan to this reseller on Plans before selling stock.</p>
+            <p className="text-sm text-danger">
+              Bind a Rate Plan New for this reseller on Contract before selling stock.
+            </p>
           ) : null}
         </div>
       ) : null}

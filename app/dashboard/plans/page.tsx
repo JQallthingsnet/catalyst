@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PlatformPlanLifecycle } from "@/components/portal/platform-plan-lifecycle";
 import { requirePortal } from "@/lib/portal/guard";
 import { listPlans } from "@/lib/portal/repo";
 import { listAssignedPlatformPlans, listPlatformPlans } from "@/lib/portal/platform-plans";
@@ -14,7 +15,14 @@ export default async function PlansPage() {
         <div className="flex items-end justify-between gap-3">
           <div>
             <h1 className="text-3xl font-semibold">Plans</h1>
-            <p className="mt-1 text-sm text-quiet">ATN plans sold to resellers. Assign a contract, then sell SIMs.</p>
+            <p className="mt-1 text-sm text-quiet">
+              ATN wholesale plans with supplier mapping (Control Center, Singapore Telecom, China Mobile, …). The same
+              lines appear on{" "}
+              <Link href="/dashboard/contracts" className="text-accent">
+                Contract
+              </Link>{" "}
+              for bound resellers.
+            </p>
           </div>
           <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
             Create ATN plan
@@ -23,19 +31,34 @@ export default async function PlansPage() {
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           {plans.length === 0 ? <p className="text-sm text-quiet">No ATN plans yet.</p> : null}
           {plans.map((plan) => (
-            <Link
-              key={plan.id}
-              href={`/dashboard/plans/${plan.id}`}
-              className="rounded-card border border-line bg-panel p-5 hover:border-accent"
-            >
-              <p className="text-lg font-semibold">{plan.name}</p>
-              <p className="mt-1 text-sm text-quiet">
-                CC {plan.ccRatePlan} · {plan.commPlan}
-              </p>
+            <article key={plan.id} className="rounded-card border border-line bg-panel p-5">
+              <div className="flex items-start justify-between gap-3">
+                <Link href={`/dashboard/plans/${plan.id}`} className="min-w-0 hover:text-accent">
+                  <p className="text-lg font-semibold">{plan.name}</p>
+                  <p className="mt-1 text-sm text-quiet">
+                    {plan.supplier} · {plan.ccRatePlan} · {plan.commPlan}
+                  </p>
+                </Link>
+                <span className={`shrink-0 text-xs ${plan.active ? "text-ok" : "text-danger"}`}>
+                  {plan.active ? "Active" : "Deactivated"}
+                </span>
+              </div>
               <p className="mt-3 text-sm">
-                {plan.assignedResellers} resellers contracted · {plan.simCount} SIMs (bought)
+                {plan.assignedResellers} reseller{plan.assignedResellers === 1 ? "" : "s"} on contract · {plan.simCount}{" "}
+                SIMs (bought)
               </p>
-            </Link>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <Link href={`/dashboard/plans/${plan.id}`} className="text-sm text-accent">
+                  Manage / map supplier
+                </Link>
+                <PlatformPlanLifecycle
+                  planId={plan.id}
+                  name={plan.name}
+                  active={plan.active}
+                  simCount={plan.simCount}
+                />
+              </div>
+            </article>
           ))}
         </div>
       </div>
@@ -53,7 +76,11 @@ export default async function PlansPage() {
         <div>
           <h1 className="text-3xl font-semibold">Plans</h1>
           <p className="mt-1 text-sm text-quiet">
-            Copy a contracted ATN plan into a retail plan (name, data per SIM, price) for operators to assign.
+            Copy a contracted ATN line into a retail plan (name, data per SIM, price) for operators. See signed lines on{" "}
+            <Link href="/dashboard/contracts" className="text-accent">
+              Contract
+            </Link>
+            .
           </p>
         </div>
         {can(ctx.role, "plan.create") ? (
@@ -63,18 +90,10 @@ export default async function PlansPage() {
         ) : null}
       </div>
 
-      {ctx.role === "reseller_admin" ? (
-        <article className="mt-6 rounded-card border border-line bg-panel p-5">
-          <h2 className="font-semibold">ATN plans on contract</h2>
-          <ul className="mt-3 space-y-2 text-sm">
-            {assigned.length === 0 ? <li className="text-quiet">None assigned yet.</li> : null}
-            {assigned.map((plan) => (
-              <li key={plan.id} className="rounded-xl border border-line px-3 py-2">
-                {plan.name}
-              </li>
-            ))}
-          </ul>
-        </article>
+      {ctx.role === "reseller_admin" && assigned.length > 0 ? (
+        <p className="mt-4 text-sm text-quiet">
+          {assigned.length} contracted ATN line{assigned.length === 1 ? "" : "s"} available to copy.
+        </p>
       ) : null}
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
