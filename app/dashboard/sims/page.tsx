@@ -43,7 +43,7 @@ export default async function SimsPage({
             </Link>
           ) : null}
           {can(ctx.role, "assign") ? (
-            <Link href="/dashboard/sims/assign" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+            <Link href="/dashboard/sims/assign" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent">
               Assign SIMs
             </Link>
           ) : null}

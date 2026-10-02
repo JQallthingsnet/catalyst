@@ -11,11 +11,11 @@ export default async function OrdersPage() {
       <div className="flex items-end justify-between">
         <h1 className="text-3xl font-semibold">Orders</h1>
         {ctx.role === "super_admin" ? (
-          <Link href="/dashboard/estate/allocate" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+          <Link href="/dashboard/estate/allocate" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent">
             Sell stock
           </Link>
         ) : (
-          <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+          <Link href="/dashboard/sims/order" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent">
             Order SIMs
           </Link>
         )}

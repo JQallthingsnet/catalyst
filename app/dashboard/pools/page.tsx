@@ -16,7 +16,7 @@ export default async function PoolsPage() {
           <p className="mt-1 text-sm text-quiet">Shared data caps. Alerts at 80% and 100%.</p>
         </div>
         {can(ctx.role, "pool.create") ? (
-          <Link href="/dashboard/pools/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas">
+          <Link href="/dashboard/pools/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent">
             Create pool
           </Link>
         ) : null}
