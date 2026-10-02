@@ -35,7 +35,15 @@ export function PortalShell({
                 className="w-full rounded-card border border-line bg-panel px-4 py-2.5 text-sm text-ink outline-none placeholder:text-quiet focus:border-accent"
               />
             </form>
-            {ctx.isSuperAdmin ? <TenantSwitcher tenants={tenants} currentId={ctx.tenantId} /> : null}
+            {ctx.isSuperAdmin ? (
+              <TenantSwitcher
+                tenants={tenants}
+                currentId={ctx.tenantId}
+                homeTenantId={ctx.homeTenantId}
+                homeTenantName={ctx.homeTenantName}
+                role={ctx.role}
+              />
+            ) : null}
             {ctx.isSuperAdmin ? <ViewAsSwitcher role={ctx.role} /> : null}
             <p className="hidden truncate text-sm text-quiet sm:block">{ctx.tenantName}</p>
             <p className="hidden truncate text-xs text-quiet lg:block">{ctx.email}</p>
