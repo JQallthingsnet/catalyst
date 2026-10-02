@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ConfirmDialog } from "@/components/portal/confirm-dialog";
 import { OpenTenantButton } from "@/components/portal/tenant-switcher";
 import type { PlatformTenant } from "@/lib/portal/tenant";
 
@@ -80,17 +81,12 @@ function RenameOrgButton({ tenantId, name }: { tenantId: string; name: string })
 
 function DeactivateOrgButton({ tenantId, name, active }: { tenantId: string; name: string; active: boolean }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const next = !active;
 
-  async function toggle() {
-    const next = !active;
-    const ok = window.confirm(
-      next
-        ? `Reactivate ${name}? Members will be able to sign in again.`
-        : `Deactivate ${name}? Members will not be able to sign in until you reactivate.`,
-    );
-    if (!ok) return;
+  async function confirm() {
     setBusy(true);
     setError("");
     try {
@@ -104,6 +100,7 @@ function DeactivateOrgButton({ tenantId, name, active }: { tenantId: string; nam
         setError(data.error ?? "Update failed.");
         return;
       }
+      setOpen(false);
       router.refresh();
     } catch {
       setError("Update failed.");
@@ -117,39 +114,62 @@ function DeactivateOrgButton({ tenantId, name, active }: { tenantId: string; nam
       <button
         type="button"
         disabled={busy}
-        onClick={() => void toggle()}
+        onClick={() => {
+          setError("");
+          setOpen(true);
+        }}
         className={`text-sm disabled:opacity-40 ${active ? "text-danger" : "text-accent"}`}
       >
-        {busy ? "…" : active ? "Deactivate" : "Reactivate"}
+        {active ? "Deactivate" : "Reactivate"}
       </button>
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
+      {error && !open ? <p className="text-xs text-danger">{error}</p> : null}
+      <ConfirmDialog
+        open={open}
+        title={next ? `Reactivate ${name}?` : `Deactivate ${name}?`}
+        body={
+          next ? (
+            <p>Members of this organisation will be able to sign in again with an invite email.</p>
+          ) : (
+            <p>
+              Members will not be able to request a login code until you reactivate. Organisation data is kept. You can
+              permanently delete later if needed.
+            </p>
+          )
+        }
+        confirmLabel={next ? "Reactivate" : "Deactivate"}
+        tone={next ? "accent" : "danger"}
+        busy={busy}
+        error={error}
+        onClose={() => {
+          if (!busy) setOpen(false);
+        }}
+        onConfirm={() => void confirm()}
+      />
     </div>
   );
 }
 
 function DeleteOrgButton({ tenantId, name }: { tenantId: string; name: string }) {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function remove() {
-    const typed = window.prompt(
-      `Permanently delete ${name}? This removes members, SIMs, customers, plans, orders, and invites for that org. Type the organisation name to confirm.`,
-    );
-    if (typed == null) return;
+  async function confirm(typedName?: string) {
     setBusy(true);
     setError("");
     try {
       const res = await fetch("/api/portal/tenants", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, confirmName: typed }),
+        body: JSON.stringify({ tenantId, confirmName: typedName ?? "" }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? "Delete failed.");
         return;
       }
+      setOpen(false);
       router.refresh();
     } catch {
       setError("Delete failed.");
@@ -163,12 +183,34 @@ function DeleteOrgButton({ tenantId, name }: { tenantId: string; name: string })
       <button
         type="button"
         disabled={busy}
-        onClick={() => void remove()}
+        onClick={() => {
+          setError("");
+          setOpen(true);
+        }}
         className="text-sm text-danger disabled:opacity-40"
       >
-        {busy ? "…" : "Delete"}
+        Delete
       </button>
-      {error ? <p className="max-w-48 text-right text-xs text-danger">{error}</p> : null}
+      {error && !open ? <p className="max-w-48 text-right text-xs text-danger">{error}</p> : null}
+      <ConfirmDialog
+        open={open}
+        title={`Delete ${name}?`}
+        body={
+          <p>
+            This permanently removes members, SIMs, customers, plans, orders, and invites for this organisation. The
+            Control Center device copy is not deleted. This cannot be undone.
+          </p>
+        }
+        confirmLabel="Delete permanently"
+        tone="danger"
+        busy={busy}
+        error={error}
+        requireName={name}
+        onClose={() => {
+          if (!busy) setOpen(false);
+        }}
+        onConfirm={(typed) => void confirm(typed)}
+      />
     </div>
   );
 }

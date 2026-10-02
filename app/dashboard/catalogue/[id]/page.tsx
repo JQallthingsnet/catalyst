@@ -21,7 +21,7 @@ export default async function EditSkuPage({
         <Link href="/dashboard/catalogue" className="text-sm text-quiet hover:text-accent">
           ← Catalogue
         </Link>
-        <DeleteSkuButton id={sku.id} />
+        <DeleteSkuButton id={sku.id} name={sku.name} />
       </div>
       <div className="mt-4">
         <SkuWizard sku={sku} />
