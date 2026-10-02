@@ -23,7 +23,7 @@ export default function DashboardError({
         <button
           type="button"
           onClick={() => reset()}
-          className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-canvas"
+          className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-on-accent"
         >
           Try again
         </button>

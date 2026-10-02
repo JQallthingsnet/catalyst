@@ -97,7 +97,7 @@ export function AllocateWizard({
                 <p className="font-semibold">{item.name}</p>
                 <p className="mt-1 text-xs text-quiet">
                   {item.planIds.length
-                    ? `${item.planIds.length} contracted Rate Plan New`
+                    ? `${item.planIds.length} contracted rate plan${item.planIds.length === 1 ? "" : "s"}`
                     : "No contract — bind on Contract first"}
                 </p>
               </button>
@@ -151,7 +151,7 @@ export function AllocateWizard({
             />
           </label>
           <label className="block text-sm">
-            ATN plan / Rate Plan New (this reseller)
+            Rate plan (this reseller)
             <select
               value={selectedPlanId}
               onChange={(event) => {
@@ -178,7 +178,7 @@ export function AllocateWizard({
           ) : null}
           {contracted.length === 0 ? (
             <p className="text-sm text-danger">
-              Bind a Rate Plan New for this reseller on Contract before selling stock.
+              Bind a rate plan for this reseller on Contract before selling stock.
             </p>
           ) : null}
         </div>

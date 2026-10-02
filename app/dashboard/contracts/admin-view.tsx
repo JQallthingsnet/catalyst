@@ -18,8 +18,8 @@ export function ContractsAdminView({
         <div className="max-w-3xl">
           <h1 className="text-3xl font-semibold">Contract</h1>
           <p className="mt-1 text-sm text-quiet">
-            ATN ↔ reseller signed lines. Bind Rate Plan New here so the reseller admin can see and refer to them.
-            Supplier mapping (Control Center, Singtel, China Mobile, …) lives on{" "}
+            Agreements ATN has signed with each reseller. Bind rate plans here before you sell stock — only bound
+            resellers can see and use them. Map each line to a supplier on{" "}
             <Link href="/dashboard/plans" className="text-accent">
               Plans
             </Link>
@@ -35,7 +35,7 @@ export function ContractsAdminView({
           </Link>
           <Link
             href="/dashboard/plans/new?from=contract"
-            className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-canvas"
+            className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-on-accent"
           >
             Add rate plan
           </Link>
@@ -47,7 +47,7 @@ export function ContractsAdminView({
           <thead className="border-b border-line text-quiet">
             <tr>
               <th className="px-4 py-3 font-medium">Reseller</th>
-              <th className="px-4 py-3 font-medium">Rate Plan New</th>
+              <th className="px-4 py-3 font-medium">Rate plan</th>
               <th className="px-4 py-3 font-medium">Remarks</th>
               <th className="px-4 py-3 font-medium">Default</th>
               <th className="px-4 py-3 font-medium">SIMs</th>

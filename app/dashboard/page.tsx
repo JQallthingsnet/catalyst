@@ -42,7 +42,7 @@ export default async function DashboardPage() {
           {can(ctx.role, "wholesale.allocate") ? (
             <Link
               href="/dashboard/estate/allocate"
-              className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-canvas"
+              className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-on-accent"
             >
               Sell stock
             </Link>
