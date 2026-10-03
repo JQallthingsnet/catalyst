@@ -16,7 +16,5 @@ AUTH_DEV_RETURN_CODE=true
 # HTTP Basic: Base64(JASPER_ACCOUNT_NAME:JASPER_API_KEY) — colon, no space.
 # JASPER_ACCOUNT_NAME=your-cc-username
 # JASPER_API_KEY=your-cc-api-key
-# Optional device-search account id (omit to use the username's account):
-# JASPER_ACCOUNT_ID=
 # Leave unset in production (auto poll is on). Local quiet while wiring APIs:
 # CC_AUTO_POLL=false

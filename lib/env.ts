@@ -7,7 +7,6 @@ export type AppEnv = {
   SUPER_ADMIN_EMAIL?: string;
   JASPER_ACCOUNT_NAME?: string;
   JASPER_API_KEY?: string;
-  JASPER_ACCOUNT_ID?: string;
   JASPER_API_BASE?: string;
   CC_AUTO_POLL?: string;
   "gmail-smtp-keys"?: string | Record<string, unknown>;

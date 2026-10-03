@@ -79,10 +79,6 @@ function jasperApiKey(): string {
   return getEnv().JASPER_API_KEY?.trim() ?? "";
 }
 
-function jasperAccountId(): string {
-  return getEnv().JASPER_ACCOUNT_ID?.trim() ?? "";
-}
-
 function authorizationHeader(): string {
   const token = btoa(`${jasperAccountName()}:${jasperApiKey()}`);
   return `Basic ${token}`;
@@ -132,8 +128,6 @@ export async function fetchJasperDevicesPage(input: {
     pageSize: String(PAGE_SIZE),
     pageNumber: String(input.pageNumber),
   });
-  const accountId = jasperAccountId();
-  if (accountId) params.set("accountId", accountId);
   const body = await jasperGet<{
     devices?: JasperDevice[];
     pageNumber?: number;
