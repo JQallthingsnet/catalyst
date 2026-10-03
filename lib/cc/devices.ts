@@ -38,10 +38,26 @@ export type CcDevice = {
   communicationPlan: string | null;
   imsi: string | null;
   msisdn: string | null;
+  imei: string | null;
+  customer: string | null;
+  endConsumerId: string | null;
   ctdUsageMb: number | null;
   inSession: boolean | null;
   dateAdded: string | null;
   dateActivated: string | null;
+  dateUpdated: string | null;
+  dateShipped: string | null;
+  accountId: string | null;
+  fixedIpAddress: string | null;
+  fixedIpv6Address: string | null;
+  simNotes: string | null;
+  deviceId: string | null;
+  modemId: string | null;
+  globalSimType: string | null;
+  mec: string | null;
+  euiccid: string | null;
+  simProfileId: string | null;
+  customFields: Record<string, string> | null;
   polledAt: string;
   detailsPolledAt: string | null;
 };
@@ -222,7 +238,10 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
 }
 
 const CC_DEVICE_COLUMNS = `iccid, status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, in_session,
-              date_added, date_activated, polled_at, details_polled_at`;
+              date_added, date_activated, polled_at, details_polled_at,
+              imei, customer, end_consumer_id, date_updated, date_shipped, account_id,
+              fixed_ip_address, fixed_ipv6_address, sim_notes, device_id, modem_id,
+              global_sim_type, mec, euiccid, sim_profile_id, custom_fields`;
 
 type CcDeviceRow = {
   iccid: string;
@@ -237,7 +256,39 @@ type CcDeviceRow = {
   date_activated: string | null;
   polled_at: string;
   details_polled_at: string | null;
+  imei: string | null;
+  customer: string | null;
+  end_consumer_id: string | null;
+  date_updated: string | null;
+  date_shipped: string | null;
+  account_id: string | null;
+  fixed_ip_address: string | null;
+  fixed_ipv6_address: string | null;
+  sim_notes: string | null;
+  device_id: string | null;
+  modem_id: string | null;
+  global_sim_type: string | null;
+  mec: string | null;
+  euiccid: string | null;
+  sim_profile_id: string | null;
+  custom_fields: string | null;
 };
+
+function parseCustomFields(raw: string | null): Record<string, string> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value == null) continue;
+      const text = String(value).trim();
+      if (text) out[key] = text;
+    }
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
+}
 
 function mapCcDevice(row: CcDeviceRow): CcDevice {
   return {
@@ -247,13 +298,45 @@ function mapCcDevice(row: CcDeviceRow): CcDevice {
     communicationPlan: row.communication_plan,
     imsi: row.imsi,
     msisdn: row.msisdn,
+    imei: row.imei,
+    customer: row.customer,
+    endConsumerId: row.end_consumer_id,
     ctdUsageMb: row.ctd_usage_mb,
     inSession: row.in_session == null ? null : Boolean(row.in_session),
     dateAdded: row.date_added,
     dateActivated: row.date_activated,
+    dateUpdated: row.date_updated,
+    dateShipped: row.date_shipped,
+    accountId: row.account_id,
+    fixedIpAddress: row.fixed_ip_address,
+    fixedIpv6Address: row.fixed_ipv6_address,
+    simNotes: row.sim_notes,
+    deviceId: row.device_id,
+    modemId: row.modem_id,
+    globalSimType: row.global_sim_type,
+    mec: row.mec,
+    euiccid: row.euiccid,
+    simProfileId: row.sim_profile_id,
+    customFields: parseCustomFields(row.custom_fields),
     polledAt: row.polled_at,
     detailsPolledAt: row.details_polled_at,
   };
+}
+
+function textOrNull(value: unknown): string | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text && text.toLowerCase() !== "null" ? text : null;
+}
+
+function packCustomFields(details: JasperDevice): string | null {
+  const custom: Record<string, string> = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (!/^(operator|account|customer)Custom\d+$/i.test(key)) continue;
+    const text = textOrNull(value);
+    if (text) custom[key] = text;
+  }
+  return Object.keys(custom).length ? JSON.stringify(custom) : null;
 }
 
 export type CcDeviceFilter = {
@@ -298,9 +381,15 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
   const clauses: string[] = [];
   const binds: (string | number)[] = [];
   if (normalized.query) {
-    clauses.push("(iccid LIKE ? OR IFNULL(imsi,'') LIKE ? OR IFNULL(msisdn,'') LIKE ?)");
+    clauses.push(
+      `(iccid LIKE ? OR IFNULL(imsi,'') LIKE ? OR IFNULL(msisdn,'') LIKE ? OR IFNULL(imei,'') LIKE ?
+        OR IFNULL(customer,'') LIKE ? OR IFNULL(account_id,'') LIKE ? OR IFNULL(device_id,'') LIKE ?
+        OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ?)`,
+    );
     const q = normalized.query;
-    binds.push(`%${q.replace(/\s/g, "")}%`, `%${q}%`, `%${q}%`);
+    const digits = `%${q.replace(/\s/g, "")}%`;
+    const text = `%${q}%`;
+    binds.push(digits, text, text, text, text, text, text, text, text);
   }
   if (normalized.status) {
     clauses.push("UPPER(status) = UPPER(?)");
@@ -619,10 +708,12 @@ async function persistDeviceEnrichment(
   const status = details?.status ?? usage?.status ?? "";
   const ratePlan = details?.ratePlan ?? usage?.ratePlan ?? null;
   const communicationPlan = details?.communicationPlan ?? usage?.communicationPlan ?? null;
-  const imsi = details?.imsi ?? usage?.imsi ?? null;
-  const msisdn = details?.msisdn ?? usage?.msisdn ?? null;
+  const imsi = textOrNull(details?.imsi ?? usage?.imsi);
+  const msisdn = textOrNull(details?.msisdn ?? usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
   const inSession = session ? (sessionActive(session.dateSessionStarted, session.dateSessionEnded) ? 1 : 0) : null;
+  const customFields = details ? packCustomFields(details) : null;
+  const detailsJson = details ? JSON.stringify(details) : null;
 
   await getDB()
     .prepare(
@@ -632,10 +723,27 @@ async function persistDeviceEnrichment(
            communication_plan = COALESCE(?, communication_plan),
            imsi = COALESCE(?, imsi),
            msisdn = COALESCE(?, msisdn),
+           imei = COALESCE(?, imei),
+           customer = COALESCE(?, customer),
+           end_consumer_id = COALESCE(?, end_consumer_id),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
            in_session = COALESCE(?, in_session),
            date_added = COALESCE(?, date_added),
            date_activated = COALESCE(?, date_activated),
+           date_updated = COALESCE(?, date_updated),
+           date_shipped = COALESCE(?, date_shipped),
+           account_id = COALESCE(?, account_id),
+           fixed_ip_address = COALESCE(?, fixed_ip_address),
+           fixed_ipv6_address = COALESCE(?, fixed_ipv6_address),
+           sim_notes = COALESCE(?, sim_notes),
+           device_id = COALESCE(?, device_id),
+           modem_id = COALESCE(?, modem_id),
+           global_sim_type = COALESCE(?, global_sim_type),
+           mec = COALESCE(?, mec),
+           euiccid = COALESCE(?, euiccid),
+           sim_profile_id = COALESCE(?, sim_profile_id),
+           custom_fields = COALESCE(?, custom_fields),
+           details_json = COALESCE(?, details_json),
            details_polled_at = ?,
            polled_at = ?
        WHERE iccid = ?`,
@@ -647,10 +755,27 @@ async function persistDeviceEnrichment(
       communicationPlan,
       imsi,
       msisdn,
+      textOrNull(details?.imei),
+      textOrNull(details?.customer),
+      textOrNull(details?.endConsumerId),
       usageMb,
       inSession,
-      details?.dateAdded ?? null,
-      details?.dateActivated ?? null,
+      textOrNull(details?.dateAdded),
+      textOrNull(details?.dateActivated),
+      textOrNull(details?.dateUpdated),
+      textOrNull(details?.dateShipped),
+      textOrNull(details?.accountId),
+      textOrNull(details?.fixedIPAddress),
+      textOrNull(details?.fixedIpv6Address),
+      textOrNull(details?.simNotes),
+      textOrNull(details?.deviceID),
+      textOrNull(details?.modemID),
+      textOrNull(details?.globalSimType),
+      textOrNull(details?.mec),
+      textOrNull(details?.euiccid),
+      textOrNull(details?.simProfileId),
+      customFields,
+      detailsJson,
       now,
       now,
       iccid,

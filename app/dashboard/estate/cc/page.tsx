@@ -106,8 +106,9 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            Copy of Control Center in D1. Filter by the same fields CC uses (status, plans, session). Search is ICCID,
-            IMSI, or MSISDN.
+            Copy of Control Center in D1. After details sync, rows include the full device payload (IMEI, customer,
+            account, IPs, custom fields). Filter by status, plans, session. Search ICCID, IMSI, MSISDN, IMEI, customer,
+            account, or device ID.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -159,7 +160,7 @@ export default async function CcSnapshotPage({
             <input
               name="q"
               defaultValue={filter.query ?? ""}
-              placeholder="ICCID, IMSI, or MSISDN"
+              placeholder="ICCID, IMSI, MSISDN, IMEI, customer…"
               className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
             />
           </label>

@@ -1,0 +1,17 @@
+ALTER TABLE cc_devices ADD COLUMN imei TEXT;
+ALTER TABLE cc_devices ADD COLUMN customer TEXT;
+ALTER TABLE cc_devices ADD COLUMN end_consumer_id TEXT;
+ALTER TABLE cc_devices ADD COLUMN date_updated TEXT;
+ALTER TABLE cc_devices ADD COLUMN date_shipped TEXT;
+ALTER TABLE cc_devices ADD COLUMN account_id TEXT;
+ALTER TABLE cc_devices ADD COLUMN fixed_ip_address TEXT;
+ALTER TABLE cc_devices ADD COLUMN fixed_ipv6_address TEXT;
+ALTER TABLE cc_devices ADD COLUMN sim_notes TEXT;
+ALTER TABLE cc_devices ADD COLUMN device_id TEXT;
+ALTER TABLE cc_devices ADD COLUMN modem_id TEXT;
+ALTER TABLE cc_devices ADD COLUMN global_sim_type TEXT;
+ALTER TABLE cc_devices ADD COLUMN mec TEXT;
+ALTER TABLE cc_devices ADD COLUMN euiccid TEXT;
+ALTER TABLE cc_devices ADD COLUMN sim_profile_id TEXT;
+ALTER TABLE cc_devices ADD COLUMN custom_fields TEXT;
+ALTER TABLE cc_devices ADD COLUMN details_json TEXT;
