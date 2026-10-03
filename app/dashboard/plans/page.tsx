@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { PlatformPlanLifecycle } from "@/components/portal/platform-plan-lifecycle";
+import { PlatformPlansTable } from "@/components/portal/platform-plans-table";
+import { RetailPlansTable } from "@/components/portal/retail-plans-table";
 import { requirePortal } from "@/lib/portal/guard";
 import { listPlans } from "@/lib/portal/repo";
 import { listAssignedPlatformPlans, listPlatformPlans } from "@/lib/portal/platform-plans";
@@ -28,39 +29,18 @@ export default async function PlansPage() {
             Create ATN plan
           </Link>
         </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          {plans.length === 0 ? <p className="text-sm text-quiet">No ATN plans yet.</p> : null}
-          {plans.map((plan) => (
-            <article key={plan.id} className="rounded-card border border-line bg-panel p-5">
-              <div className="flex items-start justify-between gap-3">
-                <Link href={`/dashboard/plans/${plan.id}`} className="min-w-0 hover:text-accent">
-                  <p className="text-lg font-semibold">{plan.name}</p>
-                  <p className="mt-1 text-sm text-quiet">
-                    {plan.supplier} · {plan.ccRatePlan} · {plan.commPlan}
-                  </p>
-                </Link>
-                <span className={`shrink-0 text-xs ${plan.active ? "text-ok" : "text-danger"}`}>
-                  {plan.active ? "Active" : "Deactivated"}
-                </span>
-              </div>
-              <p className="mt-3 text-sm">
-                {plan.assignedResellers} reseller{plan.assignedResellers === 1 ? "" : "s"} on contract · {plan.simCount}{" "}
-                SIMs (bought)
-              </p>
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <Link href={`/dashboard/plans/${plan.id}`} className="text-sm text-accent">
-                  Manage / map supplier
-                </Link>
-                <PlatformPlanLifecycle
-                  planId={plan.id}
-                  name={plan.name}
-                  active={plan.active}
-                  simCount={plan.simCount}
-                />
-              </div>
-            </article>
-          ))}
-        </div>
+        <PlatformPlansTable
+          plans={plans.map((plan) => ({
+            id: plan.id,
+            name: plan.name,
+            supplier: plan.supplier,
+            ccRatePlan: plan.ccRatePlan,
+            commPlan: plan.commPlan,
+            active: plan.active,
+            assignedResellers: plan.assignedResellers,
+            simCount: plan.simCount,
+          }))}
+        />
       </div>
     );
   }
@@ -97,21 +77,18 @@ export default async function PlansPage() {
         </p>
       ) : null}
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        {retail.length === 0 ? <p className="text-sm text-quiet">No retail plans yet.</p> : null}
-        {retail.map((plan) => (
-          <article key={plan.id} className="rounded-card border border-line bg-panel p-5">
-            <p className="text-lg font-semibold">{plan.name}</p>
-            <p className="mt-1 text-sm text-quiet">{plan.inclusiveMb} MB / SIM</p>
-            <p className="text-sm text-quiet">
-              {plan.pricePerSim != null ? `$${plan.pricePerSim} / SIM` : "No price"}
-            </p>
-            {ctx.role === "reseller_admin" && plan.platformPlanName ? (
-              <p className="mt-3 text-sm text-accent">Copied from {plan.platformPlanName}</p>
-            ) : null}
-          </article>
-        ))}
-      </div>
+      <RetailPlansTable
+        showPlatformSource={ctx.role === "reseller_admin"}
+        plans={retail.map((plan) => ({
+          id: plan.id,
+          name: plan.name,
+          type: plan.type,
+          inclusiveMb: plan.inclusiveMb,
+          pricePerSim: plan.pricePerSim,
+          platformPlanName: plan.platformPlanName,
+          wholesalePlan: plan.wholesalePlan,
+        }))}
+      />
     </div>
   );
 }
