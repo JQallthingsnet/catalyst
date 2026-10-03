@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { ChangeRatePlanButton } from "@/components/portal/change-rate-plan-button";
 import { LifecycleButtons } from "@/components/portal/lifecycle-buttons";
 import { requirePortal } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
+import { listAssignedPlatformPlans } from "@/lib/portal/platform-plans";
 import { listSims } from "@/lib/portal/repo";
 import { can, simFieldsForRole } from "@/lib/portal/role-model";
 
@@ -17,8 +19,18 @@ export default async function SimsPage({
 }) {
   const ctx = await requirePortal();
   const params = await Promise.resolve(searchParams ?? {});
-  const sims = await listSims(ctx.tenantId, params.q ?? "");
+  const [sims, contracted] = await Promise.all([
+    listSims(ctx.tenantId, params.q ?? ""),
+    can(ctx.role, "rate_plan.change")
+      ? listAssignedPlatformPlans(ctx.tenantId)
+      : Promise.resolve([]),
+  ]);
   const fields = simFieldsForRole(ctx.role);
+  const planOptions = contracted.map((plan) => ({
+    id: plan.id,
+    label: `${plan.ccRatePlan} — ${plan.name}`,
+  }));
+  const canChangePlan = can(ctx.role, "rate_plan.change");
 
   return (
     <div>
@@ -32,6 +44,14 @@ export default async function SimsPage({
           </p>
         </div>
         <div className="flex gap-2">
+          {canChangePlan ? (
+            <Link
+              href="/dashboard/sims/rate-plan-changes"
+              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
+            >
+              Plan changes
+            </Link>
+          ) : null}
           {can(ctx.role, "wholesale.allocate") ? (
             <Link href="/dashboard/estate/allocate" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
               Sell stock
@@ -67,6 +87,7 @@ export default async function SimsPage({
               <th className="px-4 py-3">Pool</th>
               <th className="px-4 py-3">State</th>
               <th className="px-4 py-3">Lifecycle</th>
+              {canChangePlan ? <th className="px-4 py-3">Rate plan</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -89,6 +110,15 @@ export default async function SimsPage({
                 <td className="px-4 py-3">
                   {can(ctx.role, "lifecycle") ? <LifecycleButtons iccid={sim.iccid} /> : sim.state}
                 </td>
+                {canChangePlan ? (
+                  <td className="px-4 py-3">
+                    <ChangeRatePlanButton
+                      iccid={sim.iccid}
+                      currentPlatformPlanId={sim.platformPlanId}
+                      options={planOptions}
+                    />
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>

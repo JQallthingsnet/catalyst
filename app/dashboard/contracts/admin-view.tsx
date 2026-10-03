@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BindPlanToResellerForm } from "@/components/portal/bind-plan-to-reseller-form";
+import { ContractRules } from "@/components/portal/contract-rules";
 import { SetDefaultPlanButton } from "@/components/portal/set-default-plan-button";
 import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
@@ -41,6 +42,8 @@ export function ContractsAdminView({
           </Link>
         </div>
       </div>
+
+      <ContractRules variant="super_admin" />
 
       <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
         <table className="w-full min-w-190 text-left text-sm">

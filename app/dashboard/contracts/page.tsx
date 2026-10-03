@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ContractRules } from "@/components/portal/contract-rules";
 import { ContractsAdminView } from "./admin-view";
 import { requirePortal, requirePrivilege } from "@/lib/portal/guard";
 import { listContractBook, listPlatformPlans, listResellerContract } from "@/lib/portal/platform-plans";
@@ -23,6 +24,8 @@ export default async function ContractsPage() {
           </Link>{" "}
           for your operators and customers.
         </p>
+
+        <ContractRules variant="reseller_admin" />
 
         <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
           <table className="w-full min-w-160 text-left text-sm">

@@ -261,7 +261,6 @@ export function TenantDirectory({
                 <tr key={tenant.id} className="border-t border-line">
                   <td className="py-3">
                     <p className={tenant.active ? "text-ink" : "text-quiet"}>{tenant.name}</p>
-                    <p className="text-xs text-quiet">{tenant.id}</p>
                   </td>
                   <td className="py-3">
                     <span className={tenant.active ? "text-ok" : "text-danger"}>
