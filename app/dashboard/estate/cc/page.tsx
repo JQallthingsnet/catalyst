@@ -112,12 +112,6 @@ export default async function CcSnapshotPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/dashboard/estate/cc/accounts"
-            className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent"
-          >
-            Verify accounts
-          </Link>
           <CcAutoPollToggle enabled={sync.autoPoll} />
           <SyncCcButton />
         </div>

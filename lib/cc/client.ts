@@ -80,21 +80,6 @@ export type JasperDevice = {
   [key: string]: unknown;
 };
 
-export type JasperAccount = {
-  accountId: string;
-  accountName: string | null;
-  status: string | null;
-  parentAccountId: string | null;
-};
-
-export type JasperConfigSummary = {
-  configured: boolean;
-  accountNameSet: boolean;
-  apiKeySet: boolean;
-  accountId: string | null;
-  apiBase: string;
-};
-
 export type JasperDevicesPage = {
   devices: JasperDevice[];
   pageNumber: number;
@@ -123,17 +108,6 @@ export function jasperConfigured(): boolean {
   return Boolean(jasperAccountName() && jasperApiKey());
 }
 
-export function jasperConfigSummary(): JasperConfigSummary {
-  const accountId = jasperAccountId();
-  return {
-    configured: jasperConfigured(),
-    accountNameSet: Boolean(jasperAccountName()),
-    apiKeySet: Boolean(jasperApiKey()),
-    accountId: accountId || null,
-    apiBase: apiBase(),
-  };
-}
-
 function jasperAccountName(): string {
   return getEnv().JASPER_ACCOUNT_NAME?.trim() ?? "";
 }
@@ -142,7 +116,7 @@ function jasperApiKey(): string {
   return getEnv().JASPER_API_KEY?.trim() ?? "";
 }
 
-export function jasperAccountId(): string {
+function jasperAccountId(): string {
   return getEnv().JASPER_ACCOUNT_ID?.trim() ?? "";
 }
 
@@ -253,65 +227,6 @@ export async function fetchJasperBulkDevices(iccids: string[]): Promise<JasperDe
   if (body == null) return null;
   const list = Array.isArray(body) ? body : (body.devices ?? body.deviceDetails ?? []);
   return list.filter((item) => item?.iccid);
-}
-
-function mapAccount(raw: Record<string, unknown>): JasperAccount | null {
-  const id = raw.accountId ?? raw.id ?? raw.accountID;
-  if (id == null || String(id).trim() === "") return null;
-  const name = raw.accountName ?? raw.name ?? raw.account;
-  const parent = raw.parentAccountId ?? raw.parentAccountID ?? raw.parentId;
-  const status = raw.status ?? raw.accountStatus;
-  return {
-    accountId: String(id),
-    accountName: name == null || String(name).trim() === "" ? null : String(name),
-    status: status == null || String(status).trim() === "" ? null : String(status),
-    parentAccountId: parent == null || String(parent).trim() === "" ? null : String(parent),
-  };
-}
-
-/**
- * Operator / SP Control Center often exposes /accounts (not on the public sandbox function list).
- * Returns null when the endpoint is missing (404).
- */
-export async function fetchJasperAccountsPage(pageNumber: number): Promise<{
-  accounts: JasperAccount[];
-  pageNumber: number;
-  lastPage: boolean;
-  totalCount: number;
-} | null> {
-  const params = new URLSearchParams({
-    pageSize: String(PAGE_SIZE),
-    pageNumber: String(pageNumber),
-  });
-  const body = await jasperGet<{
-    accounts?: Record<string, unknown>[];
-    pageNumber?: number;
-    lastPage?: boolean;
-    totalCount?: number;
-  }>(`/accounts?${params.toString()}`, true);
-  if (!body) return null;
-  return {
-    accounts: (body.accounts ?? []).map(mapAccount).filter((item): item is JasperAccount => Boolean(item)),
-    pageNumber: body.pageNumber ?? pageNumber,
-    lastPage: body.lastPage ?? true,
-    totalCount: body.totalCount ?? (body.accounts?.length ?? 0),
-  };
-}
-
-export async function fetchJasperAccount(accountId: string): Promise<JasperAccount | null> {
-  const body = await jasperGet<Record<string, unknown>>(
-    `/accounts/${encodeURIComponent(accountId)}`,
-    true,
-  );
-  if (!body) return null;
-  return mapAccount(body);
-}
-
-export async function fetchJasperEcho(): Promise<string | null> {
-  const body = await jasperGet<{ value?: string } | string>(`/echo/catalyst`, true);
-  if (body == null) return null;
-  if (typeof body === "string") return body;
-  return body.value ?? "ok";
 }
 
 export async function fetchJasperCtdUsage(iccid: string): Promise<JasperCtdUsage | null> {
