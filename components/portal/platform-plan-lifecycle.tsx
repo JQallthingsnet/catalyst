@@ -94,8 +94,8 @@ export function PlatformPlanLifecycle({
         title={`Deactivate ${name}?`}
         body={
           <p>
-            Bound resellers will no longer see this plan, and you cannot sell stock or copy it to retail until you
-            reactivate. Existing SIMs stay in place.
+            Bound resellers will no longer see this plan, and you cannot sell stock or create retail plans from it until
+            you reactivate. Existing SIMs stay in place.
           </p>
         }
         confirmLabel="Deactivate"
@@ -110,7 +110,7 @@ export function PlatformPlanLifecycle({
       <ConfirmDialog
         open={mode === "reactivate"}
         title={`Reactivate ${name}?`}
-        body={<p>Bound resellers will see this plan again and can copy it to retail. Sell stock becomes available.</p>}
+        body={<p>Bound resellers will see this plan again and can create retail plans from it. Sell stock becomes available.</p>}
         confirmLabel="Reactivate"
         tone="accent"
         busy={busy}

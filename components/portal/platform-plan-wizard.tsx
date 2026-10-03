@@ -153,7 +153,7 @@ export function PlatformPlanWizard({
       {step === 3 ? (
         <p className="text-sm leading-6 text-quiet">
           This creates one ATN plan (visible under Plans with the supplier mapping) and adds it to Contract for the
-          bound reseller(s). Reseller admins can refer to Contract; they copy to retail from Plans.
+          bound reseller(s). Reseller admins can refer to Contract; they create retail plans from Plans.
         </p>
       ) : null}
       {error ? <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}

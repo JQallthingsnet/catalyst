@@ -20,7 +20,7 @@ const RESELLER_ADMIN_RULES = [
   "ICCID is the unique identifier for every SIM.",
   "When you assign a SIM to a customer, it must use one of the rate plans on this contract.",
   "Bulk stock from ATN lands on your default rate plan (shown below).",
-  "Copy contracted rate plans into retail plans on Plans before operators assign SIMs.",
+  "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
   "Only ATN can add or remove rate plans on this contract. Contact ATN if you need a change.",
   "Before activation you may change an ICCID’s rate plan to another plan on this contract.",
   "After activation: rate-plan changes only until midnight on the 24th (Sydney), and only once per ICCID per month. After the cut-off: “Changes will be effective next month”.",

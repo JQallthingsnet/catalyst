@@ -18,11 +18,11 @@ export default async function ContractsPage() {
         <h1 className="text-3xl font-semibold">Contract</h1>
         <p className="mt-1 text-sm text-quiet">
           Your agreement with ATN for <span className="text-ink">{ctx.tenantName}</span>. These are the rate plans you
-          may sell. Copy them into retail plans under{" "}
+          may sell. Create retail plans under{" "}
           <Link href="/dashboard/plans" className="text-accent">
             Plans
           </Link>{" "}
-          for your operators and customers.
+          to assign to each ICCID.
         </p>
 
         <ContractRules variant="reseller_admin" />

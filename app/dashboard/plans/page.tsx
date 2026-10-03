@@ -56,8 +56,8 @@ export default async function PlansPage() {
         <div>
           <h1 className="text-3xl font-semibold">Plans</h1>
           <p className="mt-1 text-sm text-quiet">
-            Map contracted rate plans downward into retail plans (name, data per SIM, price) for your
-            operators and end customers. Your signed lines are on{" "}
+            Create retail plans (name, data per SIM, price) from your contracted ATN lines — these are what
+            operators assign to each ICCID. Your signed lines are on{" "}
             <Link href="/dashboard/contracts" className="text-accent">
               Contract
             </Link>
@@ -66,14 +66,14 @@ export default async function PlansPage() {
         </div>
         {can(ctx.role, "plan.create") ? (
           <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink">
-            Copy to retail
+            Create retail plan
           </Link>
         ) : null}
       </div>
 
       {ctx.role === "reseller_admin" && assigned.length > 0 ? (
         <p className="mt-4 text-sm text-quiet">
-          {assigned.length} contracted ATN line{assigned.length === 1 ? "" : "s"} available to copy.
+          {assigned.length} contracted ATN line{assigned.length === 1 ? "" : "s"} available to create retail plans from.
         </p>
       ) : null}
 

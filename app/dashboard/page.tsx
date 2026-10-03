@@ -67,7 +67,7 @@ export default async function DashboardPage() {
               href="/dashboard/plans/new"
               className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
             >
-              Copy to retail
+              Create retail plan
             </Link>
           ) : null}
           {can(ctx.role, "pool.create") && !onPlatform ? (

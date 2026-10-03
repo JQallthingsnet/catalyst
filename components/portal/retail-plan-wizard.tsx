@@ -42,7 +42,7 @@ export function RetailPlanWizard({
 
   return (
     <WizardFrame
-      title="Copy to retail plan"
+      title="Create retail plan"
       steps={["ATN plan", "Name, data, price", "Confirm"]}
       step={step}
       summary={
