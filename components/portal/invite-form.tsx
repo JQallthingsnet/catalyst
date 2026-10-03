@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PortalRole } from "@/lib/portal/role-model";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
@@ -17,7 +17,7 @@ export function InviteForm({
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<PortalRole>(roles[0] ?? "reseller_operator");
   const [organisationName, setOrganisationName] = useState("");
-  const [organisationId, setOrganisationId] = useState(organisations[0]?.id ?? "");
+  const [organisationId, setOrganisationId] = useState("");
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,18 +26,29 @@ export function InviteForm({
   const bindingOrg = allowNewOrganisation && role === "reseller_operator";
   const newOrgName = creatingOrg ? organisationName.trim() : "";
 
+  useEffect(() => {
+    if (!organisations.length) {
+      setOrganisationId("");
+      return;
+    }
+    setOrganisationId((current) =>
+      current && organisations.some((org) => org.id === current) ? current : organisations[0].id,
+    );
+  }, [organisations]);
+
   if (roles.length === 0) return null;
 
   async function submit() {
     setBusy(true);
     setError("");
     setOk("");
+    const boundOrgId = bindingOrg ? organisationId || organisations[0]?.id || "" : "";
     if (creatingOrg && !organisationName.trim()) {
       setError("Enter the organisation name. It is shown top left in their portal.");
       setBusy(false);
       return;
     }
-    if (bindingOrg && !organisationId) {
+    if (bindingOrg && !boundOrgId) {
       setError("Choose which reseller organisation this operator belongs to.");
       setBusy(false);
       return;
@@ -50,7 +61,7 @@ export function InviteForm({
           email,
           role,
           organisationName: newOrgName || undefined,
-          organisationId: bindingOrg ? organisationId : undefined,
+          organisationId: bindingOrg ? boundOrgId : undefined,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -97,7 +108,11 @@ export function InviteForm({
             </option>
           ))}
         </select>
-        <button type="submit" disabled={busy} className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
+        >
           {busy ? "Sending…" : "Send invite"}
         </button>
       </div>
@@ -120,11 +135,13 @@ export function InviteForm({
         <label className="block text-sm">
           Reseller organisation
           {organisations.length === 0 ? (
-            <p className="mt-2 text-sm text-danger">Create a reseller first (invite a reseller admin with an organisation name).</p>
+            <p className="mt-2 text-sm text-danger">
+              Create a reseller first (invite a reseller admin with an organisation name).
+            </p>
           ) : (
             <select
               required
-              value={organisationId}
+              value={organisationId || organisations[0]?.id || ""}
               onChange={(event) => setOrganisationId(event.target.value)}
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
             >
@@ -135,7 +152,9 @@ export function InviteForm({
               ))}
             </select>
           )}
-          <span className="mt-1 block text-xs text-quiet">Operators only see this organisation’s SIMs and customers.</span>
+          <span className="mt-1 block text-xs text-quiet">
+            Operators only see this organisation’s SIMs and customers.
+          </span>
         </label>
       ) : null}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
