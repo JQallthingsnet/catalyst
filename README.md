@@ -48,7 +48,7 @@ On an ATN plan page: which resellers are contracted, which are buying (have SIMs
 CC is the radio source. Pages read D1, not Jasper. Super admin Dashboard and **CC snapshot** (`/dashboard/estate/cc`) show the same columns as Control Center (ICCID, IMSI, MSISDN, SIM status, rate plan, cycle-to-date MB, in session, activated, date added). Sync runs, in order:
 
 1. `GET /rws/api/v1/devices` — each CC device is a SIM we sell. Results are paged (`pageSize` 50). Repeat the **same** call with `pageNumber` 1, 2, … until `lastPage` is true, then write every ICCID into D1.
-2. `GET /rws/api/v1/devices/{iccid}` — IMSI, MSISDN, dates, status, plans
+2. `GET /rws/api/v1/bulk/devices/{iccid1,iccid2,…}` — batch device details (up to 50 ICCIDs). Falls back to per-ICCID `GET /devices/{iccid}` if bulk is missing or role-denied.
 3. `GET /rws/api/v1/devices/{iccid}/ctdUsages` — cycle-to-date data bytes
 4. `GET /rws/api/v1/devices/{iccid}/sessionInfo` — in session
 

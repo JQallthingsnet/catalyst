@@ -3,10 +3,12 @@ import {
   beginJasperBudget,
   CcBudgetError,
   CcBusyError,
+  fetchJasperBulkDevices,
   fetchJasperCtdUsage,
   fetchJasperDeviceDetails,
   fetchJasperDevicesPage,
   fetchJasperSessionInfo,
+  JASPER_BULK_DEVICE_LIMIT,
   jasperConfigured,
   jasperHasBudget,
   type JasperDevice,
@@ -25,6 +27,9 @@ const JASPER_CALLS_AUTO = 80;
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
+
+/** null = not tried this sync run; false = fall back to per-ICCID details. */
+let bulkDetailsAvailable: boolean | null = null;
 
 export type CcDevice = {
   iccid: string;
@@ -572,37 +577,44 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
   return upserts.length;
 }
 
-async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
-  const staleBefore = new Date(Date.now() - DETAILS_STALE_MS).toISOString();
-  const batch = input.unlimited ? 25 : MANUAL_DETAILS_PER_RUN;
-  let enriched = 0;
-  while (Date.now() < input.deadline) {
-    const rows = await getDB()
-      .prepare(
-        `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NULL OR details_polled_at < ?
-         ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
-         LIMIT ?`,
-      )
-      .bind(staleBefore, batch)
-      .all<{ iccid: string }>();
-    const devices = rows.results ?? [];
-    if (devices.length === 0) break;
-    for (const row of devices) {
-      if (Date.now() >= input.deadline || !jasperHasBudget(3)) return enriched;
-      await enrichDevice(row.iccid);
-      enriched += 1;
-      if (enriched % 5 === 0) await heartbeatLock();
+async function fetchDeviceDetailsBatch(iccids: string[]): Promise<Map<string, JasperDevice>> {
+  const map = new Map<string, JasperDevice>();
+  const cleaned = [...new Set(iccids.map((value) => value.replace(/\s/g, "")).filter(Boolean))];
+  if (cleaned.length === 0) return map;
+
+  if (bulkDetailsAvailable !== false && cleaned.length >= 1) {
+    try {
+      const devices = await fetchJasperBulkDevices(cleaned);
+      if (devices) {
+        bulkDetailsAvailable = true;
+        for (const device of devices) {
+          const iccid = device.iccid.replace(/\s/g, "");
+          if (iccid) map.set(iccid, device);
+        }
+        return map;
+      }
+      // 404 — endpoint not on this CC tier.
+      bulkDetailsAvailable = false;
+    } catch {
+      // Role denied / invalid path — fall back for the rest of this sync.
+      bulkDetailsAvailable = false;
     }
-    if (!input.unlimited) break;
   }
-  return enriched;
+
+  for (const iccid of cleaned) {
+    if (!jasperHasBudget()) break;
+    const details = await fetchJasperDeviceDetails(iccid);
+    if (details) map.set(iccid, details);
+  }
+  return map;
 }
 
-async function enrichDevice(iccid: string): Promise<void> {
-  const details = await fetchJasperDeviceDetails(iccid);
-  const usage = await fetchJasperCtdUsage(iccid);
-  const session = await fetchJasperSessionInfo(iccid);
+async function persistDeviceEnrichment(
+  iccid: string,
+  details: JasperDevice | null,
+  usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
+  session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
+): Promise<void> {
   const now = isoNow();
   const status = details?.status ?? usage?.status ?? "";
   const ratePlan = details?.ratePlan ?? usage?.ratePlan ?? null;
@@ -650,6 +662,46 @@ async function enrichDevice(iccid: string): Promise<void> {
   }
 }
 
+async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
+  const staleBefore = new Date(Date.now() - DETAILS_STALE_MS).toISOString();
+  const batch = input.unlimited
+    ? JASPER_BULK_DEVICE_LIMIT
+    : Math.min(MANUAL_DETAILS_PER_RUN, JASPER_BULK_DEVICE_LIMIT);
+  let enriched = 0;
+  while (Date.now() < input.deadline) {
+    // Bulk details = 1 call; usage+session still 2 each — reserve budget for a full batch when possible.
+    const need = bulkDetailsAvailable === false ? batch * 3 : 1 + batch * 2;
+    if (!jasperHasBudget(Math.min(need, 3))) return enriched;
+
+    const rows = await getDB()
+      .prepare(
+        `SELECT iccid FROM cc_devices
+         WHERE details_polled_at IS NULL OR details_polled_at < ?
+         ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
+         LIMIT ?`,
+      )
+      .bind(staleBefore, batch)
+      .all<{ iccid: string }>();
+    const devices = rows.results ?? [];
+    if (devices.length === 0) break;
+
+    const iccids = devices.map((row) => row.iccid);
+    const detailsMap = await fetchDeviceDetailsBatch(iccids);
+
+    for (const iccid of iccids) {
+      if (Date.now() >= input.deadline) return enriched;
+      if (!jasperHasBudget(2)) return enriched;
+      const usage = await fetchJasperCtdUsage(iccid);
+      const session = await fetchJasperSessionInfo(iccid);
+      await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, session);
+      enriched += 1;
+      if (enriched % 10 === 0) await heartbeatLock();
+    }
+    if (!input.unlimited) break;
+  }
+  return enriched;
+}
+
 export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<CcSyncResult> {
   if (!jasperConfigured()) {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
@@ -657,6 +709,7 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
   const unlimited = Boolean(input?.unlimited);
   const deadline = Date.now() + (unlimited ? AUTO_BUDGET_MS : MANUAL_BUDGET_MS);
   beginJasperBudget(unlimited ? JASPER_CALLS_AUTO : JASPER_CALLS_MANUAL);
+  bulkDetailsAvailable = null;
   const locked = await acquireLock();
   if (!locked) throw new CcBusyError();
 

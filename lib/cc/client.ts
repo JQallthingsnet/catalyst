@@ -197,6 +197,29 @@ export async function fetchJasperDeviceDetails(iccid: string): Promise<JasperDev
   return jasperGet<JasperDevice>(`/devices/${encodeURIComponent(iccid)}`, true);
 }
 
+/** Max ICCIDs per bulk path segment (keeps the URL under typical gateway limits). */
+export const JASPER_BULK_DEVICE_LIMIT = 50;
+
+/**
+ * Production Control Center bulk device details:
+ * GET /bulk/devices/{iccid1,iccid2,...}
+ * Not on the public sandbox function list — returns null on 404; throws on other errors.
+ */
+export async function fetchJasperBulkDevices(iccids: string[]): Promise<JasperDevice[] | null> {
+  const cleaned = [
+    ...new Set(iccids.map((value) => value.replace(/\s/g, "")).filter(Boolean)),
+  ].slice(0, JASPER_BULK_DEVICE_LIMIT);
+  if (cleaned.length === 0) return [];
+  // Commas must stay unencoded so Jasper parses the list.
+  const body = await jasperGet<JasperDevice[] | { devices?: JasperDevice[]; deviceDetails?: JasperDevice[] }>(
+    `/bulk/devices/${cleaned.join(",")}`,
+    true,
+  );
+  if (body == null) return null;
+  const list = Array.isArray(body) ? body : (body.devices ?? body.deviceDetails ?? []);
+  return list.filter((item) => item?.iccid);
+}
+
 function mapAccount(raw: Record<string, unknown>): JasperAccount | null {
   const id = raw.accountId ?? raw.id ?? raw.accountID;
   if (id == null || String(id).trim() === "") return null;
