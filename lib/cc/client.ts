@@ -79,6 +79,10 @@ function jasperApiKey(): string {
   return getEnv().JASPER_API_KEY?.trim() ?? "";
 }
 
+function jasperAccountId(): string {
+  return getEnv().JASPER_ACCOUNT_ID?.trim() ?? "";
+}
+
 function authorizationHeader(): string {
   const token = btoa(`${jasperAccountName()}:${jasperApiKey()}`);
   return `Basic ${token}`;
@@ -92,6 +96,22 @@ async function throttle(): Promise<void> {
   const wait = MIN_INTERVAL_MS - (Date.now() - lastCallAt);
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   lastCallAt = Date.now();
+}
+
+async function jasperErrorMessage(res: Response): Promise<string> {
+  const fallback = `Control Center returned HTTP ${res.status}.`;
+  try {
+    const body = (await res.json()) as {
+      errorMessage?: string;
+      errorCode?: string | number;
+      message?: string;
+    };
+    const detail = body.errorMessage || body.message;
+    if (!detail) return fallback;
+    return body.errorCode != null ? `${fallback} ${body.errorCode}: ${detail}` : `${fallback} ${detail}`;
+  } catch {
+    return fallback;
+  }
 }
 
 async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
@@ -112,7 +132,7 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
       },
     });
     if (allow404 && res.status === 404) return null;
-    if (!res.ok) throw new Error(`Control Center returned HTTP ${res.status}.`);
+    if (!res.ok) throw new Error(await jasperErrorMessage(res));
     return (await res.json()) as T;
   } finally {
     inFlight = false;
@@ -128,6 +148,8 @@ export async function fetchJasperDevicesPage(input: {
     pageSize: String(PAGE_SIZE),
     pageNumber: String(input.pageNumber),
   });
+  const accountId = jasperAccountId();
+  if (accountId) params.set("accountId", accountId);
   const body = await jasperGet<{
     devices?: JasperDevice[];
     pageNumber?: number;

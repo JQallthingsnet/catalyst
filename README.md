@@ -52,7 +52,7 @@ CC is the radio source. Pages read D1, not Jasper. Super admin Dashboard and **C
 3. `GET /rws/api/v1/devices/{iccid}/ctdUsages` — cycle-to-date data bytes
 4. `GET /rws/api/v1/devices/{iccid}/sessionInfo` — in session
 
-One HTTP call at a time, at most 5/s. Super admin **Auto poll** on the CC snapshot page turns the Worker cron on or off. While ON, the Worker runs every 15 minutes and continues until every page is stored and every SIM has details, staying under the Worker subrequest cap. **Sync** is a one-off batch. Locally you can also set `CC_AUTO_POLL=false` to force cron off. Auth is HTTP Basic: Base64 of `JASPER_ACCOUNT_NAME:JASPER_API_KEY` (colon, no space). Control Center scopes the device search to the account on that user name. Do not put these in `wrangler.jsonc`. No CDR history — snapshots overwrite in place.
+One HTTP call at a time, at most 5/s. Super admin **Auto poll** on the CC snapshot page turns the Worker cron on or off. While ON, the Worker runs every 15 minutes and continues until every page is stored and every SIM has details, staying under the Worker subrequest cap. **Sync** is a one-off batch. Locally you can also set `CC_AUTO_POLL=false` to force cron off. Auth is HTTP Basic: Base64 of `JASPER_ACCOUNT_NAME:JASPER_API_KEY` (colon, no space). Set `JASPER_ACCOUNT_ID` if your Control Center returns `AccountId is required` on device search (many production accounts do). Do not put these in `wrangler.jsonc`. No CDR history — snapshots overwrite in place.
 
 ## Auth
 
@@ -94,6 +94,7 @@ npx wrangler secret put AUTH_SECRET
 npx wrangler secret put gmail-smtp-keys
 npx wrangler secret put JASPER_ACCOUNT_NAME
 npx wrangler secret put JASPER_API_KEY
+npx wrangler secret put JASPER_ACCOUNT_ID
 npm run deploy
 ```
 
