@@ -17,6 +17,7 @@ export function PortalNav({ role }: { role: PortalRole }) {
           <Link
             key={item.href}
             href={item.href}
+            prefetch={false}
             className={`block rounded-xl px-3 py-2 text-sm ${
               active ? "bg-panel-2 text-accent" : "text-quiet hover:bg-panel-2 hover:text-ink"
             }`}

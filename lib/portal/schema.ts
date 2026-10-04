@@ -2,6 +2,7 @@ import { getDB } from "@/lib/env";
 import { resetPortalColumnCache } from "@/lib/portal/d1-compat";
 
 let ready = false;
+let inflight: Promise<void> | null = null;
 
 const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS tenants (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)`,
@@ -133,19 +134,27 @@ const ALTERS = [
   `ALTER TABLE platform_plans ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Cisco IoT Control Center'`,
 ];
 
+/**
+ * Idempotent schema bootstrap. Must stay cheap on the dashboard hot path:
+ * Next.js RSC prefetches many `/dashboard/*` routes; each hits `requirePortal`.
+ * Running every ALTER on every request burns Worker CPU (esp. Free 10ms limit).
+ */
 export async function ensurePortalSchema(): Promise<void> {
-  const db = getDB();
-  resetPortalColumnCache();
+  if (ready) return;
+  if (inflight) return inflight;
 
-  for (const sql of ALTERS) {
-    try {
-      await db.prepare(sql).run();
-    } catch {
-      // Column or index already exists.
+  inflight = (async () => {
+    const db = getDB();
+    resetPortalColumnCache();
+
+    for (const sql of ALTERS) {
+      try {
+        await db.prepare(sql).run();
+      } catch {
+        // Column or index already exists.
+      }
     }
-  }
 
-  if (!ready) {
     for (const sql of STATEMENTS) {
       try {
         await db.prepare(sql).run();
@@ -153,8 +162,12 @@ export async function ensurePortalSchema(): Promise<void> {
         // Table/index may already exist on older D1.
       }
     }
-    ready = true;
-  }
 
-  resetPortalColumnCache();
+    ready = true;
+    resetPortalColumnCache();
+  })().finally(() => {
+    inflight = null;
+  });
+
+  return inflight;
 }

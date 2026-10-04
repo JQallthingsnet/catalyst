@@ -8,13 +8,21 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS auth_rate_limits (bucket TEXT NOT NULL, identifier TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, window_start TEXT NOT NULL, PRIMARY KEY (bucket, identifier))`,
 ];
 
+let inflight: Promise<void> | null = null;
+
 export async function ensureAuthSchema(): Promise<void> {
   if (ready) return;
+  if (inflight) return inflight;
 
-  const db = getDB();
-  for (const sql of STATEMENTS) {
-    await db.prepare(sql).run();
-  }
+  inflight = (async () => {
+    const db = getDB();
+    for (const sql of STATEMENTS) {
+      await db.prepare(sql).run();
+    }
+    ready = true;
+  })().finally(() => {
+    inflight = null;
+  });
 
-  ready = true;
+  return inflight;
 }

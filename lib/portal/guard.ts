@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { ensureAuthSchema } from "@/lib/auth/schema";
 import { getSession } from "@/lib/auth/session";
 import { resolvePortalContext } from "@/lib/portal/access";
@@ -16,7 +17,8 @@ function isNextRedirect(error: unknown): boolean {
   );
 }
 
-export async function requirePortal(): Promise<PortalContext> {
+/** One portal resolve per RSC request (layout + page both call this). */
+export const requirePortal = cache(async (): Promise<PortalContext> => {
   const session = await getSession();
   if (!session) redirect("/");
   await ensureAuthSchema();
@@ -28,7 +30,7 @@ export async function requirePortal(): Promise<PortalContext> {
     // Do not clear session cookies here — Server Components cannot mutate cookies on GET.
     redirect("/");
   }
-}
+});
 
 export async function requirePrivilege(privilege: Privilege): Promise<PortalContext> {
   const ctx = await requirePortal();
