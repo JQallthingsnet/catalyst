@@ -176,17 +176,18 @@ export default async function CcSnapshotPage({
         <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{sync.lastError}</p>
       ) : null}
 
-      <form action="/dashboard/estate/cc" className="mt-6 max-w-3xl rounded-card border border-line bg-panel p-4">
+      <form action="/dashboard/estate/cc" className="mt-6 max-w-4xl space-y-4 rounded-card border border-line bg-panel p-4">
+        <label className="block text-xs font-medium text-quiet">
+          Search
+          <input
+            name="q"
+            defaultValue={filter.query ?? ""}
+            placeholder="ICCID, IMSI, MSISDN, IMEI, customer, modem…"
+            className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
+          />
+        </label>
+
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="block text-xs font-medium text-quiet sm:col-span-2 lg:col-span-3">
-            Search
-            <input
-              name="q"
-              defaultValue={filter.query ?? ""}
-              placeholder="ICCID, IMSI, MSISDN, IMEI, customer, modem…"
-              className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
-            />
-          </label>
           <FilterSelect
             name="status"
             label="SIM status"
@@ -247,7 +248,8 @@ export default async function CcSnapshotPage({
             allLabel="All SIM profiles"
           />
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="submit"
             className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
