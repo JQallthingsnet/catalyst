@@ -56,7 +56,7 @@ function WrapCell({
 }) {
   const text = value || "—";
   return (
-    <td className={`align-top px-3 py-2.5 ${className}`}>
+    <td className={`align-middle px-3 py-2.5 ${className}`}>
       <span
         title={value || undefined}
         className={`block whitespace-normal wrap-break-word text-xs leading-snug ${quiet ? "text-quiet" : ""}`.trim()}
@@ -76,7 +76,7 @@ export function CcInventoryTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-card border border-line bg-panel">
-      <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm">
+      <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm [&_td]:align-middle [&_th]:align-middle">
         <thead className="whitespace-nowrap text-xs font-medium uppercase tracking-wide text-quiet">
           <tr className="border-b border-line">
             <th className="px-3 py-2.5">Supplier</th>
