@@ -15,7 +15,14 @@ export function SyncCcButton() {
       const res = await fetch("/api/portal/cc-sync", { method: "POST" });
       const data = (await res.json()) as {
         error?: string;
-        result?: { pages: number; upserted: number; details?: number; lastPage: boolean; totalCount: number };
+        result?: {
+          pages: number;
+          upserted: number;
+          details?: number;
+          lastPage: boolean;
+          totalCount: number;
+          nextPage?: number;
+        };
       };
       if (!res.ok) {
         setError(data.error ?? "Sync failed.");
@@ -24,9 +31,11 @@ export function SyncCcButton() {
       const result = data.result;
       setOk(
         result
-          ? `List ${result.upserted} · details ${result.details ?? 0}.${
-              result.lastPage ? " Search cycle complete." : " More list pages remain."
-            } Sync again to fill IMSI / usage / session.`
+          ? `Fetched ${result.pages} page(s), upserted ${result.upserted}, details ${result.details ?? 0}. Jasper total ${result.totalCount.toLocaleString("en-AU")}.${
+              result.lastPage
+                ? " List cycle complete — further Syncs only pick up recent changes."
+                : ` Next list page ${result.nextPage ?? "—"}.`
+            }`
           : "Synced.",
       );
       window.location.reload();

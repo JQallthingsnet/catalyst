@@ -227,6 +227,31 @@ export async function setCcAutoPoll(enabled: boolean): Promise<void> {
     .run();
 }
 
+/**
+ * Restart Jasper Search Devices from page 1 with a ~360-day modifiedSince window.
+ * Use when D1 is far below the estate size after an incremental cycle completed.
+ * Jasper only returns devices modified in that window (max ~1 year) — not untouched SIMs.
+ */
+export async function resetCcListCrawl(): Promise<{ modifiedSince: string }> {
+  await ensureSyncRow();
+  const modifiedSince = defaultModifiedSince();
+  await getDB()
+    .prepare(
+      `UPDATE cc_sync_state
+       SET modified_since = ?,
+           next_page = 1,
+           last_page = NULL,
+           last_page_complete = 0,
+           last_total = NULL,
+           last_error = NULL,
+           locked_until = NULL
+       WHERE id = ?`,
+    )
+    .bind(modifiedSince, SYNC_ID)
+    .run();
+  return { modifiedSince };
+}
+
 /** Cron entry. Runs when the Auto poll button is ON (and CC_AUTO_POLL is not false). */
 export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   if (!jasperConfigured()) return null;

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CcInventoryTable } from "@/components/portal/cc-inventory-table";
 import { CcAutoPollToggle } from "@/components/portal/cc-auto-poll-toggle";
+import { ResetCcListButton } from "@/components/portal/reset-cc-list-button";
 import { SyncCcButton } from "@/components/portal/sync-cc-button";
 import {
   ccFilterActive,
@@ -165,6 +166,7 @@ export default async function CcSnapshotPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CcAutoPollToggle enabled={sync.autoPoll} />
+          <ResetCcListButton />
           <SyncCcButton />
         </div>
       </div>
@@ -173,6 +175,12 @@ export default async function CcSnapshotPage({
         <article className="rounded-card border border-line bg-panel p-5">
           <p className="text-sm text-quiet">Devices in copy</p>
           <p className="mt-2 text-3xl font-semibold">{total.toLocaleString("en-AU")}</p>
+          <p className="mt-1 text-xs text-quiet">
+            Jasper search total {sync.lastTotal != null ? sync.lastTotal.toLocaleString("en-AU") : "—"}
+            {sync.lastTotal != null && sync.lastTotal > total
+              ? ` · ${ (sync.lastTotal - total).toLocaleString("en-AU")} still missing from this crawl`
+              : ""}
+          </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
           <p className="text-sm text-quiet">Activated</p>
@@ -183,14 +191,20 @@ export default async function CcSnapshotPage({
           <p className="mt-2 text-3xl font-semibold">{summary.inSession.toLocaleString("en-AU")}</p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">Last poll</p>
+          <p className="text-sm text-quiet">List crawl</p>
           <p className="mt-2 text-sm font-medium">
-            {sync.lastPolledAt ? formatAuDateTime(sync.lastPolledAt) : "Never"}
+            {sync.lastPageComplete
+              ? "Cycle complete (incremental)"
+              : `Page ${sync.nextPage.toLocaleString("en-AU")}${
+                  sync.lastPage != null ? ` · last fetched ${sync.lastPage.toLocaleString("en-AU")}` : ""
+                }`}
           </p>
           <p className="mt-1 text-xs text-quiet">
-            {sync.autoPoll ? "Auto poll ON · cron every 15 minutes" : "Auto poll OFF"}
+            Since {sync.modifiedSince ? formatAuDateTime(sync.modifiedSince) : "default ~360 days"}
             {" · "}
-            {sync.configured ? "Secrets configured" : "Missing JASPER secrets"}
+            {sync.autoPoll ? "Auto poll ON" : "Auto poll OFF"}
+            {" · "}
+            Last poll {sync.lastPolledAt ? formatAuDateTime(sync.lastPolledAt) : "never"}
           </p>
         </article>
       </div>
