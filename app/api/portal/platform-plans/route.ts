@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       ctx.email,
       {
         name: body.name ?? "",
-        supplier: body.supplier ?? "Cisco IoT Control Center",
+        supplier: body.supplier ?? "Optus",
         ccRatePlan: body.ccRatePlan ?? "",
         commPlan: body.commPlan ?? "",
         resellerIds: body.resellerIds ?? [],

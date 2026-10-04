@@ -20,14 +20,19 @@ const PAGE_SIZE = 50;
 function snapshotQuery(filter: CcDeviceFilter, page = 1): string {
   const sp = new URLSearchParams();
   if (filter.query) sp.set("q", filter.query);
+  if (filter.supplier) sp.set("supplier", filter.supplier);
   if (filter.status) sp.set("status", filter.status);
   if (filter.ratePlan) sp.set("ratePlan", filter.ratePlan);
   if (filter.communicationPlan) sp.set("commPlan", filter.communicationPlan);
   if (filter.customer) sp.set("customer", filter.customer);
+  if (filter.accountId) sp.set("accountId", filter.accountId);
   if (filter.modemId) sp.set("modemId", filter.modemId);
   if (filter.globalSimType) sp.set("globalSim", filter.globalSimType);
   if (filter.simProfileId) sp.set("simProfile", filter.simProfileId);
   if (filter.inSession) sp.set("inSession", filter.inSession);
+  if (filter.dateField) sp.set("dateField", filter.dateField);
+  if (filter.dateFrom) sp.set("dateFrom", filter.dateFrom);
+  if (filter.dateTo) sp.set("dateTo", filter.dateTo);
   if (page > 1) sp.set("page", String(page));
   const value = sp.toString();
   return value ? `/dashboard/estate/cc?${value}` : "/dashboard/estate/cc";
@@ -76,40 +81,58 @@ export default async function CcSnapshotPage({
     | {
         q?: string;
         page?: string;
+        supplier?: string;
         status?: string;
         ratePlan?: string;
         commPlan?: string;
         customer?: string;
+        accountId?: string;
         modemId?: string;
         globalSim?: string;
         simProfile?: string;
         inSession?: string;
+        dateField?: string;
+        dateFrom?: string;
+        dateTo?: string;
       }
     | Promise<{
         q?: string;
         page?: string;
+        supplier?: string;
         status?: string;
         ratePlan?: string;
         commPlan?: string;
         customer?: string;
+        accountId?: string;
         modemId?: string;
         globalSim?: string;
         simProfile?: string;
         inSession?: string;
+        dateField?: string;
+        dateFrom?: string;
+        dateTo?: string;
       }>;
 }) {
   await requirePrivilege("platform.estate");
   const params = await Promise.resolve(searchParams ?? {});
   const filter = normalizeCcFilter({
     query: params.q,
+    supplier: params.supplier,
     status: params.status,
     ratePlan: params.ratePlan,
     communicationPlan: params.commPlan,
     customer: params.customer,
+    accountId: params.accountId,
     modemId: params.modemId,
     globalSimType: params.globalSim,
     simProfileId: params.simProfile,
     inSession: params.inSession === "yes" || params.inSession === "no" ? params.inSession : "",
+    dateField:
+      params.dateField === "added" || params.dateField === "activated" || params.dateField === "updated"
+        ? params.dateField
+        : "",
+    dateFrom: params.dateFrom,
+    dateTo: params.dateTo,
   });
   const filtered = ccFilterActive(filter);
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
@@ -136,8 +159,8 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            Copy of Control Center in D1. Filter by status, plans, customer, modem, global SIM, profile, and session.
-            Search ICCID, IMSI, MSISDN, IMEI, customer, account, device ID, modem, eUICCID, or SIM profile.
+            Copy of Control Center in D1. Filter by supplier, status, plans, customer, modem, global SIM, profile, session, and Added / Activated / Updated dates.
+            Search ICCID, IMSI, MSISDN, IMEI, customer, account, device ID, modem, eUICCID, SIM profile, notes, or custom fields.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -182,12 +205,53 @@ export default async function CcSnapshotPage({
           <input
             name="q"
             defaultValue={filter.query ?? ""}
-            placeholder="ICCID, IMSI, MSISDN, IMEI, customer, modem…"
+            placeholder="ICCID, IMSI, customer, notes, custom fields…"
             className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
           />
         </label>
 
         <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
+          <label className="block text-xs font-medium text-quiet">
+            Date field
+            <select
+              name="dateField"
+              defaultValue={filter.dateField || "added"}
+              className="mt-1 h-10 w-full truncate rounded-full border border-line bg-panel px-3 text-sm text-ink"
+            >
+              <option value="added">Added</option>
+              <option value="activated">Activated</option>
+              <option value="updated">Updated</option>
+            </select>
+          </label>
+          <label className="block text-xs font-medium text-quiet">
+            From
+            <input
+              type="date"
+              name="dateFrom"
+              defaultValue={filter.dateFrom ?? ""}
+              className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
+            />
+          </label>
+          <label className="block text-xs font-medium text-quiet">
+            To
+            <input
+              type="date"
+              name="dateTo"
+              defaultValue={filter.dateTo ?? ""}
+              className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
+            />
+          </label>
+        </div>
+        <p className="text-xs text-quiet">Dates use Australia/Sydney calendar days. Leave From/To empty to ignore.</p>
+
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
+          <FilterSelect
+            name="supplier"
+            label="Supplier"
+            value={filter.supplier ?? ""}
+            options={options.suppliers}
+            allLabel="All suppliers"
+          />
           <FilterSelect
             name="status"
             label="SIM status"
@@ -225,6 +289,13 @@ export default async function CcSnapshotPage({
             value={filter.customer ?? ""}
             options={options.customers}
             allLabel="All customers"
+          />
+          <FilterSelect
+            name="accountId"
+            label="Account ID"
+            value={filter.accountId ?? ""}
+            options={options.accountIds}
+            allLabel="All account IDs"
           />
           <FilterSelect
             name="modemId"

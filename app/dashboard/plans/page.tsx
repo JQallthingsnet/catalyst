@@ -17,7 +17,7 @@ export default async function PlansPage() {
           <div>
             <h1 className="text-3xl font-semibold">Plans</h1>
             <p className="mt-1 text-sm text-quiet">
-              Map ATN plans upward to your suppliers (Control Center, Singapore Telecom, China Mobile, …). Bind those
+              Map ATN plans upward to a supplier (Optus today; others later). Bind those
               plans to resellers on{" "}
               <Link href="/dashboard/contracts" className="text-accent">
                 Contract

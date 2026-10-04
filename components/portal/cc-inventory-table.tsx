@@ -79,6 +79,7 @@ export function CcInventoryTable({
       <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm">
         <thead className="whitespace-nowrap text-xs font-medium uppercase tracking-wide text-quiet">
           <tr className="border-b border-line">
+            <th className="px-3 py-2.5">Supplier</th>
             <th className="px-3 py-2.5">ICCID</th>
             <th className="px-3 py-2.5">Added</th>
             <th className="px-3 py-2.5">Activated</th>
@@ -118,6 +119,7 @@ export function CcInventoryTable({
                 : device.customer ?? "";
             return (
               <tr key={device.iccid} className="border-t border-line">
+                <td className="whitespace-nowrap px-3 py-2.5">{device.supplier}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 font-mono">
                   {formatIccid(device.iccid)}
                 </td>
