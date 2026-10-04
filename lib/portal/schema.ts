@@ -18,7 +18,7 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS usage_daily (tenant_id TEXT NOT NULL, day TEXT NOT NULL, mb INTEGER NOT NULL, PRIMARY KEY (tenant_id, day))`,
   `CREATE TABLE IF NOT EXISTS super_admins (email TEXT PRIMARY KEY, added_by TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, email TEXT NOT NULL, role TEXT NOT NULL, tenant_id TEXT NOT NULL, invited_by TEXT NOT NULL, created_at TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS platform_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, cc_rate_plan TEXT NOT NULL, comm_plan TEXT NOT NULL, created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, supplier TEXT NOT NULL DEFAULT 'Cisco IoT Control Center')`,
+  `CREATE TABLE IF NOT EXISTS platform_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, cc_rate_plan TEXT NOT NULL, comm_plan TEXT NOT NULL, created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, supplier TEXT NOT NULL DEFAULT 'Optus')`,
   `CREATE TABLE IF NOT EXISTS tenant_plan_assignments (tenant_id TEXT NOT NULL, platform_plan_id TEXT NOT NULL, created_at TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (tenant_id, platform_plan_id))`,
   `CREATE UNIQUE INDEX IF NOT EXISTS tenant_members_one_org ON tenant_members (email)`,
   `CREATE TABLE IF NOT EXISTS cc_devices (
@@ -50,7 +50,8 @@ const STATEMENTS = [
     euiccid TEXT,
     sim_profile_id TEXT,
     custom_fields TEXT,
-    details_json TEXT
+    details_json TEXT,
+    supplier TEXT NOT NULL DEFAULT 'Optus'
   )`,
   `CREATE TABLE IF NOT EXISTS cc_sync_state (
     id TEXT PRIMARY KEY,
@@ -131,7 +132,13 @@ const ALTERS = [
   `ALTER TABLE tenants ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE platform_plans ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE tenant_plan_assignments ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
-  `ALTER TABLE platform_plans ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Cisco IoT Control Center'`,
+  `ALTER TABLE platform_plans ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
+  `ALTER TABLE cc_devices ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
+];
+
+const BACKFILLS = [
+  `UPDATE platform_plans SET supplier = 'Optus' WHERE supplier = 'Cisco IoT Control Center'`,
+  `UPDATE cc_devices SET supplier = 'Optus' WHERE IFNULL(TRIM(supplier), '') = '' OR supplier = 'Cisco IoT Control Center'`,
 ];
 
 /**
@@ -160,6 +167,14 @@ export async function ensurePortalSchema(): Promise<void> {
         await db.prepare(sql).run();
       } catch {
         // Table/index may already exist on older D1.
+      }
+    }
+
+    for (const sql of BACKFILLS) {
+      try {
+        await db.prepare(sql).run();
+      } catch {
+        // Column may not exist on a brand-new empty database yet.
       }
     }
 

@@ -52,6 +52,36 @@ export function sydneyMonthUtcBounds(at: Date = new Date()): { startIso: string;
   return { startIso, endExclusiveIso };
 }
 
+const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export function parseYmd(value: string | undefined): { year: number; month: number; day: number; key: string } | null {
+  const match = YMD.exec((value ?? "").trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) {
+    return null;
+  }
+  return { year, month, day, key: `${match[1]}-${match[2]}-${match[3]}` };
+}
+
+/** Inclusive Sydney calendar day → UTC instant at 00:00 Sydney. */
+export function sydneyDayStartIso(ymd: string): string | null {
+  const parsed = parseYmd(ymd);
+  if (!parsed) return null;
+  return sydneyLocalToUtcIso(parsed.year, parsed.month, parsed.day, 0, 0, 0);
+}
+
+/** Exclusive UTC instant after the Sydney calendar day (next day 00:00). */
+export function sydneyDayEndExclusiveIso(ymd: string): string | null {
+  const parsed = parseYmd(ymd);
+  if (!parsed) return null;
+  const next = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day + 1));
+  return sydneyLocalToUtcIso(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0, 0, 0);
+}
+
 /** Convert a Sydney wall-clock local time to a UTC ISO string (handles AEDT/AEST via shortOffset). */
 function sydneyLocalToUtcIso(
   year: number,

@@ -14,6 +14,8 @@ import {
   type JasperDevice,
 } from "@/lib/cc/client";
 import { type SimState } from "@/lib/portal/catalogue";
+import { DEFAULT_PLAN_SUPPLIER, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
+import { parseYmd, sydneyDayEndExclusiveIso, sydneyDayStartIso } from "@/lib/portal/time";
 
 const SYNC_ID = "devices";
 /** Manual Sync while auto poll is off — keep the click short. */
@@ -33,6 +35,7 @@ let bulkDetailsAvailable: boolean | null = null;
 
 export type CcDevice = {
   iccid: string;
+  supplier: string;
   status: string;
   ratePlan: string | null;
   communicationPlan: string | null;
@@ -237,7 +240,8 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   }
 }
 
-const CC_DEVICE_COLUMNS = `iccid, status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, in_session,
+const CC_DEVICE_COLUMNS = `iccid, IFNULL(NULLIF(TRIM(supplier), ''), '${DEFAULT_PLAN_SUPPLIER}') AS supplier,
+              status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, in_session,
               date_added, date_activated, polled_at, details_polled_at,
               imei, customer, end_consumer_id, date_updated, date_shipped, account_id,
               fixed_ip_address, fixed_ipv6_address, sim_notes, device_id, modem_id,
@@ -245,6 +249,7 @@ const CC_DEVICE_COLUMNS = `iccid, status, rate_plan, communication_plan, imsi, m
 
 type CcDeviceRow = {
   iccid: string;
+  supplier: string | null;
   status: string;
   rate_plan: string | null;
   communication_plan: string | null;
@@ -293,6 +298,7 @@ function parseCustomFields(raw: string | null): Record<string, string> | null {
 function mapCcDevice(row: CcDeviceRow): CcDevice {
   return {
     iccid: row.iccid,
+    supplier: normalizePlanSupplier(row.supplier),
     status: row.status,
     ratePlan: row.rate_plan,
     communicationPlan: row.communication_plan,
@@ -341,21 +347,28 @@ function packCustomFields(details: JasperDevice): string | null {
 
 export type CcDeviceFilter = {
   query?: string;
+  supplier?: string;
   status?: string;
   ratePlan?: string;
   communicationPlan?: string;
   customer?: string;
+  accountId?: string;
   modemId?: string;
   globalSimType?: string;
   simProfileId?: string;
   inSession?: "yes" | "no" | "";
+  dateField?: "added" | "activated" | "updated" | "";
+  dateFrom?: string;
+  dateTo?: string;
 };
 
 export type CcFilterOptions = {
+  suppliers: string[];
   statuses: string[];
   ratePlans: string[];
   communicationPlans: string[];
   customers: string[];
+  accountIds: string[];
   modemIds: string[];
   globalSimTypes: string[];
   simProfileIds: string[];
@@ -368,16 +381,32 @@ function clipFilter(value: string | undefined, max = 120): string {
 export function normalizeCcFilter(input: string | CcDeviceFilter = {}): CcDeviceFilter {
   if (typeof input === "string") return { query: clipFilter(input) };
   const inSession = input.inSession === "yes" || input.inSession === "no" ? input.inSession : "";
+  const dateField =
+    input.dateField === "added" || input.dateField === "activated" || input.dateField === "updated"
+      ? input.dateField
+      : "";
+  let dateFrom = parseYmd(input.dateFrom)?.key ?? "";
+  let dateTo = parseYmd(input.dateTo)?.key ?? "";
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    const swap = dateFrom;
+    dateFrom = dateTo;
+    dateTo = swap;
+  }
   return {
     query: clipFilter(input.query),
+    supplier: clipFilter(input.supplier),
     status: clipFilter(input.status),
     ratePlan: clipFilter(input.ratePlan),
     communicationPlan: clipFilter(input.communicationPlan),
     customer: clipFilter(input.customer),
+    accountId: clipFilter(input.accountId),
     modemId: clipFilter(input.modemId),
     globalSimType: clipFilter(input.globalSimType),
     simProfileId: clipFilter(input.simProfileId),
     inSession,
+    dateField: dateFrom || dateTo ? dateField || "added" : dateField,
+    dateFrom,
+    dateTo,
   };
 }
 
@@ -385,14 +414,18 @@ export function ccFilterActive(filter: CcDeviceFilter): boolean {
   const normalized = normalizeCcFilter(filter);
   return Boolean(
     normalized.query ||
+      normalized.supplier ||
       normalized.status ||
       normalized.ratePlan ||
       normalized.communicationPlan ||
       normalized.customer ||
+      normalized.accountId ||
       normalized.modemId ||
       normalized.globalSimType ||
       normalized.simProfileId ||
-      normalized.inSession,
+      normalized.inSession ||
+      normalized.dateFrom ||
+      normalized.dateTo,
   );
 }
 
@@ -404,12 +437,17 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
     clauses.push(
       `(iccid LIKE ? OR IFNULL(imsi,'') LIKE ? OR IFNULL(msisdn,'') LIKE ? OR IFNULL(imei,'') LIKE ?
         OR IFNULL(customer,'') LIKE ? OR IFNULL(account_id,'') LIKE ? OR IFNULL(device_id,'') LIKE ?
-        OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ? OR IFNULL(modem_id,'') LIKE ?)`,
+        OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ? OR IFNULL(modem_id,'') LIKE ?
+        OR IFNULL(supplier,'') LIKE ? OR IFNULL(sim_notes,'') LIKE ? OR IFNULL(custom_fields,'') LIKE ?)`,
     );
     const q = normalized.query;
     const digits = `%${q.replace(/\s/g, "")}%`;
     const text = `%${q}%`;
-    binds.push(digits, text, text, text, text, text, text, text, text, text);
+    binds.push(digits, text, text, text, text, text, text, text, text, text, text, text, text);
+  }
+  if (normalized.supplier) {
+    clauses.push("IFNULL(NULLIF(TRIM(supplier), ''), ?) = ?");
+    binds.push(DEFAULT_PLAN_SUPPLIER, normalized.supplier);
   }
   if (normalized.status) {
     clauses.push("UPPER(status) = UPPER(?)");
@@ -427,6 +465,10 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
     clauses.push("customer = ?");
     binds.push(normalized.customer);
   }
+  if (normalized.accountId) {
+    clauses.push("account_id = ?");
+    binds.push(normalized.accountId);
+  }
   if (normalized.modemId) {
     clauses.push("modem_id = ?");
     binds.push(normalized.modemId);
@@ -441,6 +483,28 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
   }
   if (normalized.inSession === "yes") clauses.push("in_session = 1");
   if (normalized.inSession === "no") clauses.push("in_session = 0");
+  const dateColumn =
+    normalized.dateField === "activated"
+      ? "date_activated"
+      : normalized.dateField === "updated"
+        ? "date_updated"
+        : normalized.dateField === "added"
+          ? "date_added"
+          : null;
+  if (dateColumn && (normalized.dateFrom || normalized.dateTo)) {
+    const startIso = normalized.dateFrom ? sydneyDayStartIso(normalized.dateFrom) : null;
+    const endExclusiveIso = normalized.dateTo ? sydneyDayEndExclusiveIso(normalized.dateTo) : null;
+    const instant = `datetime(replace(substr(trim(${dateColumn}), 1, 19), 'T', ' '))`;
+    clauses.push(`${dateColumn} IS NOT NULL AND trim(${dateColumn}) != ''`);
+    if (startIso) {
+      clauses.push(`${instant} >= datetime(?)`);
+      binds.push(startIso.slice(0, 19).replace("T", " "));
+    }
+    if (endExclusiveIso) {
+      clauses.push(`${instant} < datetime(?)`);
+      binds.push(endExclusiveIso.slice(0, 19).replace("T", " "));
+    }
+  }
   return {
     sql: clauses.length > 0 ? ` WHERE ${clauses.join(" AND ")}` : "",
     binds,
@@ -490,21 +554,28 @@ async function distinctCcValues(column: string): Promise<string[]> {
 }
 
 export async function listCcFilterOptions(): Promise<CcFilterOptions> {
-  const [statuses, ratePlans, communicationPlans, customers, modemIds, globalSimTypes, simProfileIds] =
+  const [suppliers, statuses, ratePlans, communicationPlans, customers, accountIds, modemIds, globalSimTypes, simProfileIds] =
     await Promise.all([
+      distinctCcValues("supplier"),
       distinctCcValues("status"),
       distinctCcValues("rate_plan"),
       distinctCcValues("communication_plan"),
       distinctCcValues("customer"),
+      distinctCcValues("account_id"),
       distinctCcValues("modem_id"),
       distinctCcValues("global_sim_type"),
       distinctCcValues("sim_profile_id"),
     ]);
+  const listedSuppliers = suppliers.includes(DEFAULT_PLAN_SUPPLIER)
+    ? suppliers
+    : [DEFAULT_PLAN_SUPPLIER, ...suppliers];
   return {
+    suppliers: listedSuppliers,
     statuses,
     ratePlans,
     communicationPlans,
     customers,
+    accountIds,
     modemIds,
     globalSimTypes,
     simProfileIds,
@@ -682,15 +753,23 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
     upserts.push(
       db
         .prepare(
-          `INSERT INTO cc_devices (iccid, status, rate_plan, communication_plan, polled_at)
-         VALUES (?, ?, ?, ?, ?)
+          `INSERT INTO cc_devices (iccid, supplier, status, rate_plan, communication_plan, polled_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(iccid) DO UPDATE SET
+           supplier = excluded.supplier,
            status = excluded.status,
            rate_plan = excluded.rate_plan,
            communication_plan = excluded.communication_plan,
            polled_at = excluded.polled_at`,
         )
-        .bind(iccid, device.status, device.ratePlan ?? null, device.communicationPlan ?? null, polledAt),
+        .bind(
+          iccid,
+          DEFAULT_PLAN_SUPPLIER,
+          device.status,
+          device.ratePlan ?? null,
+          device.communicationPlan ?? null,
+          polledAt,
+        ),
     );
     overlays.push(
       overlaySimStatement(iccid, {
