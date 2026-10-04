@@ -344,6 +344,10 @@ export type CcDeviceFilter = {
   status?: string;
   ratePlan?: string;
   communicationPlan?: string;
+  customer?: string;
+  modemId?: string;
+  globalSimType?: string;
+  simProfileId?: string;
   inSession?: "yes" | "no" | "";
 };
 
@@ -351,9 +355,13 @@ export type CcFilterOptions = {
   statuses: string[];
   ratePlans: string[];
   communicationPlans: string[];
+  customers: string[];
+  modemIds: string[];
+  globalSimTypes: string[];
+  simProfileIds: string[];
 };
 
-function clipFilter(value: string | undefined, max = 80): string {
+function clipFilter(value: string | undefined, max = 120): string {
   return (value ?? "").trim().slice(0, max);
 }
 
@@ -365,6 +373,10 @@ export function normalizeCcFilter(input: string | CcDeviceFilter = {}): CcDevice
     status: clipFilter(input.status),
     ratePlan: clipFilter(input.ratePlan),
     communicationPlan: clipFilter(input.communicationPlan),
+    customer: clipFilter(input.customer),
+    modemId: clipFilter(input.modemId),
+    globalSimType: clipFilter(input.globalSimType),
+    simProfileId: clipFilter(input.simProfileId),
     inSession,
   };
 }
@@ -372,7 +384,15 @@ export function normalizeCcFilter(input: string | CcDeviceFilter = {}): CcDevice
 export function ccFilterActive(filter: CcDeviceFilter): boolean {
   const normalized = normalizeCcFilter(filter);
   return Boolean(
-    normalized.query || normalized.status || normalized.ratePlan || normalized.communicationPlan || normalized.inSession,
+    normalized.query ||
+      normalized.status ||
+      normalized.ratePlan ||
+      normalized.communicationPlan ||
+      normalized.customer ||
+      normalized.modemId ||
+      normalized.globalSimType ||
+      normalized.simProfileId ||
+      normalized.inSession,
   );
 }
 
@@ -384,12 +404,12 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
     clauses.push(
       `(iccid LIKE ? OR IFNULL(imsi,'') LIKE ? OR IFNULL(msisdn,'') LIKE ? OR IFNULL(imei,'') LIKE ?
         OR IFNULL(customer,'') LIKE ? OR IFNULL(account_id,'') LIKE ? OR IFNULL(device_id,'') LIKE ?
-        OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ?)`,
+        OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ? OR IFNULL(modem_id,'') LIKE ?)`,
     );
     const q = normalized.query;
     const digits = `%${q.replace(/\s/g, "")}%`;
     const text = `%${q}%`;
-    binds.push(digits, text, text, text, text, text, text, text, text);
+    binds.push(digits, text, text, text, text, text, text, text, text, text);
   }
   if (normalized.status) {
     clauses.push("UPPER(status) = UPPER(?)");
@@ -402,6 +422,22 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
   if (normalized.communicationPlan) {
     clauses.push("communication_plan = ?");
     binds.push(normalized.communicationPlan);
+  }
+  if (normalized.customer) {
+    clauses.push("customer = ?");
+    binds.push(normalized.customer);
+  }
+  if (normalized.modemId) {
+    clauses.push("modem_id = ?");
+    binds.push(normalized.modemId);
+  }
+  if (normalized.globalSimType) {
+    clauses.push("global_sim_type = ?");
+    binds.push(normalized.globalSimType);
+  }
+  if (normalized.simProfileId) {
+    clauses.push("sim_profile_id = ?");
+    binds.push(normalized.simProfileId);
   }
   if (normalized.inSession === "yes") clauses.push("in_session = 1");
   if (normalized.inSession === "no") clauses.push("in_session = 0");
@@ -440,35 +476,38 @@ export async function countCcDevices(queryOrFilter: string | CcDeviceFilter = ""
   return row?.c ?? 0;
 }
 
+async function distinctCcValues(column: string): Promise<string[]> {
+  // Column names are fixed call-site strings only — never user input.
+  const rows = await getDB()
+    .prepare(
+      `SELECT DISTINCT ${column} AS value FROM cc_devices
+       WHERE ${column} IS NOT NULL AND TRIM(${column}) != ''
+       ORDER BY ${column} COLLATE NOCASE
+       LIMIT 500`,
+    )
+    .all<{ value: string }>();
+  return (rows.results ?? []).map((row) => row.value);
+}
+
 export async function listCcFilterOptions(): Promise<CcFilterOptions> {
-  const db = getDB();
-  const [statuses, ratePlans, communicationPlans] = await Promise.all([
-    db
-      .prepare(
-        `SELECT DISTINCT status AS value FROM cc_devices
-         WHERE status IS NOT NULL AND TRIM(status) != ''
-         ORDER BY status COLLATE NOCASE`,
-      )
-      .all<{ value: string }>(),
-    db
-      .prepare(
-        `SELECT DISTINCT rate_plan AS value FROM cc_devices
-         WHERE rate_plan IS NOT NULL AND TRIM(rate_plan) != ''
-         ORDER BY rate_plan COLLATE NOCASE`,
-      )
-      .all<{ value: string }>(),
-    db
-      .prepare(
-        `SELECT DISTINCT communication_plan AS value FROM cc_devices
-         WHERE communication_plan IS NOT NULL AND TRIM(communication_plan) != ''
-         ORDER BY communication_plan COLLATE NOCASE`,
-      )
-      .all<{ value: string }>(),
-  ]);
+  const [statuses, ratePlans, communicationPlans, customers, modemIds, globalSimTypes, simProfileIds] =
+    await Promise.all([
+      distinctCcValues("status"),
+      distinctCcValues("rate_plan"),
+      distinctCcValues("communication_plan"),
+      distinctCcValues("customer"),
+      distinctCcValues("modem_id"),
+      distinctCcValues("global_sim_type"),
+      distinctCcValues("sim_profile_id"),
+    ]);
   return {
-    statuses: (statuses.results ?? []).map((row) => row.value),
-    ratePlans: (ratePlans.results ?? []).map((row) => row.value),
-    communicationPlans: (communicationPlans.results ?? []).map((row) => row.value),
+    statuses,
+    ratePlans,
+    communicationPlans,
+    customers,
+    modemIds,
+    globalSimTypes,
+    simProfileIds,
   };
 }
 

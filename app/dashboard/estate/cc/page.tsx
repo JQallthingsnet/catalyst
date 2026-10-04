@@ -23,6 +23,10 @@ function snapshotQuery(filter: CcDeviceFilter, page = 1): string {
   if (filter.status) sp.set("status", filter.status);
   if (filter.ratePlan) sp.set("ratePlan", filter.ratePlan);
   if (filter.communicationPlan) sp.set("commPlan", filter.communicationPlan);
+  if (filter.customer) sp.set("customer", filter.customer);
+  if (filter.modemId) sp.set("modemId", filter.modemId);
+  if (filter.globalSimType) sp.set("globalSim", filter.globalSimType);
+  if (filter.simProfileId) sp.set("simProfile", filter.simProfileId);
   if (filter.inSession) sp.set("inSession", filter.inSession);
   if (page > 1) sp.set("page", String(page));
   const value = sp.toString();
@@ -69,8 +73,30 @@ export default async function CcSnapshotPage({
   searchParams,
 }: {
   searchParams?:
-    | { q?: string; page?: string; status?: string; ratePlan?: string; commPlan?: string; inSession?: string }
-    | Promise<{ q?: string; page?: string; status?: string; ratePlan?: string; commPlan?: string; inSession?: string }>;
+    | {
+        q?: string;
+        page?: string;
+        status?: string;
+        ratePlan?: string;
+        commPlan?: string;
+        customer?: string;
+        modemId?: string;
+        globalSim?: string;
+        simProfile?: string;
+        inSession?: string;
+      }
+    | Promise<{
+        q?: string;
+        page?: string;
+        status?: string;
+        ratePlan?: string;
+        commPlan?: string;
+        customer?: string;
+        modemId?: string;
+        globalSim?: string;
+        simProfile?: string;
+        inSession?: string;
+      }>;
 }) {
   await requirePrivilege("platform.estate");
   const params = await Promise.resolve(searchParams ?? {});
@@ -79,6 +105,10 @@ export default async function CcSnapshotPage({
     status: params.status,
     ratePlan: params.ratePlan,
     communicationPlan: params.commPlan,
+    customer: params.customer,
+    modemId: params.modemId,
+    globalSimType: params.globalSim,
+    simProfileId: params.simProfile,
     inSession: params.inSession === "yes" || params.inSession === "no" ? params.inSession : "",
   });
   const filtered = ccFilterActive(filter);
@@ -106,9 +136,8 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            Copy of Control Center in D1. After details sync, rows include the full device payload (IMEI, customer,
-            account, IPs, custom fields). Filter by status, plans, session. Search ICCID, IMSI, MSISDN, IMEI, customer,
-            account, or device ID.
+            Copy of Control Center in D1. Filter by status, plans, customer, modem, global SIM, profile, and session.
+            Search ICCID, IMSI, MSISDN, IMEI, customer, account, device ID, modem, eUICCID, or SIM profile.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -148,13 +177,13 @@ export default async function CcSnapshotPage({
       ) : null}
 
       <form action="/dashboard/estate/cc" className="mt-6 rounded-card border border-line bg-panel p-4">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <label className="block text-xs font-medium text-quiet sm:col-span-2 xl:col-span-1">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="block text-xs font-medium text-quiet sm:col-span-2 xl:col-span-2">
             Search
             <input
               name="q"
               defaultValue={filter.query ?? ""}
-              placeholder="ICCID, IMSI, MSISDN, IMEI, customer…"
+              placeholder="ICCID, IMSI, MSISDN, IMEI, customer, modem…"
               className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
             />
           </label>
@@ -164,6 +193,16 @@ export default async function CcSnapshotPage({
             value={filter.status ?? ""}
             options={options.statuses}
             allLabel="All statuses"
+          />
+          <FilterSelect
+            name="inSession"
+            label="In session"
+            value={filter.inSession ?? ""}
+            options={[
+              { value: "yes", label: "Yes" },
+              { value: "no", label: "No" },
+            ]}
+            allLabel="All"
           />
           <FilterSelect
             name="ratePlan"
@@ -180,14 +219,32 @@ export default async function CcSnapshotPage({
             allLabel="All comm plans"
           />
           <FilterSelect
-            name="inSession"
-            label="In session"
-            value={filter.inSession ?? ""}
-            options={[
-              { value: "yes", label: "Yes" },
-              { value: "no", label: "No" },
-            ]}
-            allLabel="All"
+            name="customer"
+            label="Customer"
+            value={filter.customer ?? ""}
+            options={options.customers}
+            allLabel="All customers"
+          />
+          <FilterSelect
+            name="modemId"
+            label="Modem ID"
+            value={filter.modemId ?? ""}
+            options={options.modemIds}
+            allLabel="All modems"
+          />
+          <FilterSelect
+            name="globalSim"
+            label="Global SIM"
+            value={filter.globalSimType ?? ""}
+            options={options.globalSimTypes}
+            allLabel="All global SIM types"
+          />
+          <FilterSelect
+            name="simProfile"
+            label="SIM profile"
+            value={filter.simProfileId ?? ""}
+            options={options.simProfileIds}
+            allLabel="All SIM profiles"
           />
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
