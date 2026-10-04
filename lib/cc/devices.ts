@@ -3,6 +3,7 @@ import {
   beginJasperBudget,
   CcBudgetError,
   CcBusyError,
+  CcRateLimitError,
   fetchJasperBulkDevices,
   fetchJasperCtdUsage,
   fetchJasperDeviceDetails,
@@ -1029,12 +1030,15 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
       await dropLock();
       throw err;
     }
-    if (isSubrequestLimit(err) || err instanceof CcBudgetError) {
+    if (isSubrequestLimit(err) || err instanceof CcBudgetError || err instanceof CcRateLimitError) {
+      const rateLimited = err instanceof CcRateLimitError;
       await releaseLock({
         modifiedSince: lastPage ? pollStarted : modifiedSince,
         nextPage: page,
         lastPolledAt: isoNow(),
-        lastError: null,
+        lastError: rateLimited
+          ? "Rate limited by Control Center. Progress saved — wait ~1 minute, then Sync again (do not mash Sync)."
+          : null,
         lastTotal: totalCount,
         lastPage: fetchedPage,
         lastPageComplete: lastPage,

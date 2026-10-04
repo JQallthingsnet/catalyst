@@ -34,7 +34,7 @@ export function SyncCcButton() {
           ? `Fetched ${result.pages} page(s), upserted ${result.upserted}, details ${result.details ?? 0}. Jasper total ${result.totalCount.toLocaleString("en-AU")}.${
               result.lastPage
                 ? " List cycle complete — further Syncs only pick up recent changes."
-                : ` Next list page ${result.nextPage ?? "—"}.`
+                : ` Next list page ${result.nextPage ?? "—"}. Wait if rate-limited before Sync again.`
             }`
           : "Synced.",
       );

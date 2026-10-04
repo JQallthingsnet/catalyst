@@ -2,7 +2,9 @@ import { getEnv } from "@/lib/env";
 
 const DEFAULT_BASE = "https://restapi1.jasper.com/rws/api/v1";
 const PAGE_SIZE = 50;
-const MIN_INTERVAL_MS = 200;
+/** Stay under Jasper's published ~5 req/s; Optus accounts often trip earlier under burst. */
+const MIN_INTERVAL_MS = 300;
+const MAX_429_RETRIES = 4;
 
 let lastCallAt = 0;
 let inFlight = false;
@@ -20,6 +22,17 @@ export class CcBusyError extends Error {
   constructor() {
     super("A Control Center request is already in flight.");
     this.name = "CcBusyError";
+  }
+}
+
+export class CcRateLimitError extends Error {
+  constructor(detail?: string) {
+    super(
+      detail?.trim()
+        ? detail
+        : "Control Center rate limit exceeded. Progress saved — wait a minute, then Sync again.",
+    );
+    this.name = "CcRateLimitError";
   }
 }
 
@@ -160,17 +173,29 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
   inFlight = true;
   jasperCalls += 1;
   try {
-    await throttle();
-    const res = await fetch(`${apiBase()}${path}`, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        Authorization: authorizationHeader(),
-      },
-    });
-    if (allow404 && res.status === 404) return null;
-    if (!res.ok) throw new Error(await jasperErrorMessage(res));
-    return (await res.json()) as T;
+    let attempt = 0;
+    while (true) {
+      await throttle();
+      const res = await fetch(`${apiBase()}${path}`, {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          Authorization: authorizationHeader(),
+        },
+      });
+      if (allow404 && res.status === 404) return null;
+      if (res.status === 429) {
+        const detail = await jasperErrorMessage(res);
+        attempt += 1;
+        if (attempt > MAX_429_RETRIES) throw new CcRateLimitError(detail);
+        const delayMs = Math.min(30_000, 2_000 * 2 ** (attempt - 1));
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        lastCallAt = Date.now();
+        continue;
+      }
+      if (!res.ok) throw new Error(await jasperErrorMessage(res));
+      return (await res.json()) as T;
+    }
   } finally {
     inFlight = false;
   }
