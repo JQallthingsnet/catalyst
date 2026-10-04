@@ -44,6 +44,29 @@ function TextCell({
   );
 }
 
+/** Long prose fields: wrap inside the cell so text is readable without clipping into the next column. */
+function WrapCell({
+  value,
+  className = "max-w-72",
+  quiet = false,
+}: {
+  value: string;
+  className?: string;
+  quiet?: boolean;
+}) {
+  const text = value || "—";
+  return (
+    <td className={`align-top px-3 py-2.5 ${className}`}>
+      <span
+        title={value || undefined}
+        className={`block whitespace-normal wrap-break-word text-xs leading-snug ${quiet ? "text-quiet" : ""}`.trim()}
+      >
+        {text}
+      </span>
+    </td>
+  );
+}
+
 export function CcInventoryTable({
   devices,
   empty = "No devices in the Control Center copy yet.",
@@ -106,8 +129,8 @@ export function CcInventoryTable({
                 <TextCell value={device.imsi ?? ""} mono className="max-w-40" />
                 <TextCell value={device.msisdn ?? ""} mono className="max-w-32" />
                 <td className="whitespace-nowrap px-3 py-2.5">{device.status}</td>
-                <TextCell value={device.ratePlan ?? ""} className="max-w-48" />
-                <TextCell value={device.communicationPlan ?? ""} className="max-w-56" />
+                <WrapCell value={device.ratePlan ?? ""} className="max-w-56" />
+                <WrapCell value={device.communicationPlan ?? ""} className="max-w-72" />
                 <TextCell value={customer} className="max-w-40" />
                 <TextCell value={device.accountId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.deviceId ?? ""} mono className="max-w-32" />
@@ -127,8 +150,8 @@ export function CcInventoryTable({
                 <TextCell value={device.simProfileId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.euiccid ?? ""} mono className="max-w-40" />
                 <TextCell value={device.mec ?? ""} className="max-w-24" />
-                <TextCell value={device.simNotes ?? ""} className="max-w-48" />
-                <TextCell value={custom} className="max-w-56" />
+                <WrapCell value={device.simNotes ?? ""} className="max-w-72" />
+                <WrapCell value={custom} className="max-w-80" quiet />
               </tr>
             );
           })}

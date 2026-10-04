@@ -176,7 +176,7 @@ export default async function CcSnapshotPage({
         <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{sync.lastError}</p>
       ) : null}
 
-      <form action="/dashboard/estate/cc" className="mt-6 max-w-4xl space-y-4 rounded-card border border-line bg-panel p-4">
+      <form action="/dashboard/estate/cc" className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4">
         <label className="block text-xs font-medium text-quiet">
           Search
           <input
