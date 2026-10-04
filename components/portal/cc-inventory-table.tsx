@@ -2,12 +2,46 @@ import { formatIccid } from "@/lib/portal/ids";
 import { formatAuDateTime } from "@/lib/portal/time";
 import type { CcDevice } from "@/lib/cc/devices";
 
-function Cell({ value, mono = false }: { value: string; mono?: boolean }) {
-  return <span className={mono ? "font-mono" : undefined}>{value || "—"}</span>;
+function Truncate({
+  value,
+  className = "",
+  mono = false,
+}: {
+  value: string;
+  className?: string;
+  mono?: boolean;
+}) {
+  const text = value || "—";
+  return (
+    <span
+      title={value || undefined}
+      className={`block max-w-full truncate ${mono ? "font-mono" : ""} ${className}`.trim()}
+    >
+      {text}
+    </span>
+  );
 }
 
 function DateCell({ value }: { value: string | null }) {
-  return <td className="whitespace-nowrap px-3 py-2.5 text-xs">{formatAuDateTime(value)}</td>;
+  return (
+    <td className="whitespace-nowrap px-3 py-2.5 text-xs">{formatAuDateTime(value)}</td>
+  );
+}
+
+function TextCell({
+  value,
+  mono = false,
+  className = "max-w-44",
+}: {
+  value: string;
+  mono?: boolean;
+  className?: string;
+}) {
+  return (
+    <td className={`px-3 py-2.5 ${className}`}>
+      <Truncate value={value} mono={mono} />
+    </td>
+  );
 }
 
 export function CcInventoryTable({
@@ -19,7 +53,7 @@ export function CcInventoryTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-card border border-line bg-panel">
-      <table className="w-full min-w-300 text-left text-sm">
+      <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm">
         <thead className="whitespace-nowrap text-xs font-medium uppercase tracking-wide text-quiet">
           <tr className="border-b border-line">
             <th className="px-3 py-2.5">ICCID</th>
@@ -55,59 +89,46 @@ export function CcInventoryTable({
                   .map(([key, value]) => `${key}=${value}`)
                   .join(" · ")
               : "";
+            const customer =
+              device.customer && device.endConsumerId
+                ? `${device.customer} · End consumer ${device.endConsumerId}`
+                : device.customer ?? "";
             return (
-              <tr key={device.iccid} className="border-t border-line align-top">
-                <td className="whitespace-nowrap px-3 py-2.5 font-mono">{formatIccid(device.iccid)}</td>
+              <tr key={device.iccid} className="border-t border-line">
+                <td className="whitespace-nowrap px-3 py-2.5 font-mono">
+                  {formatIccid(device.iccid)}
+                </td>
                 <DateCell value={device.dateAdded} />
                 <DateCell value={device.dateActivated} />
                 <DateCell value={device.dateUpdated} />
                 <DateCell value={device.dateShipped} />
-                <td className="whitespace-nowrap px-3 py-2.5">
-                  <Cell value={device.imei ?? ""} mono />
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5">
-                  <Cell value={device.imsi ?? ""} mono />
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5">
-                  <Cell value={device.msisdn ?? ""} mono />
-                </td>
+                <TextCell value={device.imei ?? ""} mono className="max-w-40" />
+                <TextCell value={device.imsi ?? ""} mono className="max-w-40" />
+                <TextCell value={device.msisdn ?? ""} mono className="max-w-32" />
                 <td className="whitespace-nowrap px-3 py-2.5">{device.status}</td>
-                <td className="px-3 py-2.5">{device.ratePlan ?? "—"}</td>
-                <td className="px-3 py-2.5">{device.communicationPlan ?? "—"}</td>
-                <td className="px-3 py-2.5">
-                  <p>{device.customer ?? "—"}</p>
-                  {device.endConsumerId ? (
-                    <p className="mt-0.5 text-xs text-quiet">End consumer {device.endConsumerId}</p>
-                  ) : null}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs">
-                  {device.accountId ?? "—"}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5">
-                  <Cell value={device.deviceId ?? ""} mono />
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5">
-                  <Cell value={device.modemId ?? ""} mono />
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs">
-                  {device.fixedIpAddress || device.fixedIpv6Address || "—"}
-                </td>
+                <TextCell value={device.ratePlan ?? ""} className="max-w-48" />
+                <TextCell value={device.communicationPlan ?? ""} className="max-w-56" />
+                <TextCell value={customer} className="max-w-40" />
+                <TextCell value={device.accountId ?? ""} mono className="max-w-32" />
+                <TextCell value={device.deviceId ?? ""} mono className="max-w-32" />
+                <TextCell value={device.modemId ?? ""} mono className="max-w-40" />
+                <TextCell
+                  value={device.fixedIpAddress || device.fixedIpv6Address || ""}
+                  mono
+                  className="max-w-36"
+                />
                 <td className="whitespace-nowrap px-3 py-2.5">
                   {device.ctdUsageMb != null ? device.ctdUsageMb.toLocaleString("en-AU") : "—"}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5">
                   {device.inSession == null ? "—" : device.inSession ? "Yes" : "No"}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2.5">{device.globalSimType ?? "—"}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs">
-                  {device.simProfileId ?? "—"}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5">
-                  <Cell value={device.euiccid ?? ""} mono />
-                </td>
-                <td className="whitespace-nowrap px-3 py-2.5">{device.mec ?? "—"}</td>
-                <td className="max-w-48 px-3 py-2.5 text-xs">{device.simNotes || "—"}</td>
-                <td className="max-w-64 px-3 py-2.5 text-xs text-quiet">{custom || "—"}</td>
+                <TextCell value={device.globalSimType ?? ""} className="max-w-32" />
+                <TextCell value={device.simProfileId ?? ""} mono className="max-w-32" />
+                <TextCell value={device.euiccid ?? ""} mono className="max-w-40" />
+                <TextCell value={device.mec ?? ""} className="max-w-24" />
+                <TextCell value={device.simNotes ?? ""} className="max-w-48" />
+                <TextCell value={custom} className="max-w-56" />
               </tr>
             );
           })}

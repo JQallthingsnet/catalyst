@@ -52,7 +52,7 @@ function FilterSelect({
       <select
         name={name}
         defaultValue={value}
-        className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
+        className="mt-1 h-10 w-full truncate rounded-full border border-line bg-panel px-3 text-sm text-ink"
       >
         <option value="">{allLabel}</option>
         {options.map((option) => {
@@ -176,9 +176,9 @@ export default async function CcSnapshotPage({
         <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{sync.lastError}</p>
       ) : null}
 
-      <form action="/dashboard/estate/cc" className="mt-6 rounded-card border border-line bg-panel p-4">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <label className="block text-xs font-medium text-quiet sm:col-span-2 xl:col-span-2">
+      <form action="/dashboard/estate/cc" className="mt-6 max-w-3xl rounded-card border border-line bg-panel p-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="block text-xs font-medium text-quiet sm:col-span-2 lg:col-span-3">
             Search
             <input
               name="q"
