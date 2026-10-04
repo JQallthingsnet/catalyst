@@ -16,6 +16,7 @@ import {
 } from "@/lib/cc/client";
 import { type SimState } from "@/lib/portal/catalogue";
 import { DEFAULT_PLAN_SUPPLIER, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
+import { ccDevicesToCsv } from "@/lib/cc/csv";
 import { parseYmd, sydneyDayEndExclusiveIso, sydneyDayStartIso } from "@/lib/portal/time";
 
 const SYNC_ID = "devices";
@@ -226,31 +227,6 @@ export async function setCcAutoPoll(enabled: boolean): Promise<void> {
     .prepare(`UPDATE cc_sync_state SET auto_poll = ? WHERE id = ?`)
     .bind(enabled ? 1 : 0, SYNC_ID)
     .run();
-}
-
-/**
- * Restart Jasper Search Devices from page 1 with a ~360-day modifiedSince window.
- * Use when D1 is far below the estate size after an incremental cycle completed.
- * Jasper only returns devices modified in that window (max ~1 year) — not untouched SIMs.
- */
-export async function resetCcListCrawl(): Promise<{ modifiedSince: string }> {
-  await ensureSyncRow();
-  const modifiedSince = defaultModifiedSince();
-  await getDB()
-    .prepare(
-      `UPDATE cc_sync_state
-       SET modified_since = ?,
-           next_page = 1,
-           last_page = NULL,
-           last_page_complete = 0,
-           last_total = NULL,
-           last_error = NULL,
-           locked_until = NULL
-       WHERE id = ?`,
-    )
-    .bind(modifiedSince, SYNC_ID)
-    .run();
-  return { modifiedSince };
 }
 
 /** Cron entry. Runs when the Auto poll button is ON (and CC_AUTO_POLL is not false). */
@@ -1074,4 +1050,116 @@ async function dropLock(): Promise<void> {
 function isSubrequestLimit(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return /too many subrequests/i.test(message);
+}
+
+const IMPORT_MAX_PER_RUN = 25;
+const IMPORT_BUDGET_MS = 45_000;
+const IMPORT_JASPER_CALLS = 55;
+const EXPORT_PAGE_SIZE = 500;
+
+export type CcImportResult = {
+  requested: number;
+  imported: number;
+  notFound: string[];
+  failed: string[];
+  rateLimited: boolean;
+  remaining: number;
+};
+
+/**
+ * Seed / refresh SIMs by ICCID via Get Device (+ usage/session).
+ * Used for estate stock that Jasper Search Devices never returns (idle > ~1 year).
+ * Processes up to IMPORT_MAX_PER_RUN per call — send remaining in follow-up requests.
+ */
+export async function importCcIccids(iccids: string[]): Promise<CcImportResult> {
+  if (!jasperConfigured()) {
+    throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
+  }
+  const cleaned = [
+    ...new Set(iccids.map((value) => value.replace(/\s/g, "")).filter((value) => /^\d{15,22}$/.test(value))),
+  ];
+  const batch = cleaned.slice(0, IMPORT_MAX_PER_RUN);
+  const remaining = Math.max(0, cleaned.length - batch.length);
+  if (batch.length === 0) {
+    return { requested: 0, imported: 0, notFound: [], failed: [], rateLimited: false, remaining: 0 };
+  }
+
+  const locked = await acquireLock();
+  if (!locked) throw new CcBusyError();
+
+  beginJasperBudget(IMPORT_JASPER_CALLS);
+  bulkDetailsAvailable = null;
+  const deadline = Date.now() + IMPORT_BUDGET_MS;
+  let imported = 0;
+  const notFound: string[] = [];
+  const failed: string[] = [];
+  let rateLimited = false;
+
+  try {
+    const detailsMap = await fetchDeviceDetailsBatch(batch);
+    for (const iccid of batch) {
+      if (Date.now() >= deadline || !jasperHasBudget(2)) {
+        rateLimited = true;
+        break;
+      }
+      const details = detailsMap.get(iccid) ?? null;
+      if (!details) {
+        notFound.push(iccid);
+        continue;
+      }
+      try {
+        await persistDevices([details], isoNow());
+        const usage = await fetchJasperCtdUsage(iccid);
+        const session = await fetchJasperSessionInfo(iccid);
+        await persistDeviceEnrichment(iccid, details, usage, session);
+        imported += 1;
+      } catch (err) {
+        if (err instanceof CcRateLimitError || err instanceof CcBudgetError) {
+          rateLimited = true;
+          break;
+        }
+        failed.push(iccid);
+      }
+    }
+    await releaseLock({ lastPolledAt: isoNow(), lastError: null });
+  } catch (err) {
+    if (err instanceof CcBusyError) {
+      await dropLock();
+      throw err;
+    }
+    if (err instanceof CcRateLimitError || err instanceof CcBudgetError || isSubrequestLimit(err)) {
+      rateLimited = true;
+      await releaseLock({
+        lastPolledAt: isoNow(),
+        lastError: "Import paused (rate limit or budget). Progress kept — run Import again for the rest.",
+      });
+    } else {
+      const message = err instanceof Error ? err.message : "Import failed.";
+      await releaseLock({ lastError: message, lastPolledAt: isoNow() });
+      throw err;
+    }
+  }
+
+  return {
+    requested: batch.length,
+    imported,
+    notFound,
+    failed,
+    rateLimited,
+    remaining,
+  };
+}
+
+/** Full D1 CC snapshot as CSV (all rows). */
+export async function exportCcDevicesCsv(): Promise<string> {
+  const devices: CcDevice[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await listCcDevices({}, EXPORT_PAGE_SIZE, offset);
+    if (page.length === 0) break;
+    devices.push(...page);
+    offset += page.length;
+    if (page.length < EXPORT_PAGE_SIZE) break;
+  }
+  return ccDevicesToCsv(devices);
 }
