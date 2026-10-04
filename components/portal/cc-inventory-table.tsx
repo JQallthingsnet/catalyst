@@ -1,4 +1,3 @@
-import { formatIccid } from "@/lib/portal/ids";
 import { formatAuDateTime } from "@/lib/portal/time";
 import type { CcDevice } from "@/lib/cc/devices";
 
@@ -120,9 +119,7 @@ export function CcInventoryTable({
             return (
               <tr key={device.iccid} className="border-t border-line">
                 <td className="whitespace-nowrap px-3 py-2.5">{device.supplier}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 font-mono">
-                  {formatIccid(device.iccid)}
-                </td>
+                <td className="whitespace-nowrap px-3 py-2.5 font-mono">{device.iccid}</td>
                 <DateCell value={device.dateAdded} />
                 <DateCell value={device.dateActivated} />
                 <DateCell value={device.dateUpdated} />

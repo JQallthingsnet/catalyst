@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { CcInventoryTable } from "@/components/portal/cc-inventory-table";
 import { CcAutoPollToggle } from "@/components/portal/cc-auto-poll-toggle";
-import { ResetCcListButton } from "@/components/portal/reset-cc-list-button";
+import { CcExportButton } from "@/components/portal/cc-export-button";
+import { CcImportDialog } from "@/components/portal/cc-import-dialog";
 import { SyncCcButton } from "@/components/portal/sync-cc-button";
 import {
   ccFilterActive,
@@ -166,7 +167,8 @@ export default async function CcSnapshotPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CcAutoPollToggle enabled={sync.autoPoll} />
-          <ResetCcListButton />
+          <CcImportDialog />
+          <CcExportButton />
           <SyncCcButton />
         </div>
       </div>
