@@ -97,11 +97,11 @@ export function PlatformPlanWizard({
             <input
               value={ccRatePlan}
               onChange={(event) => setCcRatePlan(event.target.value)}
-              placeholder="e.g. CM1GB, CC plan name, Singtel code…"
+              placeholder="e.g. CM1GB, Optus / Jasper TCode"
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             />
             <span className="mt-1 block text-xs text-quiet">
-              Must match the supplier’s rate plan name (for Control Center, the Jasper rate plan / TCode).
+              Must match the supplier’s rate plan name (for Optus, the Jasper rate plan / TCode).
             </span>
           </label>
           <label className="block text-sm">

@@ -1,6 +1,6 @@
 import { getDB } from "@/lib/env";
 import { newId } from "@/lib/portal/ids";
-import { PLAN_SUPPLIERS } from "@/lib/portal/plan-suppliers";
+import { DEFAULT_PLAN_SUPPLIER, isListedPlanSupplier, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
 import { loadTenant } from "@/lib/portal/tenant";
 
 export { PLAN_SUPPLIERS, type PlanSupplier } from "@/lib/portal/plan-suppliers";
@@ -41,7 +41,7 @@ function mapPlan(row: {
   return {
     id: row.id,
     name: row.name,
-    supplier: row.supplier?.trim() || "Cisco IoT Control Center",
+    supplier: normalizePlanSupplier(row.supplier),
     ccRatePlan: row.cc_rate_plan,
     commPlan: row.comm_plan,
     createdAt: row.created_at,
@@ -56,7 +56,7 @@ export async function listPlatformPlans(): Promise<PlatformPlan[]> {
   try {
     const rows = await db
       .prepare(
-        `SELECT p.id, p.name, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+        `SELECT p.id, p.name, IFNULL(p.supplier, 'Optus') AS supplier,
                 p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
                 (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
                 (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
@@ -102,7 +102,7 @@ export async function getPlatformPlan(id: string): Promise<PlatformPlan | null> 
   try {
     const row = await db
       .prepare(
-        `SELECT p.id, p.name, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+        `SELECT p.id, p.name, IFNULL(p.supplier, 'Optus') AS supplier,
                 p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
                 (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
                 (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
@@ -195,9 +195,9 @@ export async function createPlatformPlan(
 ): Promise<PlatformPlan> {
   const name = input.name.trim();
   if (name.length < 2) throw new Error("Enter remarks / plan description.");
-  const supplier = input.supplier.trim() || "Cisco IoT Control Center";
-  if (!(PLAN_SUPPLIERS as readonly string[]).includes(supplier)) {
-    throw new Error("Choose a supplier (Control Center, Singapore Telecom, China Mobile, or Other).");
+  const supplier = normalizePlanSupplier(input.supplier);
+  if (!isListedPlanSupplier(supplier)) {
+    throw new Error("Choose a supplier (Optus or Other).");
   }
   const ccRatePlan = input.ccRatePlan.trim();
   if (!ccRatePlan) throw new Error("Enter the supplier rate plan / TCode exactly.");
@@ -321,7 +321,7 @@ export async function deletePlatformPlan(id: string, confirmName: string): Promi
 export async function listAssignedPlatformPlans(tenantId: string): Promise<PlatformPlan[]> {
   const rows = await getDB()
     .prepare(
-      `SELECT p.id, p.name, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+      `SELECT p.id, p.name, IFNULL(p.supplier, 'Optus') AS supplier,
               p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active
        FROM platform_plans p
        JOIN tenant_plan_assignments a ON a.platform_plan_id = p.id
@@ -420,7 +420,7 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
   const rows = await db
     .prepare(
       `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-              p.name AS remarks, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+              p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
               p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
               (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
        FROM tenant_plan_assignments a
@@ -470,7 +470,7 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
     const rows = await db
       .prepare(
         `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-                p.name AS remarks, IFNULL(p.supplier, 'Cisco IoT Control Center') AS supplier,
+                p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
                 p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
                 (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
          FROM tenant_plan_assignments a
@@ -522,7 +522,7 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
       platformPlanId: row.platform_plan_id,
       ratePlanNew: row.cc_rate_plan,
       remarks: row.remarks,
-      supplier: "Cisco IoT Control Center",
+      supplier: DEFAULT_PLAN_SUPPLIER,
       commPlan: row.comm_plan,
       active: true,
       isDefault: false,
@@ -547,7 +547,7 @@ export async function tenantHasPlatformPlan(tenantId: string, platformPlanId: st
 export async function loadPlatformPlanRecord(id: string) {
   return getDB()
     .prepare(
-      `SELECT id, name, IFNULL(supplier, 'Cisco IoT Control Center') AS supplier,
+      `SELECT id, name, IFNULL(supplier, 'Optus') AS supplier,
               cc_rate_plan, comm_plan, IFNULL(active, 1) AS active FROM platform_plans WHERE id = ?`,
     )
     .bind(id)
