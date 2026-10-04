@@ -187,7 +187,7 @@ export default async function CcSnapshotPage({
           />
         </label>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
           <FilterSelect
             name="status"
             label="SIM status"

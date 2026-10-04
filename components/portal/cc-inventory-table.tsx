@@ -131,7 +131,7 @@ export function CcInventoryTable({
                 <td className="whitespace-nowrap px-3 py-2.5">{device.status}</td>
                 <WrapCell value={device.ratePlan ?? ""} className="max-w-56" />
                 <WrapCell value={device.communicationPlan ?? ""} className="max-w-72" />
-                <TextCell value={customer} className="max-w-40" />
+                <WrapCell value={customer} className="max-w-40" />
                 <TextCell value={device.accountId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.deviceId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.modemId ?? ""} mono className="max-w-40" />
@@ -150,7 +150,7 @@ export function CcInventoryTable({
                 <TextCell value={device.simProfileId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.euiccid ?? ""} mono className="max-w-40" />
                 <TextCell value={device.mec ?? ""} className="max-w-24" />
-                <WrapCell value={device.simNotes ?? ""} className="max-w-72" />
+                <WrapCell value={device.simNotes ?? ""} className="max-w-56" />
                 <WrapCell value={custom} className="max-w-80" quiet />
               </tr>
             );
