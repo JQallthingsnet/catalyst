@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function PlanChangesExportButton() {
+export function PlanChangesExportButton({ queryString = "" }: { queryString?: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -10,7 +10,10 @@ export function PlanChangesExportButton() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/portal/rate-plan-changes/export");
+      const path = queryString
+        ? `/api/portal/rate-plan-changes/export?${queryString}`
+        : "/api/portal/rate-plan-changes/export";
+      const res = await fetch(path);
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(data.error ?? "Export failed.");

@@ -1151,12 +1151,12 @@ export async function importCcIccids(iccids: string[]): Promise<CcImportResult> 
   };
 }
 
-/** Full D1 CC snapshot as CSV (all rows). */
-export async function exportCcDevicesCsv(): Promise<string> {
+/** Full D1 CC snapshot as CSV for the current filtered view (all matching rows). */
+export async function exportCcDevicesCsv(filter: CcDeviceFilter = {}): Promise<string> {
   const devices: CcDevice[] = [];
   let offset = 0;
   while (true) {
-    const page = await listCcDevices({}, EXPORT_PAGE_SIZE, offset);
+    const page = await listCcDevices(filter, EXPORT_PAGE_SIZE, offset);
     if (page.length === 0) break;
     devices.push(...page);
     offset += page.length;
