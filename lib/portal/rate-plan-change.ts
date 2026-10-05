@@ -46,7 +46,7 @@ async function countChangesThisSydneyMonth(iccid: string, at = new Date()): Prom
 }
 
 /**
- * Catalyst portal policy for ICCID rate-plan changes (no Jasper call yet).
+ * Catalyst portal policy for ICCID rate-plan changes (no supplier push yet).
  * - Target must be on the reseller contract and active.
  * - Ready SIMs: change freely within contracted plans.
  * - After activation: only until 24:00 on the 24th (Sydney); one change per ICCID per Sydney month.
@@ -154,7 +154,7 @@ export async function changeSimRatePlan(
     .run();
 
   const mismatchNote = tcodeMismatch
-    ? ` · TCode mismatch vs CC (${ccRate}) — billing notification pending`
+    ? ` · Supplier rate-plan code mismatch vs snapshot (${ccRate}) — billing notification pending`
     : "";
   await writeAudit(
     tenantId,
@@ -252,4 +252,71 @@ export async function listRatePlanChanges(options: {
     createdAt: row.created_at,
     simStatus: row.current_state,
   }));
+}
+
+function csvEscape(value: string | number | boolean | null | undefined): string {
+  if (value == null) return "";
+  const text = String(value);
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+/** CSV for email / billing — scoped like the Plan changes page. */
+export async function exportRatePlanChangesCsv(options: {
+  tenantId?: string;
+  includeOrganisation: boolean;
+}): Promise<string> {
+  const changes = await listRatePlanChanges({
+    tenantId: options.tenantId,
+    limit: 500,
+  });
+  const headers = options.includeOrganisation
+    ? [
+        "when",
+        "organisation",
+        "iccid",
+        "from_rate_plan",
+        "to_rate_plan",
+        "state_at_change",
+        "current_state",
+        "supplier_code_match",
+        "changed_by",
+      ]
+    : [
+        "when",
+        "iccid",
+        "from_rate_plan",
+        "to_rate_plan",
+        "state_at_change",
+        "current_state",
+        "supplier_code_match",
+        "changed_by",
+      ];
+  const lines = [headers.join(",")];
+  for (const row of changes) {
+    const cells = options.includeOrganisation
+      ? [
+          row.createdAt,
+          row.tenantName,
+          row.iccid,
+          row.fromRatePlan,
+          row.toRatePlan,
+          row.simState,
+          row.simStatus,
+          row.tcodeMismatch ? "mismatch" : "ok",
+          row.actorEmail,
+        ]
+      : [
+          row.createdAt,
+          row.iccid,
+          row.fromRatePlan,
+          row.toRatePlan,
+          row.simState,
+          row.simStatus,
+          row.tcodeMismatch ? "mismatch" : "ok",
+          row.actorEmail,
+        ];
+    lines.push(cells.map(csvEscape).join(","));
+  }
+  return `${lines.join("\n")}\n`;
 }
