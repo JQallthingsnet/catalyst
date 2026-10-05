@@ -19,7 +19,7 @@ import { formatAuDateTime } from "@/lib/portal/time";
 
 const PAGE_SIZE = 50;
 
-function snapshotQuery(filter: CcDeviceFilter, page = 1): string {
+function snapshotFilterParams(filter: CcDeviceFilter): URLSearchParams {
   const sp = new URLSearchParams();
   if (filter.query) sp.set("q", filter.query);
   if (filter.supplier) sp.set("supplier", filter.supplier);
@@ -35,6 +35,11 @@ function snapshotQuery(filter: CcDeviceFilter, page = 1): string {
   if (filter.dateField) sp.set("dateField", filter.dateField);
   if (filter.dateFrom) sp.set("dateFrom", filter.dateFrom);
   if (filter.dateTo) sp.set("dateTo", filter.dateTo);
+  return sp;
+}
+
+function snapshotQuery(filter: CcDeviceFilter, page = 1): string {
+  const sp = snapshotFilterParams(filter);
   if (page > 1) sp.set("page", String(page));
   const value = sp.toString();
   return value ? `/dashboard/estate/cc?${value}` : "/dashboard/estate/cc";
@@ -151,6 +156,7 @@ export default async function CcSnapshotPage({
   const currentPage = Math.min(page, pageCount);
   const from = listedCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const to = Math.min(currentPage * PAGE_SIZE, listedCount);
+  const exportQuery = snapshotFilterParams(filter).toString();
 
   return (
     <div>
@@ -163,12 +169,13 @@ export default async function CcSnapshotPage({
           <p className="mt-2 text-sm text-quiet">
             Copy of Control Center in D1. Filter by supplier, status, plans, customer, modem, global SIM, profile, session, and Added / Activated / Updated dates.
             Search ICCID, IMSI, MSISDN, IMEI, customer, account, device ID, modem, eUICCID, SIM profile, notes, or custom fields.
+            Export CSV downloads the current filtered view (all matching rows).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CcAutoPollToggle enabled={sync.autoPoll} />
           <CcImportDialog />
-          <CcExportButton />
+          <CcExportButton queryString={exportQuery} />
           <SyncCcButton />
         </div>
       </div>

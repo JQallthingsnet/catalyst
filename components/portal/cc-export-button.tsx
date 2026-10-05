@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-export function CcExportButton() {
+export function CcExportButton({ queryString = "" }: { queryString?: string }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -10,7 +10,10 @@ export function CcExportButton() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/portal/cc-devices/export");
+      const path = queryString
+        ? `/api/portal/cc-devices/export?${queryString}`
+        : "/api/portal/cc-devices/export";
+      const res = await fetch(path);
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(data.error ?? "Export failed.");
