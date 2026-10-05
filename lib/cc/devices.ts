@@ -519,7 +519,8 @@ export async function listCcDevices(
   offset = 0,
 ): Promise<CcDevice[]> {
   const { sql, binds } = ccWhere(queryOrFilter);
-  const safeLimit = Math.max(1, Math.min(limit, 100));
+  /** UI pages stay small; export may request up to 1,000 per chunk. */
+  const safeLimit = Math.max(1, Math.min(limit, 1_000));
   const safeOffset = Math.max(0, offset);
   const rows = await getDB()
     .prepare(
@@ -1159,7 +1160,7 @@ export async function exportCcDevicesCsv(): Promise<string> {
     if (page.length === 0) break;
     devices.push(...page);
     offset += page.length;
-    if (page.length < EXPORT_PAGE_SIZE) break;
+    // Keep paging until D1 returns an empty page (do not stop on a short last chunk).
   }
   return ccDevicesToCsv(devices);
 }
