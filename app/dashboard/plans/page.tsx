@@ -38,6 +38,7 @@ export default async function PlansPage() {
             commPlan: plan.commPlan,
             active: plan.active,
             assignedResellers: plan.assignedResellers,
+            resellerNames: plan.resellerNames,
             simCount: plan.simCount,
           }))}
         />

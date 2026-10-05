@@ -14,6 +14,8 @@ export type PlatformPlan = {
   createdAt: string;
   active: boolean;
   assignedResellers: number;
+  /** Bound reseller org names (Contract), ordered for display. */
+  resellerNames: string[];
   simCount: number;
 };
 
@@ -27,6 +29,14 @@ export type PlatformPlanAssignment = {
   usageMb: number;
 };
 
+function splitResellerNames(raw: string | null | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return raw
+    .split(" · ")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 function mapPlan(row: {
   id: string;
   name: string;
@@ -36,8 +46,10 @@ function mapPlan(row: {
   created_at: string;
   active?: number | null;
   assigned_resellers?: number;
+  reseller_names?: string | null;
   sim_count?: number;
 }): PlatformPlan {
+  const resellerNames = splitResellerNames(row.reseller_names);
   return {
     id: row.id,
     name: row.name,
@@ -46,7 +58,8 @@ function mapPlan(row: {
     commPlan: row.comm_plan,
     createdAt: row.created_at,
     active: row.active == null ? true : Boolean(row.active),
-    assignedResellers: row.assigned_resellers ?? 0,
+    assignedResellers: row.assigned_resellers ?? resellerNames.length,
+    resellerNames,
     simCount: row.sim_count ?? 0,
   };
 }
@@ -59,6 +72,10 @@ export async function listPlatformPlans(): Promise<PlatformPlan[]> {
         `SELECT p.id, p.name, IFNULL(p.supplier, 'Optus') AS supplier,
                 p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
                 (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT GROUP_CONCAT(t.name, ' · ')
+                   FROM tenant_plan_assignments a
+                   JOIN tenants t ON t.id = a.tenant_id
+                  WHERE a.platform_plan_id = p.id) AS reseller_names,
                 (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
          FROM platform_plans p
          ORDER BY IFNULL(p.active, 1) DESC, p.name COLLATE NOCASE`,
@@ -72,6 +89,7 @@ export async function listPlatformPlans(): Promise<PlatformPlan[]> {
         created_at: string;
         active: number;
         assigned_resellers: number;
+        reseller_names: string | null;
         sim_count: number;
       }>();
     return (rows.results ?? []).map(mapPlan);
@@ -80,6 +98,10 @@ export async function listPlatformPlans(): Promise<PlatformPlan[]> {
       .prepare(
         `SELECT p.id, p.name, p.cc_rate_plan, p.comm_plan, p.created_at,
                 (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT GROUP_CONCAT(t.name, ' · ')
+                   FROM tenant_plan_assignments a
+                   JOIN tenants t ON t.id = a.tenant_id
+                  WHERE a.platform_plan_id = p.id) AS reseller_names,
                 (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
          FROM platform_plans p
          ORDER BY p.name COLLATE NOCASE`,
@@ -91,6 +113,7 @@ export async function listPlatformPlans(): Promise<PlatformPlan[]> {
         comm_plan: string;
         created_at: string;
         assigned_resellers: number;
+        reseller_names: string | null;
         sim_count: number;
       }>();
     return (rows.results ?? []).map((row) => mapPlan({ ...row, supplier: null, active: 1 }));
@@ -105,6 +128,10 @@ export async function getPlatformPlan(id: string): Promise<PlatformPlan | null> 
         `SELECT p.id, p.name, IFNULL(p.supplier, 'Optus') AS supplier,
                 p.cc_rate_plan, p.comm_plan, p.created_at, IFNULL(p.active, 1) AS active,
                 (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT GROUP_CONCAT(t.name, ' · ')
+                   FROM tenant_plan_assignments a
+                   JOIN tenants t ON t.id = a.tenant_id
+                  WHERE a.platform_plan_id = p.id) AS reseller_names,
                 (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
          FROM platform_plans p
          WHERE p.id = ?`,
@@ -119,6 +146,7 @@ export async function getPlatformPlan(id: string): Promise<PlatformPlan | null> 
         created_at: string;
         active: number;
         assigned_resellers: number;
+        reseller_names: string | null;
         sim_count: number;
       }>();
     return row ? mapPlan(row) : null;
@@ -127,6 +155,10 @@ export async function getPlatformPlan(id: string): Promise<PlatformPlan | null> 
       .prepare(
         `SELECT p.id, p.name, p.cc_rate_plan, p.comm_plan, p.created_at,
                 (SELECT COUNT(*) FROM tenant_plan_assignments a WHERE a.platform_plan_id = p.id) AS assigned_resellers,
+                (SELECT GROUP_CONCAT(t.name, ' · ')
+                   FROM tenant_plan_assignments a
+                   JOIN tenants t ON t.id = a.tenant_id
+                  WHERE a.platform_plan_id = p.id) AS reseller_names,
                 (SELECT COUNT(*) FROM sims s WHERE s.platform_plan_id = p.id) AS sim_count
          FROM platform_plans p
          WHERE p.id = ?`,
@@ -139,6 +171,7 @@ export async function getPlatformPlan(id: string): Promise<PlatformPlan | null> 
         comm_plan: string;
         created_at: string;
         assigned_resellers: number;
+        reseller_names: string | null;
         sim_count: number;
       }>();
     return row ? mapPlan({ ...row, supplier: null, active: 1 }) : null;
@@ -236,6 +269,7 @@ export async function createPlatformPlan(
     createdAt,
     active: true,
     assignedResellers: resellers.length,
+    resellerNames: resellers.map((item) => item.name),
     simCount: 0,
   };
 }

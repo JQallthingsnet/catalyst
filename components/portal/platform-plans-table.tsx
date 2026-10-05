@@ -13,6 +13,7 @@ export type PlatformPlanRow = {
   commPlan: string;
   active: boolean;
   assignedResellers: number;
+  resellerNames: string[];
   simCount: number;
 };
 
@@ -35,7 +36,8 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
       if (status === "active" && !plan.active) return false;
       if (status === "deactivated" && plan.active) return false;
       if (!deferredQuery) return true;
-      const haystack = `${plan.name} ${plan.supplier} ${plan.ccRatePlan} ${plan.commPlan}`.toLowerCase();
+      const haystack =
+        `${plan.name} ${plan.supplier} ${plan.ccRatePlan} ${plan.commPlan} ${plan.resellerNames.join(" ")}`.toLowerCase();
       return haystack.includes(deferredQuery);
     });
   }, [plans, deferredQuery, supplier, status]);
@@ -51,7 +53,7 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Name, rate plan, comm plan…"
+              placeholder="Remarks, rate plan, reseller…"
               className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
             />
           </label>
@@ -109,33 +111,52 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
         <table className="w-full min-w-200 text-left text-sm">
           <thead className="border-b border-line text-quiet">
             <tr>
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Supplier</th>
               <th className="px-4 py-3 font-medium">Rate plan</th>
               <th className="px-4 py-3 font-medium">Comm plan</th>
+              <th className="px-4 py-3 font-medium">Remarks</th>
+              <th className="px-4 py-3 font-medium">Supplier</th>
+              <th className="px-4 py-3 font-medium">Bound resellers</th>
               <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Resellers</th>
               <th className="px-4 py-3 font-medium">SIMs</th>
               <th className="px-4 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
             {filtered.map((plan) => (
-              <tr key={plan.id} className="border-t border-line">
+              <tr key={plan.id} className="border-t border-line align-middle">
                 <td className="px-4 py-3">
-                  <Link href={`/dashboard/plans/${plan.id}`} className="font-medium hover:text-accent">
-                    {plan.name}
+                  <Link href={`/dashboard/plans/${plan.id}`} className="font-mono text-xs font-medium hover:text-accent">
+                    {plan.ccRatePlan}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-quiet">{plan.supplier}</td>
-                <td className="px-4 py-3 font-mono text-xs">{plan.ccRatePlan}</td>
                 <td className="px-4 py-3 text-quiet">{plan.commPlan}</td>
+                <td className="max-w-56 px-4 py-3">
+                  <span className="block wrap-break-word" title={plan.name}>
+                    {plan.name}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-quiet">{plan.supplier}</td>
+                <td className="max-w-72 px-4 py-3">
+                  {plan.resellerNames.length > 0 ? (
+                    <div>
+                      <p className="wrap-break-word text-ink" title={plan.resellerNames.join(", ")}>
+                        {plan.resellerNames.join(" · ")}
+                      </p>
+                      {plan.assignedResellers > 1 ? (
+                        <p className="mt-0.5 text-xs text-quiet">
+                          {plan.assignedResellers.toLocaleString("en-AU")} resellers
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <span className="text-quiet">None</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   <span className={plan.active ? "text-ok" : "text-danger"}>
                     {plan.active ? "Active" : "Deactivated"}
                   </span>
                 </td>
-                <td className="px-4 py-3">{plan.assignedResellers}</td>
                 <td className="px-4 py-3">{plan.simCount}</td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap items-center justify-end gap-3">

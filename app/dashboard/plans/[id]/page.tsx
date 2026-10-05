@@ -34,9 +34,9 @@ export default async function PlatformPlanPage({ params }: { params: { id: strin
           <Link href="/dashboard/plans" className="text-sm text-quiet hover:text-accent">
             ← Plans
           </Link>
-          <h1 className="mt-4 text-3xl font-semibold">{plan.name}</h1>
+          <h1 className="mt-4 text-3xl font-semibold">{plan.ccRatePlan}</h1>
           <p className="mt-1 text-sm text-quiet">
-            Supplier {plan.supplier} · Rate plan {plan.ccRatePlan} · {plan.commPlan}
+            {plan.name} · Supplier {plan.supplier} · {plan.commPlan}
           </p>
           <p className={`mt-2 text-sm ${plan.active ? "text-ok" : "text-danger"}`}>
             {plan.active ? "Active" : "Deactivated"}
