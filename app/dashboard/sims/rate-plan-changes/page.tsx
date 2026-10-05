@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PlanChangesExportButton } from "@/components/portal/plan-changes-export-button";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import { listRatePlanChanges } from "@/lib/portal/rate-plan-change";
@@ -19,13 +20,16 @@ export default async function RatePlanChangesPage() {
           <h1 className="text-3xl font-semibold">Plan changes</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Rate-plan changes across reseller ICCIDs. Jasper push is not wired yet."
-              : "Rate-plan changes for your organisation’s ICCIDs."}
+              ? "Rate-plan change log across reseller ICCIDs. Supplier push is not wired yet."
+              : "Rate-plan change log for your organisation’s ICCIDs."}
           </p>
         </div>
-        <Link href="/dashboard/sims" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
-          Back to SIMs
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <PlanChangesExportButton />
+          <Link href="/dashboard/sims" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
+            Back to SIMs
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
@@ -39,7 +43,7 @@ export default async function RatePlanChangesPage() {
               <th className="px-4 py-3">To</th>
               <th className="px-4 py-3">State at change</th>
               <th className="px-4 py-3">Current</th>
-              <th className="px-4 py-3">TCode</th>
+              <th className="px-4 py-3">Supplier code</th>
               <th className="px-4 py-3">By</th>
             </tr>
           </thead>
@@ -55,7 +59,7 @@ export default async function RatePlanChangesPage() {
                 <td className="px-4 py-3">{row.simStatus ?? "—"}</td>
                 <td className="px-4 py-3">
                   {row.tcodeMismatch ? (
-                    <span className="text-danger">Mismatch — notify billing</span>
+                    <span className="text-danger">Mismatch vs supplier snapshot</span>
                   ) : (
                     <span className="text-quiet">OK</span>
                   )}
