@@ -7,7 +7,7 @@
   ],
   "main": "worker.ts",
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": ["*/10 * * * *"]
   },
   "assets": {
     "directory": "dist/client",

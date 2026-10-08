@@ -24,10 +24,16 @@ const SYNC_ID = "devices";
 const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
-/** Auto poll continues on the next cron; stay under the Worker subrequest cap. */
+/** Auto poll continues on the next cron; stay under the Worker subrequest cap (~1000). */
 const AUTO_BUDGET_MS = 12 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
-const JASPER_CALLS_AUTO = 80;
+/** ~100 session refreshes/tick when list is quiet (bulk details + usage + session). */
+const JASPER_CALLS_AUTO = 220;
+/**
+ * After one full list cycle, only spend a few Search pages on incremental changes
+ * so most of the budget refreshes In session / usage.
+ */
+const AUTO_LIST_PAGES_WHEN_COMPLETE = 8;
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
@@ -971,7 +977,12 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
   let fetchedPage = page;
 
   try {
-    const maxPages = unlimited ? Number.POSITIVE_INFINITY : MANUAL_PAGES_PER_RUN;
+    // First full crawl: keep listing. Once complete, cap Search pages so enrich gets the budget.
+    const maxPages = unlimited
+      ? state.lastPageComplete
+        ? AUTO_LIST_PAGES_WHEN_COMPLETE
+        : Number.POSITIVE_INFINITY
+      : MANUAL_PAGES_PER_RUN;
     while (pages < maxPages && Date.now() < deadline && jasperHasBudget()) {
       // Identical search: same account, modifiedSince, pageSize=50; only pageNumber increases.
       const result = await fetchJasperDevicesPage({ modifiedSince, pageNumber: page });
@@ -986,7 +997,13 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
         break;
       }
       page += 1;
-      await heartbeatLock({ nextPage: page, lastTotal: totalCount, lastPage: fetchedPage, lastPageComplete: false });
+      // Mid first crawl only — do not clear "cycle complete" during capped incremental Search.
+      await heartbeatLock({
+        nextPage: page,
+        lastTotal: totalCount,
+        lastPage: fetchedPage,
+        lastPageComplete: state.lastPageComplete ? true : false,
+      });
     }
 
     details = await enrichStaleDevices({ unlimited, deadline });
@@ -998,7 +1015,8 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
       lastError: null,
       lastTotal: totalCount,
       lastPage: fetchedPage,
-      lastPageComplete: lastPage,
+      // Keep "cycle complete" when an incremental run stops mid-cap without finishing Search.
+      lastPageComplete: lastPage || state.lastPageComplete,
     });
 
     return { pages, upserted, details, lastPage, totalCount, nextPage: page };
@@ -1018,7 +1036,7 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
           : null,
         lastTotal: totalCount,
         lastPage: fetchedPage,
-        lastPageComplete: lastPage,
+        lastPageComplete: lastPage || state.lastPageComplete,
       });
       return { pages, upserted, details, lastPage, totalCount, nextPage: page };
     }
