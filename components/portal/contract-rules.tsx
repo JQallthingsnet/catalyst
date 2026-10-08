@@ -10,11 +10,11 @@ const SUPER_ADMIN_RULES = [
   "Before activation, a rate-plan change is allowed within contracted plans. Reseller admins or operators can change the rate plan on a SIM before shipping to end customer or activation.",
   "After activation: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
   "Activated rate-plan changes are flagged when the contracted supplier rate-plan code does not match the live code on the supplier snapshot; billing notification until charging is automated.",
-  "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs.",
+  "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs. Each change has a supplier push status (pending until Optus write is enabled).",
 ];
 
 const SUPER_ADMIN_COMING = [
-  "Push rate-plan changes to the supplier when that API is ready (Catalyst policy is already enforced in-portal).",
+  "Push queued rate-plan changes to Optus Control Center (Edit Device). Plan changes already store push status: pending / pushed / failed / skipped.",
 ];
 
 const RESELLER_ADMIN_RULES = [

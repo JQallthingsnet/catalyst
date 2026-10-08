@@ -85,12 +85,17 @@ const STATEMENTS = [
     sim_state TEXT NOT NULL,
     tcode_mismatch INTEGER NOT NULL DEFAULT 0,
     actor_email TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    push_status TEXT NOT NULL DEFAULT 'pending',
+    pushed_at TEXT,
+    push_error TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS sim_rate_plan_changes_iccid_created
     ON sim_rate_plan_changes (iccid, created_at)`,
   `CREATE INDEX IF NOT EXISTS sim_rate_plan_changes_tenant_created
     ON sim_rate_plan_changes (tenant_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS sim_rate_plan_changes_push_status
+    ON sim_rate_plan_changes (push_status, created_at)`,
 ];
 
 const ALTERS = [
@@ -134,11 +139,21 @@ const ALTERS = [
   `ALTER TABLE tenant_plan_assignments ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE platform_plans ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
   `ALTER TABLE cc_devices ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
+  `ALTER TABLE sim_rate_plan_changes ADD COLUMN push_status TEXT NOT NULL DEFAULT 'pending'`,
+  `ALTER TABLE sim_rate_plan_changes ADD COLUMN pushed_at TEXT`,
+  `ALTER TABLE sim_rate_plan_changes ADD COLUMN push_error TEXT`,
 ];
 
 const BACKFILLS = [
   `UPDATE platform_plans SET supplier = 'Optus' WHERE supplier = 'Cisco IoT Control Center'`,
   `UPDATE cc_devices SET supplier = 'Optus' WHERE IFNULL(TRIM(supplier), '') = '' OR supplier = 'Cisco IoT Control Center'`,
+  // Historical portal-only rows: do not auto-push when Jasper write is enabled later.
+  `UPDATE sim_rate_plan_changes
+     SET push_status = 'skipped',
+         push_error = COALESCE(push_error, 'Recorded before supplier push queue')
+     WHERE IFNULL(TRIM(push_status), '') IN ('', 'pending')
+       AND pushed_at IS NULL
+       AND created_at < '2026-10-08T00:00:00.000Z'`,
 ];
 
 /**

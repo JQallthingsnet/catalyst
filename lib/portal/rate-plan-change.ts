@@ -11,6 +11,9 @@ import {
   sydneyMonthUtcBounds,
 } from "@/lib/portal/time";
 
+/** Outbound supplier push queue state (Jasper write still on hold). */
+export type RatePlanPushStatus = "pending" | "pushed" | "failed" | "skipped";
+
 export type RatePlanChange = {
   id: string;
   tenantId: string;
@@ -25,7 +28,17 @@ export type RatePlanChange = {
   actorEmail: string;
   createdAt: string;
   simStatus: SimState | null;
+  pushStatus: RatePlanPushStatus;
+  pushedAt: string | null;
+  pushError: string | null;
 };
+
+export function normalizePushStatus(value: string | null | undefined): RatePlanPushStatus {
+  if (value === "pushed" || value === "failed" || value === "skipped" || value === "pending") {
+    return value;
+  }
+  return "pending";
+}
 
 export type RatePlanChangeResult = {
   iccid: string;
@@ -52,7 +65,8 @@ async function countChangesThisSydneyMonth(iccid: string, at = new Date()): Prom
 }
 
 /**
- * Catalyst portal policy for ICCID rate-plan changes (no supplier push yet).
+ * Catalyst portal policy for ICCID rate-plan changes.
+ * Records push_status=pending for the future Jasper write queue (push still on hold).
  * - Target must be on the reseller contract and active.
  * - Ready SIMs: change freely within contracted plans.
  * - After activation: only until 24:00 on the 24th (Sydney); one change per ICCID per Sydney month.
@@ -141,8 +155,9 @@ export async function changeSimRatePlan(
     .prepare(
       `INSERT INTO sim_rate_plan_changes
         (id, tenant_id, iccid, from_platform_plan_id, to_platform_plan_id,
-         from_rate_plan, to_rate_plan, sim_state, tcode_mismatch, actor_email, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         from_rate_plan, to_rate_plan, sim_state, tcode_mismatch, actor_email, created_at,
+         push_status, pushed_at, push_error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL)`,
     )
     .bind(
       changeId,
@@ -189,6 +204,7 @@ export type RatePlanChangeFilter = {
   simState?: string;
   currentState?: string;
   supplierCode?: "ok" | "mismatch" | "";
+  pushStatus?: RatePlanPushStatus | "";
   actorEmail?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -217,12 +233,16 @@ type RatePlanChangeRow = {
   actor_email: string;
   created_at: string;
   current_state: SimState | null;
+  push_status: string | null;
+  pushed_at: string | null;
+  push_error: string | null;
 };
 
 const CHANGE_SELECT = `SELECT c.id, c.tenant_id, t.name AS tenant_name, c.iccid,
                   c.from_platform_plan_id, c.to_platform_plan_id,
                   c.from_rate_plan, c.to_rate_plan, c.sim_state, c.tcode_mismatch,
-                  c.actor_email, c.created_at, s.state AS current_state
+                  c.actor_email, c.created_at, s.state AS current_state,
+                  c.push_status, c.pushed_at, c.push_error
            FROM sim_rate_plan_changes c
            JOIN tenants t ON t.id = c.tenant_id
            LEFT JOIN sims s ON s.iccid = c.iccid AND s.tenant_id = c.tenant_id`;
@@ -235,6 +255,13 @@ function clipFilter(value: string | undefined, max = 120): string {
 
 export function normalizeRatePlanChangeFilter(input: RatePlanChangeFilter = {}): RatePlanChangeFilter {
   const supplierCode = input.supplierCode === "ok" || input.supplierCode === "mismatch" ? input.supplierCode : "";
+  const pushStatus =
+    input.pushStatus === "pending" ||
+    input.pushStatus === "pushed" ||
+    input.pushStatus === "failed" ||
+    input.pushStatus === "skipped"
+      ? input.pushStatus
+      : "";
   let dateFrom = parseYmd(input.dateFrom)?.key ?? "";
   let dateTo = parseYmd(input.dateTo)?.key ?? "";
   if (dateFrom && dateTo && dateFrom > dateTo) {
@@ -251,6 +278,7 @@ export function normalizeRatePlanChangeFilter(input: RatePlanChangeFilter = {}):
     simState: clipFilter(input.simState),
     currentState: clipFilter(input.currentState),
     supplierCode,
+    pushStatus,
     actorEmail: clipFilter(input.actorEmail),
     dateFrom,
     dateTo,
@@ -267,6 +295,7 @@ export function ratePlanChangeFilterActive(filter: RatePlanChangeFilter): boolea
       normalized.simState ||
       normalized.currentState ||
       normalized.supplierCode ||
+      normalized.pushStatus ||
       normalized.actorEmail ||
       normalized.dateFrom ||
       normalized.dateTo,
@@ -311,6 +340,10 @@ function ratePlanChangeWhere(filter: RatePlanChangeFilter): { sql: string; binds
   }
   if (normalized.supplierCode === "ok") clauses.push("c.tcode_mismatch = 0");
   if (normalized.supplierCode === "mismatch") clauses.push("c.tcode_mismatch = 1");
+  if (normalized.pushStatus) {
+    clauses.push("IFNULL(c.push_status, 'pending') = ?");
+    binds.push(normalized.pushStatus);
+  }
   if (normalized.actorEmail) {
     clauses.push("c.actor_email = ?");
     binds.push(normalized.actorEmail);
@@ -350,6 +383,9 @@ function mapRatePlanChange(row: RatePlanChangeRow): RatePlanChange {
     actorEmail: row.actor_email,
     createdAt: row.created_at,
     simStatus: row.current_state,
+    pushStatus: normalizePushStatus(row.push_status),
+    pushedAt: row.pushed_at,
+    pushError: row.push_error,
   };
 }
 
@@ -465,6 +501,9 @@ export async function exportRatePlanChangesCsv(options: {
         "state_at_change",
         "current_state",
         "supplier_code_match",
+        "push_status",
+        "pushed_at",
+        "push_error",
         "changed_by",
       ]
     : [
@@ -475,6 +514,9 @@ export async function exportRatePlanChangesCsv(options: {
         "state_at_change",
         "current_state",
         "supplier_code_match",
+        "push_status",
+        "pushed_at",
+        "push_error",
         "changed_by",
       ];
   const lines = [headers.join(",")];
@@ -493,6 +535,9 @@ export async function exportRatePlanChangesCsv(options: {
             row.simState,
             row.simStatus,
             row.tcodeMismatch ? "mismatch" : "ok",
+            row.pushStatus,
+            row.pushedAt,
+            row.pushError,
             row.actorEmail,
           ]
         : [
@@ -503,6 +548,9 @@ export async function exportRatePlanChangesCsv(options: {
             row.simState,
             row.simStatus,
             row.tcodeMismatch ? "mismatch" : "ok",
+            row.pushStatus,
+            row.pushedAt,
+            row.pushError,
             row.actorEmail,
           ];
       lines.push(cells.map(csvEscape).join(","));

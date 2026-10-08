@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
   const url = new URL(request.url);
   const supplier = url.searchParams.get("supplierCode");
+  const push = url.searchParams.get("push");
   const filter = normalizeRatePlanChangeFilter({
     scopeTenantId: onPlatform ? undefined : ctx.tenantId,
     organisationId: onPlatform ? (url.searchParams.get("org") ?? "") : undefined,
@@ -24,6 +25,8 @@ export async function GET(request: Request) {
     simState: url.searchParams.get("state") ?? "",
     currentState: url.searchParams.get("current") ?? "",
     supplierCode: supplier === "ok" || supplier === "mismatch" ? supplier : "",
+    pushStatus:
+      push === "pending" || push === "pushed" || push === "failed" || push === "skipped" ? push : "",
     actorEmail: url.searchParams.get("by") ?? "",
     dateFrom: url.searchParams.get("dateFrom") ?? "",
     dateTo: url.searchParams.get("dateTo") ?? "",

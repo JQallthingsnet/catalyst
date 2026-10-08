@@ -23,10 +23,26 @@ function changesFilterParams(filter: RatePlanChangeFilter, onPlatform: boolean):
   if (filter.simState) sp.set("state", filter.simState);
   if (filter.currentState) sp.set("current", filter.currentState);
   if (filter.supplierCode) sp.set("supplierCode", filter.supplierCode);
+  if (filter.pushStatus) sp.set("push", filter.pushStatus);
   if (filter.actorEmail) sp.set("by", filter.actorEmail);
   if (filter.dateFrom) sp.set("dateFrom", filter.dateFrom);
   if (filter.dateTo) sp.set("dateTo", filter.dateTo);
   return sp;
+}
+
+function pushStatusLabel(status: string): string {
+  switch (status) {
+    case "pending":
+      return "Pending push";
+    case "pushed":
+      return "Pushed";
+    case "failed":
+      return "Failed";
+    case "skipped":
+      return "Skipped";
+    default:
+      return status;
+  }
 }
 
 function changesQuery(filter: RatePlanChangeFilter, onPlatform: boolean, page = 1): string {
@@ -85,6 +101,7 @@ export default async function RatePlanChangesPage({
         state?: string;
         current?: string;
         supplierCode?: string;
+        push?: string;
         by?: string;
         dateFrom?: string;
         dateTo?: string;
@@ -98,6 +115,7 @@ export default async function RatePlanChangesPage({
         state?: string;
         current?: string;
         supplierCode?: string;
+        push?: string;
         by?: string;
         dateFrom?: string;
         dateTo?: string;
@@ -116,6 +134,13 @@ export default async function RatePlanChangesPage({
     currentState: params.current,
     supplierCode:
       params.supplierCode === "ok" || params.supplierCode === "mismatch" ? params.supplierCode : "",
+    pushStatus:
+      params.push === "pending" ||
+      params.push === "pushed" ||
+      params.push === "failed" ||
+      params.push === "skipped"
+        ? params.push
+        : "",
     actorEmail: params.by,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
@@ -140,8 +165,8 @@ export default async function RatePlanChangesPage({
           <h1 className="text-3xl font-semibold">Plan changes</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Rate-plan change log across reseller ICCIDs. Supplier push is not wired yet."
-              : "Rate-plan change log for your organisation’s ICCIDs."}{" "}
+              ? "Rate-plan change log across reseller ICCIDs. New changes queue as Pending push (Jasper write still on hold)."
+              : "Rate-plan change log for your organisation’s ICCIDs. New changes queue as Pending push until supplier sync is enabled."}{" "}
             Export CSV downloads the current filtered view (all matching rows).
           </p>
         </div>
@@ -238,6 +263,18 @@ export default async function RatePlanChangesPage({
             allLabel="All"
           />
           <FilterSelect
+            name="push"
+            label="Push status"
+            value={filter.pushStatus ?? ""}
+            options={[
+              { value: "pending", label: "Pending push" },
+              { value: "pushed", label: "Pushed" },
+              { value: "failed", label: "Failed" },
+              { value: "skipped", label: "Skipped" },
+            ]}
+            allLabel="All push states"
+          />
+          <FilterSelect
             name="by"
             label="Changed by"
             value={filter.actorEmail ?? ""}
@@ -276,6 +313,7 @@ export default async function RatePlanChangesPage({
               <th className="px-4 py-3">State at change</th>
               <th className="px-4 py-3">Current</th>
               <th className="px-4 py-3">Supplier code</th>
+              <th className="px-4 py-3">Push</th>
               <th className="px-4 py-3">By</th>
             </tr>
           </thead>
@@ -295,6 +333,27 @@ export default async function RatePlanChangesPage({
                   ) : (
                     <span className="text-quiet">OK</span>
                   )}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={
+                      row.pushStatus === "failed"
+                        ? "text-danger"
+                        : row.pushStatus === "pushed"
+                          ? "text-ink"
+                          : "text-quiet"
+                    }
+                  >
+                    {pushStatusLabel(row.pushStatus)}
+                  </span>
+                  {row.pushedAt ? (
+                    <p className="mt-0.5 text-xs text-quiet">{formatAuDateTime(row.pushedAt)}</p>
+                  ) : null}
+                  {row.pushError ? (
+                    <p className="mt-0.5 max-w-48 text-xs text-quiet" title={row.pushError}>
+                      {row.pushError}
+                    </p>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3 text-quiet">{row.actorEmail}</td>
               </tr>
