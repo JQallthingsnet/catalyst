@@ -4,23 +4,33 @@ import { useMemo, useState } from "react";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 import type { SimSku } from "@/lib/portal/skus";
 
-type Plan = { id: string; name: string; available: number };
-type Reseller = { id: string; name: string; planIds: string[]; defaultPlanId: string };
+type Plan = { id: string; name: string };
+type Reseller = {
+  id: string;
+  name: string;
+  planIds: string[];
+  defaultPlanId: string;
+  adminEmail: string | null;
+  ccCustomer: string | null;
+};
+type CustomerOption = { customer: string; totalCount: number; inWarehouseCount: number };
 
 export function AllocateWizard({
   resellers,
   plans,
   skus,
+  customerOptions,
 }: {
   resellers: Reseller[];
   plans: Plan[];
   skus: SimSku[];
+  customerOptions: CustomerOption[];
 }) {
   const [step, setStep] = useState(0);
   const [tenantId, setTenantId] = useState(resellers[0]?.id ?? "");
   const [skuId, setSkuId] = useState<string>(skus[0]?.id ?? "");
-  const [quantity, setQuantity] = useState(1);
   const [platformPlanId, setPlatformPlanId] = useState(resellers[0]?.defaultPlanId ?? "");
+  const [ccCustomer, setCcCustomer] = useState(resellers[0]?.ccCustomer ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -30,12 +40,35 @@ export function AllocateWizard({
     () => plans.filter((plan) => reseller?.planIds.includes(plan.id)),
     [plans, reseller],
   );
-  const selectedPlanId = platformPlanId && contracted.some((plan) => plan.id === platformPlanId)
-    ? platformPlanId
-    : reseller?.defaultPlanId && contracted.some((plan) => plan.id === reseller.defaultPlanId)
-      ? reseller.defaultPlanId
-      : contracted[0]?.id ?? "";
+  const selectedPlanId =
+    platformPlanId && contracted.some((plan) => plan.id === platformPlanId)
+      ? platformPlanId
+      : reseller?.defaultPlanId && contracted.some((plan) => plan.id === reseller.defaultPlanId)
+        ? reseller.defaultPlanId
+        : (contracted[0]?.id ?? "");
   const plan = contracted.find((item) => item.id === selectedPlanId);
+
+  const lockedCustomer = reseller?.ccCustomer ?? null;
+  const effectiveCustomer = lockedCustomer || ccCustomer;
+  const availableForSelection = useMemo(() => {
+    if (lockedCustomer) {
+      return customerOptions.filter(
+        (item) => item.customer.toLowerCase() === lockedCustomer.toLowerCase(),
+      );
+    }
+    const boundElsewhere = new Set(
+      resellers
+        .filter((item) => item.id !== tenantId && item.ccCustomer)
+        .map((item) => item.ccCustomer!.toLowerCase()),
+    );
+    return customerOptions.filter((item) => !boundElsewhere.has(item.customer.toLowerCase()));
+  }, [customerOptions, lockedCustomer, resellers, tenantId]);
+
+  const selectedStock = availableForSelection.find(
+    (item) => item.customer.toLowerCase() === effectiveCustomer.toLowerCase(),
+  );
+  const totalForCustomer = selectedStock?.totalCount ?? 0;
+  const alreadyInWarehouse = selectedStock?.inWarehouseCount ?? 0;
 
   async function submit() {
     setBusy(true);
@@ -44,7 +77,12 @@ export function AllocateWizard({
       const res = await fetch("/api/portal/wholesale", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId, skuId, quantity, platformPlanId: selectedPlanId || plan?.id }),
+        body: JSON.stringify({
+          tenantId,
+          skuId,
+          platformPlanId: selectedPlanId || plan?.id,
+          ccCustomer: effectiveCustomer,
+        }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
@@ -62,23 +100,31 @@ export function AllocateWizard({
   return (
     <WizardFrame
       title="Sell stock to reseller"
-      steps={["Reseller", "Catalogue", "Plan & quantity"]}
+      steps={["Reseller", "Catalogue", "Customer & plan"]}
       step={step}
       summary={
         <>
           <p>{reseller?.name ?? "Choose a reseller"}</p>
+          <p className="text-quiet">{reseller?.adminEmail ?? "No reseller admin email"}</p>
           <p>{sku?.name ?? "Choose a SKU"}</p>
-          <p>{quantity} SIMs</p>
-          <p>{plan?.name ?? "No contracted plan"}</p>
-          <p className="text-ok">Free ICCIDs from the Control Center copy land in this reseller warehouse.</p>
+          <p>CC customer: {effectiveCustomer || "—"}</p>
+          <p>
+            {totalForCustomer > 0
+              ? `${totalForCustomer.toLocaleString("en-AU")} SIMs · ${plan?.name ?? "No contracted plan"}`
+              : plan?.name ?? "No contracted plan"}
+          </p>
+          <p className="text-ok">
+            Bind once — all SIMs with this Jasper customer land in this reseller’s warehouse. Sync keeps adding new
+            ones.
+          </p>
         </>
       }
     >
       {step === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-quiet">
-            Only resellers with a signed plan assignment (contract) can receive stock. Each SIM will carry that ATN
-            plan.
+            Sell stock binds the reseller admin email to a Control Center <span className="text-ink">Customer</span>{" "}
+            name. After that, this organisation sees and manages those SIMs only.
           </p>
           {resellers.length === 0 ? <p className="text-sm text-quiet">Create a reseller from Admin first.</p> : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -89,16 +135,20 @@ export function AllocateWizard({
                 onClick={() => {
                   setTenantId(item.id);
                   setPlatformPlanId(item.defaultPlanId);
+                  setCcCustomer(item.ccCustomer ?? "");
                 }}
                 className={`rounded-card border p-4 text-left ${
                   tenantId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
                 }`}
               >
                 <p className="font-semibold">{item.name}</p>
+                <p className="mt-1 text-xs text-quiet">{item.adminEmail ?? "No reseller admin yet"}</p>
                 <p className="mt-1 text-xs text-quiet">
-                  {item.planIds.length
-                    ? `${item.planIds.length} contracted rate plan${item.planIds.length === 1 ? "" : "s"}`
-                    : "No contract — bind on Contract first"}
+                  {item.ccCustomer
+                    ? `Bound CC customer: ${item.ccCustomer}`
+                    : item.planIds.length
+                      ? `${item.planIds.length} contracted rate plan${item.planIds.length === 1 ? "" : "s"}`
+                      : "No contract — bind on Contract first"}
                 </p>
               </button>
             ))}
@@ -109,9 +159,7 @@ export function AllocateWizard({
       {step === 1 ? (
         <div className="space-y-3">
           {skus.length === 0 ? (
-            <p className="text-sm text-quiet">
-              Create SKUs in Catalogue first. Super admin owns the product list.
-            </p>
+            <p className="text-sm text-quiet">Create SKUs in Catalogue first. Super admin owns the product list.</p>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-3">
             {skus.map((item) => (
@@ -136,50 +184,70 @@ export function AllocateWizard({
       {step === 2 ? (
         <div className="space-y-4">
           <p className="text-sm text-quiet">
-            Quantity takes the oldest unused Control Center SIMs on this ATN plan (Inventory / Ready). Already sold
-            ICCIDs are skipped.
+            Materialize every SIM with this Jasper <span className="text-ink">Customer</span> into the reseller
+            warehouse (any rate plan / status). Binding uses{" "}
+            <span className="text-ink">{reseller?.adminEmail ?? "the reseller admin email"}</span>. Later Sync
+            auto-warehouses new SIMs for the same customer.
           </p>
+          {!reseller?.adminEmail ? (
+            <p className="text-sm text-danger">Invite a reseller admin for this organisation before selling stock.</p>
+          ) : null}
           <label className="block text-sm">
-            Quantity
-            <input
-              type="number"
-              min={1}
-              max={Math.max(1, plan?.available ?? 1)}
-              value={quantity}
-              onChange={(event) => setQuantity(Number(event.target.value))}
-              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
-            />
+            Control Center customer
+            <select
+              value={effectiveCustomer}
+              disabled={Boolean(lockedCustomer)}
+              onChange={(event) => setCcCustomer(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 disabled:opacity-60"
+            >
+              <option value="">Select customer…</option>
+              {availableForSelection.map((item) => (
+                <option key={item.customer} value={item.customer}>
+                  {item.customer} · {item.totalCount.toLocaleString("en-AU")} SIMs
+                  {item.inWarehouseCount > 0
+                    ? ` (${item.inWarehouseCount.toLocaleString("en-AU")} already in Catalyst)`
+                    : ""}
+                </option>
+              ))}
+            </select>
           </label>
+          {lockedCustomer ? (
+            <p className="text-xs text-quiet">
+              Already bound — sell stock rematerializes any SIMs still missing from the warehouse.
+            </p>
+          ) : null}
+          {availableForSelection.length === 0 ? (
+            <p className="text-sm text-danger">
+              No SIMs with a Customer name in the CC snapshot. Set Customer in Jasper, Sync, then return here.
+            </p>
+          ) : null}
           <label className="block text-sm">
-            Rate plan (this reseller)
+            Default contracted plan (portal stamp — does not filter which SIMs)
             <select
               value={selectedPlanId}
-              onChange={(event) => {
-                const nextId = event.target.value;
-                setPlatformPlanId(nextId);
-                const nextPlan = contracted.find((item) => item.id === nextId);
-                if (nextPlan) setQuantity((current) => Math.min(Math.max(1, current), Math.max(1, nextPlan.available)));
-              }}
+              onChange={(event) => setPlatformPlanId(event.target.value)}
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             >
               {contracted.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name} · {item.available.toLocaleString("en-AU")} free in CC
+                  {item.name}
                   {item.id === reseller?.defaultPlanId ? " · default" : ""}
                 </option>
               ))}
             </select>
           </label>
-          {plan ? (
-            <p className={plan.available > 0 ? "text-sm text-quiet" : "text-sm text-danger"}>
-              {plan.available.toLocaleString("en-AU")} free SIM{plan.available === 1 ? "" : "s"} on this plan in the CC
-              copy.
+          {effectiveCustomer ? (
+            <p className={totalForCustomer > 0 ? "text-sm text-quiet" : "text-sm text-danger"}>
+              {totalForCustomer.toLocaleString("en-AU")} SIM{totalForCustomer === 1 ? "" : "s"} for “
+              {effectiveCustomer}” in the CC snapshot
+              {alreadyInWarehouse > 0
+                ? ` · ${alreadyInWarehouse.toLocaleString("en-AU")} already in a warehouse`
+                : ""}
+              .
             </p>
           ) : null}
           {contracted.length === 0 ? (
-            <p className="text-sm text-danger">
-              Bind a rate plan for this reseller on Contract before selling stock.
-            </p>
+            <p className="text-sm text-danger">Bind a rate plan for this reseller on Contract before selling stock.</p>
           ) : null}
         </div>
       ) : null}
@@ -188,19 +256,16 @@ export function AllocateWizard({
       <WizardActions
         onBack={step > 0 ? () => setStep(step - 1) : undefined}
         onNext={() => {
-          if (step < 2) {
-            if (step === 1 && plan) {
-              setQuantity((current) => Math.min(Math.max(1, current), Math.max(1, plan.available)));
-            }
-            setStep(step + 1);
-          } else void submit();
+          if (step < 2) setStep(step + 1);
+          else void submit();
         }}
         nextLabel={step < 2 ? "Continue" : "Sell stock"}
         busy={busy}
         disabled={
-          (step === 0 && !tenantId) ||
+          (step === 0 && (!tenantId || !reseller?.adminEmail)) ||
           (step === 1 && !skuId) ||
-          (step === 2 && (!plan || plan.available < 1 || quantity < 1 || quantity > plan.available))
+          (step === 2 &&
+            (!plan || !effectiveCustomer || totalForCustomer < 1 || !reseller?.adminEmail))
         }
       />
     </WizardFrame>

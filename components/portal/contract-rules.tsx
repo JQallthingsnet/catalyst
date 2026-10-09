@@ -3,8 +3,8 @@ import Link from "next/link";
 const SUPER_ADMIN_RULES = [
   "ICCID is the unique identifier across Catalyst and every supplier feed.",
   "Every SIM a reseller assigns to a customer must map to one contracted rate plan.",
-  "Sell stock (ATN → reseller warehouse) uses that reseller’s default rate plan; the supplier rate-plan code on the SIM should match when stock is transferred. Bulk shipping to reseller admin is arranged by Catalyst.",
-  "Assign SIMs (reseller → end customer) is separate: operators attach a warehouse ICCID to a customer and retail plan. Physical shipping to the end customer is outside Catalyst.",
+  "Sell stock (ATN → reseller warehouse): set Customer on SIMs in Jasper first, Sync into the CC snapshot, then sell stock binds that Customer name to the reseller admin once. Catalyst materializes all matching SIMs into that reseller’s warehouse; later Sync auto-warehouses new SIMs for the same Customer. Only that organisation can see and act on them.",
+  "Assign SIMs (reseller → end customer) is separate: operators attach a warehouse ICCID to a portal customer and retail plan. Physical shipping to the end customer is outside Catalyst.",
   "A reseller with no bound rate plans cannot receive or order SIMs.",
   "Only bound resellers can see and use a rate plan. Bind contracts here before selling stock.",
   "Before activation, a rate-plan change is allowed within contracted plans. Reseller admins or operators can change the rate plan on a SIM before shipping to end customer or activation.",
@@ -20,7 +20,7 @@ const SUPER_ADMIN_COMING = [
 const RESELLER_ADMIN_RULES = [
   "ICCID is the unique identifier for every SIM.",
   "When you assign a SIM to a customer, it must use one of the rate plans on this contract.",
-  "Sell stock from ATN lands in your warehouse on your default rate plan (shown below). Bulk shipping to you is arranged by Catalyst.",
+  "Sell stock from ATN binds your organisation to one Control Center Customer name. All SIMs with that Customer land in your warehouse (Sync keeps adding new ones). You only see and manage SIMs in your organisation.",
   "Assign SIMs maps warehouse ICCIDs to your end customers and retail plans. Physical shipping to the end customer is outside Catalyst.",
   "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
   "Only ATN can add or remove rate plans on this contract. Contact ATN if you need a change.",

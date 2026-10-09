@@ -1,11 +1,16 @@
 import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { runCcMutation } from "@/lib/cc/adapter";
-import { pickAvailableCcDevices } from "@/lib/cc/devices";
+import { listCcDevicesForCustomer, materializeWarehouseForCcCustomer } from "@/lib/cc/devices";
 import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
 import { getSimSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
-import { loadTenant } from "@/lib/portal/tenant";
+import {
+  bindTenantCcCustomer,
+  findTenantByCcCustomer,
+  getResellerAdminEmail,
+  loadTenant,
+} from "@/lib/portal/tenant";
 import { newId } from "@/lib/portal/ids";
 import { type PortalRole } from "@/lib/portal/role-model";
 import { isListedSuperAdmin } from "@/lib/portal/roles";
@@ -517,7 +522,13 @@ export async function createOrder(
 
 export async function allocateWholesaleStock(
   actor: { email: string; isSuperAdmin: boolean; role: PortalRole },
-  input: { tenantId: string; skuId: string; quantity: number; platformPlanId: string },
+  input: {
+    tenantId: string;
+    skuId: string;
+    platformPlanId: string;
+    /** Jasper Control Center Customer field — required for sell stock. */
+    ccCustomer: string;
+  },
 ): Promise<Order> {
   if (!actor.isSuperAdmin || actor.role !== "super_admin") {
     throw new Error("Only a super admin can sell stock into a reseller warehouse.");
@@ -531,31 +542,51 @@ export async function allocateWholesaleStock(
   if (!platformPlan.active) throw new Error("This ATN plan is deactivated.");
   const contracted = await tenantHasPlatformPlan(tenant.id, platformPlan.id);
   if (!contracted) throw new Error("Assign this plan to the reseller (contract) before selling stock.");
-  if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
 
-  const devices = await pickAvailableCcDevices(platformPlan.cc_rate_plan, platformPlan.comm_plan, input.quantity);
-  if (devices.length < input.quantity) {
-    if (devices.length === 0) {
-      throw new Error(
-        `No free SIMs in the Control Center copy for ${platformPlan.name} (CC ${platformPlan.cc_rate_plan} · ${platformPlan.comm_plan}). Poll CC first, or they are already in a warehouse.`,
-      );
-    }
+  const ccCustomer = input.ccCustomer.trim();
+  if (!ccCustomer) {
     throw new Error(
-      `Only ${devices.length.toLocaleString("en-AU")} free SIM${devices.length === 1 ? "" : "s"} on ${platformPlan.name} in Control Center. Reduce quantity to ${devices.length}.`,
+      "Choose the Control Center customer name (set on SIMs in Jasper, then synced into the snapshot).",
     );
   }
+  if (tenant.ccCustomer && tenant.ccCustomer.toLowerCase() !== ccCustomer.toLowerCase()) {
+    throw new Error(
+      `This reseller is bound to Control Center customer “${tenant.ccCustomer}”. Sell stock for that customer only.`,
+    );
+  }
+  const taken = await findTenantByCcCustomer(ccCustomer);
+  if (taken && taken.id !== tenant.id) {
+    throw new Error(`Control Center customer “${ccCustomer}” is already bound to ${taken.name}.`);
+  }
+
+  const adminEmail = await getResellerAdminEmail(tenant.id);
+  if (!adminEmail) {
+    throw new Error("Invite a reseller admin for this organisation before selling stock.");
+  }
+
+  const devices = await listCcDevicesForCustomer(ccCustomer);
+  if (devices.length === 0) {
+    throw new Error(
+      `No SIMs in the Control Center copy for customer “${ccCustomer}”. Set Customer in Jasper, Sync, then try again.`,
+    );
+  }
+
+  await bindTenantCcCustomer(tenant.id, ccCustomer, adminEmail, {
+    skuId: sku.id,
+    platformPlanId: platformPlan.id,
+  });
 
   const id = newId("ord");
   const now = new Date().toISOString();
   const logistics = "ATN wholesale";
-  const destination = platformPlan.name;
+  const destination = `CC ${ccCustomer} · ${platformPlan.name}`;
 
   await getDB()
     .prepare(
       `INSERT INTO orders (id, tenant_id, sku_id, sku_name, quantity, logistics, destination, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'Received', ?)`,
     )
-    .bind(id, tenant.id, sku.id, sku.name, input.quantity, logistics, destination, now)
+    .bind(id, tenant.id, sku.id, sku.name, devices.length, logistics, destination, now)
     .run();
 
   const job = await runCcMutation({
@@ -564,10 +595,12 @@ export async function allocateWholesaleStock(
     payload: {
       orderId: id,
       sku: sku.id,
-      quantity: input.quantity,
+      quantity: devices.length,
       platformPlanId: platformPlan.id,
       wholesalePlan: platformPlan.cc_rate_plan,
       commPlan: platformPlan.comm_plan,
+      ccCustomer,
+      boundAdminEmail: adminEmail,
       iccids: devices.map((device) => device.iccid),
     },
     correlationId: `wholesale-${id}`,
@@ -576,47 +609,24 @@ export async function allocateWholesaleStock(
     throw new Error(job.error ?? "Control Center rejected the wholesale allocation.");
   }
 
-  const dbInsert = getDB();
-  const inserts = devices.map((device) =>
-    dbInsert
-      .prepare(
-        `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, platform_plan_id, created_at, imsi, msisdn, current_volume_mb, cc_status, cc_polled_at)
-         VALUES (?, ?, ?, ?, 'Ready', NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(
-        newId("sim"),
-        tenant.id,
-        device.iccid,
-        sku.formFactor,
-        id,
-        platformPlan.cc_rate_plan,
-        platformPlan.id,
-        now,
-        device.imsi,
-        device.msisdn,
-        device.ctdUsageMb,
-        device.status,
-        now,
-      ),
-  );
-  try {
-    for (let i = 0; i < inserts.length; i += 40) {
-      await dbInsert.batch(inserts.slice(i, i + 40));
-    }
-  } catch {
-    throw new Error("A SIM was taken by another sale. Try again.");
-  }
+  const result = await materializeWarehouseForCcCustomer({
+    tenantId: tenant.id,
+    ccCustomer,
+    formFactor: sku.formFactor,
+    platformPlanId: platformPlan.id,
+    orderId: id,
+  });
 
   await writeAudit(
     tenant.id,
     actor.email,
     "wholesale",
-    `Sold ${sku.name} × ${input.quantity} to ${tenant.name} on ${platformPlan.name}`,
+    `Sold ${sku.name} · ${result.inserted.toLocaleString("en-AU")} new / ${result.total.toLocaleString("en-AU")} total SIMs to ${tenant.name} on ${platformPlan.name} · CC customer ${ccCustomer} · bound ${adminEmail}`,
   );
   return {
     id,
     skuName: sku.name,
-    quantity: input.quantity,
+    quantity: result.total,
     logistics,
     destination,
     status: "Received",

@@ -15,7 +15,18 @@ import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { newId } from "@/lib/portal/ids";
 import { isListedSuperAdmin } from "@/lib/portal/roles";
 
-export type TenantRecord = { id: string; name: string; createdAt: string; active: boolean };
+export type TenantRecord = {
+  id: string;
+  name: string;
+  createdAt: string;
+  active: boolean;
+  /** Jasper Control Center Customer field bound to this reseller. */
+  ccCustomer: string | null;
+  ccCustomerBoundEmail: string | null;
+  ccCustomerBoundAt: string | null;
+  ccDefaultSkuId: string | null;
+  ccDefaultPlatformPlanId: string | null;
+};
 
 export type PlatformTenant = TenantRecord & {
   simCount: number;
@@ -51,16 +62,167 @@ export async function canEmailSignIn(email: string): Promise<boolean> {
 
 export async function loadTenant(id: string): Promise<TenantRecord | null> {
   const hasActive = await portalTableHasColumn("tenants", "active");
+  const hasCcCustomer = await portalTableHasColumn("tenants", "cc_customer");
   const row = await getDB()
     .prepare(
-      hasActive
-        ? "SELECT id, name, created_at, IFNULL(active, 1) AS active FROM tenants WHERE id = ?"
-        : "SELECT id, name, created_at, 1 AS active FROM tenants WHERE id = ?",
+      hasCcCustomer
+        ? hasActive
+          ? `SELECT id, name, created_at, IFNULL(active, 1) AS active,
+                    cc_customer, cc_customer_bound_email, cc_customer_bound_at,
+                    cc_default_sku_id, cc_default_platform_plan_id
+             FROM tenants WHERE id = ?`
+          : `SELECT id, name, created_at, 1 AS active,
+                    cc_customer, cc_customer_bound_email, cc_customer_bound_at,
+                    cc_default_sku_id, cc_default_platform_plan_id
+             FROM tenants WHERE id = ?`
+        : hasActive
+          ? "SELECT id, name, created_at, IFNULL(active, 1) AS active FROM tenants WHERE id = ?"
+          : "SELECT id, name, created_at, 1 AS active FROM tenants WHERE id = ?",
     )
     .bind(id)
-    .first<{ id: string; name: string; created_at: string; active: number }>();
+    .first<{
+      id: string;
+      name: string;
+      created_at: string;
+      active: number;
+      cc_customer?: string | null;
+      cc_customer_bound_email?: string | null;
+      cc_customer_bound_at?: string | null;
+      cc_default_sku_id?: string | null;
+      cc_default_platform_plan_id?: string | null;
+    }>();
   if (!row) return null;
-  return { id: row.id, name: row.name, createdAt: row.created_at, active: Boolean(row.active) };
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    active: Boolean(row.active),
+    ccCustomer: row.cc_customer?.trim() || null,
+    ccCustomerBoundEmail: row.cc_customer_bound_email?.trim() || null,
+    ccCustomerBoundAt: row.cc_customer_bound_at ?? null,
+    ccDefaultSkuId: row.cc_default_sku_id ?? null,
+    ccDefaultPlatformPlanId: row.cc_default_platform_plan_id ?? null,
+  };
+}
+
+/** Prefer reseller_admin membership email for Jasper customer binding. */
+export async function getResellerAdminEmail(tenantId: string): Promise<string | null> {
+  const admin = await getDB()
+    .prepare(
+      `SELECT email FROM tenant_members
+       WHERE tenant_id = ? AND role = 'reseller_admin'
+       ORDER BY email COLLATE NOCASE
+       LIMIT 1`,
+    )
+    .bind(tenantId)
+    .first<{ email: string }>();
+  if (admin?.email) return admin.email;
+  const any = await getDB()
+    .prepare(
+      `SELECT email FROM tenant_members WHERE tenant_id = ? ORDER BY email COLLATE NOCASE LIMIT 1`,
+    )
+    .bind(tenantId)
+    .first<{ email: string }>();
+  return any?.email ?? null;
+}
+
+export async function findTenantByCcCustomer(ccCustomer: string): Promise<TenantRecord | null> {
+  const customer = ccCustomer.trim();
+  if (!customer) return null;
+  const hasCc = await portalTableHasColumn("tenants", "cc_customer");
+  if (!hasCc) return null;
+  const row = await getDB()
+    .prepare(
+      `SELECT id FROM tenants
+       WHERE UPPER(TRIM(IFNULL(cc_customer, ''))) = UPPER(TRIM(?))
+       LIMIT 1`,
+    )
+    .bind(customer)
+    .first<{ id: string }>();
+  if (!row) return null;
+  return loadTenant(row.id);
+}
+
+/**
+ * Bind this reseller org to a Jasper Customer name + admin email (sell-stock handoff).
+ * One Jasper customer may only belong to one reseller.
+ */
+export async function bindTenantCcCustomer(
+  tenantId: string,
+  ccCustomer: string,
+  adminEmail: string,
+  defaults?: { skuId?: string; platformPlanId?: string },
+): Promise<void> {
+  const customer = ccCustomer.trim();
+  const email = adminEmail.trim().toLowerCase();
+  if (!customer) throw new Error("Choose a Control Center customer name.");
+  if (!email) throw new Error("This reseller has no admin email to bind.");
+
+  const existing = await findTenantByCcCustomer(customer);
+  if (existing && existing.id !== tenantId) {
+    throw new Error(
+      `Control Center customer “${customer}” is already bound to ${existing.name}.`,
+    );
+  }
+
+  const tenant = await loadTenant(tenantId);
+  if (!tenant) throw new Error("Organisation not found.");
+  if (tenant.ccCustomer && tenant.ccCustomer.toLowerCase() !== customer.toLowerCase()) {
+    throw new Error(
+      `This reseller is already bound to Control Center customer “${tenant.ccCustomer}”. Re-bind is not supported.`,
+    );
+  }
+
+  const now = new Date().toISOString();
+  await getDB()
+    .prepare(
+      `UPDATE tenants
+       SET cc_customer = ?,
+           cc_customer_bound_email = ?,
+           cc_customer_bound_at = COALESCE(cc_customer_bound_at, ?),
+           cc_default_sku_id = COALESCE(?, cc_default_sku_id),
+           cc_default_platform_plan_id = COALESCE(?, cc_default_platform_plan_id)
+       WHERE id = ?`,
+    )
+    .bind(
+      customer,
+      email,
+      now,
+      defaults?.skuId?.trim() || null,
+      defaults?.platformPlanId?.trim() || null,
+      tenantId,
+    )
+    .run();
+}
+
+export type CcCustomerBinding = {
+  tenantId: string;
+  ccCustomer: string;
+  skuId: string | null;
+  platformPlanId: string | null;
+};
+
+export async function listCcCustomerBindings(): Promise<CcCustomerBinding[]> {
+  const hasCc = await portalTableHasColumn("tenants", "cc_customer");
+  if (!hasCc) return [];
+  const rows = await getDB()
+    .prepare(
+      `SELECT id, cc_customer, cc_default_sku_id, cc_default_platform_plan_id
+       FROM tenants
+       WHERE IFNULL(TRIM(cc_customer), '') != ''`,
+    )
+    .all<{
+      id: string;
+      cc_customer: string;
+      cc_default_sku_id: string | null;
+      cc_default_platform_plan_id: string | null;
+    }>();
+  return (rows.results ?? []).map((row) => ({
+    tenantId: row.id,
+    ccCustomer: row.cc_customer.trim(),
+    skuId: row.cc_default_sku_id,
+    platformPlanId: row.cc_default_platform_plan_id,
+  }));
 }
 
 export async function listTenantOptions(activeOnly = true): Promise<{ id: string; name: string }[]> {
@@ -108,6 +270,11 @@ export async function listPlatformTenants(isSuperAdmin: boolean): Promise<Platfo
     name: row.name,
     createdAt: row.created_at,
     active: Boolean(row.active),
+    ccCustomer: null,
+    ccCustomerBoundEmail: null,
+    ccCustomerBoundAt: null,
+    ccDefaultSkuId: null,
+    ccDefaultPlatformPlanId: null,
     simCount: row.sim_count,
     customerCount: row.customer_count,
     memberCount: row.member_count,
@@ -375,7 +542,17 @@ export async function createResellerOrganisation(name: string): Promise<TenantRe
     .prepare("INSERT INTO tenants (id, name, created_at, active) VALUES (?, ?, ?, 1)")
     .bind(id, trimmed, createdAt)
     .run();
-  return { id, name: trimmed, createdAt, active: true };
+  return {
+    id,
+    name: trimmed,
+    createdAt,
+    active: true,
+    ccCustomer: null,
+    ccCustomerBoundEmail: null,
+    ccCustomerBoundAt: null,
+    ccDefaultSkuId: null,
+    ccDefaultPlatformPlanId: null,
+  };
 }
 
 export async function renameResellerOrganisation(

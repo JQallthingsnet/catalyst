@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { AllocateWizard } from "@/components/portal/allocate-wizard";
-import { countAvailableCcStock } from "@/lib/cc/devices";
+import { listCcCustomerStockOptions } from "@/lib/cc/devices";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { listAllTenantPlanIds, listPlatformPlans } from "@/lib/portal/platform-plans";
 import { listSimSkus } from "@/lib/portal/skus";
-import { listTenantOptions } from "@/lib/portal/tenant";
+import { getResellerAdminEmail, listTenantOptions, loadTenant } from "@/lib/portal/tenant";
 
 export default async function AllocateStockPage() {
   const ctx = await requirePrivilege("wholesale.allocate");
-  const [resellers, plans, links, skus] = await Promise.all([
+  const [resellers, plans, links, skus, customerOptions] = await Promise.all([
     listTenantOptions(),
     listPlatformPlans(),
     listAllTenantPlanIds(),
     listSimSkus(),
+    listCcCustomerStockOptions(),
   ]);
   const linksByTenant = new Map<string, { platformPlanId: string; isDefault: boolean }[]>();
   for (const link of links) {
@@ -20,10 +21,24 @@ export default async function AllocateStockPage() {
     list.push({ platformPlanId: link.platformPlanId, isDefault: link.isDefault });
     linksByTenant.set(link.tenantId, list);
   }
-  const availableEntries = await Promise.all(
-    plans.map(async (plan) => [plan.id, await countAvailableCcStock(plan.ccRatePlan, plan.commPlan)] as const),
+
+  const resellerRows = resellers.filter((item) => item.id !== ctx.homeTenantId);
+  const resellerDetails = await Promise.all(
+    resellerRows.map(async (item) => {
+      const [tenant, adminEmail] = await Promise.all([loadTenant(item.id), getResellerAdminEmail(item.id)]);
+      const tenantLinks = linksByTenant.get(item.id) ?? [];
+      const defaultPlanId =
+        tenantLinks.find((link) => link.isDefault)?.platformPlanId ?? tenantLinks[0]?.platformPlanId ?? "";
+      return {
+        id: item.id,
+        name: item.name,
+        planIds: tenantLinks.map((link) => link.platformPlanId),
+        defaultPlanId,
+        adminEmail,
+        ccCustomer: tenant?.ccCustomer ?? null,
+      };
+    }),
   );
-  const availableByPlanId = Object.fromEntries(availableEntries);
 
   return (
     <div>
@@ -32,25 +47,13 @@ export default async function AllocateStockPage() {
       </Link>
       <div className="mt-4">
         <AllocateWizard
-          resellers={resellers
-            .filter((item) => item.id !== ctx.homeTenantId)
-            .map((item) => {
-              const tenantLinks = linksByTenant.get(item.id) ?? [];
-              const defaultPlanId =
-                tenantLinks.find((link) => link.isDefault)?.platformPlanId ?? tenantLinks[0]?.platformPlanId ?? "";
-              return {
-                id: item.id,
-                name: item.name,
-                planIds: tenantLinks.map((link) => link.platformPlanId),
-                defaultPlanId,
-              };
-            })}
+          resellers={resellerDetails}
           plans={plans.map((item) => ({
             id: item.id,
             name: `${item.ccRatePlan} · ${item.name}`,
-            available: availableByPlanId[item.id] ?? 0,
           }))}
           skus={skus}
+          customerOptions={customerOptions}
         />
       </div>
     </div>

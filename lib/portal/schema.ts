@@ -5,7 +5,17 @@ let ready = false;
 let inflight: Promise<void> | null = null;
 
 const STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS tenants (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)`,
+  `CREATE TABLE IF NOT EXISTS tenants (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    cc_customer TEXT,
+    cc_customer_bound_email TEXT,
+    cc_customer_bound_at TEXT,
+    cc_default_sku_id TEXT,
+    cc_default_platform_plan_id TEXT
+  )`,
   `CREATE TABLE IF NOT EXISTS tenant_members (email TEXT NOT NULL, tenant_id TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (email, tenant_id))`,
   `CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, inclusive_mb INTEGER NOT NULL, overage TEXT NOT NULL, roaming TEXT NOT NULL, wholesale_plan TEXT NOT NULL, comm_plan TEXT NOT NULL, platform_plan_id TEXT, price_per_sim REAL, created_at TEXT NOT NULL)`,
@@ -139,6 +149,13 @@ const ALTERS = [
   `ALTER TABLE cc_sync_state ADD COLUMN search_reset_v1 INTEGER NOT NULL DEFAULT 0`,
   `CREATE UNIQUE INDEX IF NOT EXISTS sims_iccid ON sims (iccid)`,
   `ALTER TABLE tenants ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE tenants ADD COLUMN cc_customer TEXT`,
+  `ALTER TABLE tenants ADD COLUMN cc_customer_bound_email TEXT`,
+  `ALTER TABLE tenants ADD COLUMN cc_customer_bound_at TEXT`,
+  `ALTER TABLE tenants ADD COLUMN cc_default_sku_id TEXT`,
+  `ALTER TABLE tenants ADD COLUMN cc_default_platform_plan_id TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS tenants_cc_customer_unique
+    ON tenants (cc_customer) WHERE cc_customer IS NOT NULL AND TRIM(cc_customer) != ''`,
   `ALTER TABLE platform_plans ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE tenant_plan_assignments ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE platform_plans ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,

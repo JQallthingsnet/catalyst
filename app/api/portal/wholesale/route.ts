@@ -12,14 +12,14 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       tenantId?: string;
       skuId?: string;
-      quantity?: number;
       platformPlanId?: string;
+      ccCustomer?: string;
     };
     const order = await allocateWholesaleStock(ctx, {
       tenantId: body.tenantId ?? "",
       skuId: body.skuId ?? "",
-      quantity: Number(body.quantity),
       platformPlanId: body.platformPlanId ?? "",
+      ccCustomer: body.ccCustomer ?? "",
     });
     if (order.tenantId) await setActingTenantCookie(order.tenantId);
     return NextResponse.json({ success: true, order });

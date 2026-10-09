@@ -15,7 +15,10 @@ import {
   type JasperDevice,
 } from "@/lib/cc/client";
 import { type SimState } from "@/lib/portal/catalogue";
+import { newId } from "@/lib/portal/ids";
 import { DEFAULT_PLAN_SUPPLIER, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
+import { getSimSku } from "@/lib/portal/skus";
+import { listCcCustomerBindings, type CcCustomerBinding } from "@/lib/portal/tenant";
 import { ccDevicesToCsv } from "@/lib/cc/csv";
 import { parseYmd, sydneyDayEndExclusiveIso, sydneyDayStartIso } from "@/lib/portal/time";
 
@@ -174,51 +177,60 @@ export function mapCcStatus(status: string): SimState | null {
   return null;
 }
 
-const CC_FREE_STATUSES = "('INVENTORY','TEST_READY','ACTIVATION_READY','READY')";
-const CC_STATUS_KEY = `UPPER(REPLACE(REPLACE(TRIM(d.status), '-', '_'), ' ', '_'))`;
-
-export type CcFreeDevice = {
+export type CcCustomerDevice = {
   iccid: string;
   status: string;
+  ratePlan: string | null;
   imsi: string | null;
   msisdn: string | null;
   ctdUsageMb: number | null;
 };
 
-function ccFreeStockWhere(): string {
-  return `${CC_STATUS_KEY} IN ${CC_FREE_STATUSES}
-         AND UPPER(TRIM(IFNULL(d.rate_plan, ''))) = UPPER(TRIM(?))
-         AND UPPER(TRIM(IFNULL(d.communication_plan, ''))) = UPPER(TRIM(?))
-         AND NOT EXISTS (SELECT 1 FROM sims s WHERE s.iccid = d.iccid)`;
-}
+export type CcCustomerStockOption = {
+  customer: string;
+  /** All SIMs in CC snapshot with this Customer. */
+  totalCount: number;
+  /** Already in some Catalyst warehouse (sims). */
+  inWarehouseCount: number;
+};
 
-export async function countAvailableCcStock(ccRatePlan: string, commPlan: string): Promise<number> {
-  const row = await getDB()
-    .prepare(`SELECT COUNT(*) AS c FROM cc_devices d WHERE ${ccFreeStockWhere()}`)
-    .bind(ccRatePlan, commPlan)
-    .first<{ c: number }>();
-  return row?.c ?? 0;
-}
-
-export async function pickAvailableCcDevices(
-  ccRatePlan: string,
-  commPlan: string,
-  quantity: number,
-): Promise<CcFreeDevice[]> {
+/** Jasper Customer names present on the CC snapshot (for sell-stock bind). */
+export async function listCcCustomerStockOptions(): Promise<CcCustomerStockOption[]> {
   const rows = await getDB()
     .prepare(
-      `SELECT d.iccid, d.status, d.imsi, d.msisdn, d.ctd_usage_mb
+      `SELECT TRIM(d.customer) AS customer,
+              COUNT(*) AS total_count,
+              SUM(CASE WHEN s.iccid IS NOT NULL THEN 1 ELSE 0 END) AS in_warehouse
        FROM cc_devices d
-       WHERE ${ccFreeStockWhere()}
-       ORDER BY CASE WHEN d.date_added IS NULL OR TRIM(d.date_added) = '' THEN 1 ELSE 0 END,
-                d.date_added ASC,
-                d.iccid ASC
-       LIMIT ?`,
+       LEFT JOIN sims s ON s.iccid = d.iccid
+       WHERE IFNULL(TRIM(d.customer), '') != ''
+       GROUP BY TRIM(d.customer)
+       ORDER BY customer COLLATE NOCASE
+       LIMIT 500`,
     )
-    .bind(ccRatePlan, commPlan, quantity)
+    .all<{ customer: string; total_count: number; in_warehouse: number }>();
+  return (rows.results ?? []).map((row) => ({
+    customer: row.customer,
+    totalCount: row.total_count,
+    inWarehouseCount: row.in_warehouse,
+  }));
+}
+
+export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCustomerDevice[]> {
+  const customer = ccCustomer.trim();
+  if (!customer) return [];
+  const rows = await getDB()
+    .prepare(
+      `SELECT d.iccid, d.status, d.rate_plan, d.imsi, d.msisdn, d.ctd_usage_mb
+       FROM cc_devices d
+       WHERE UPPER(TRIM(IFNULL(d.customer, ''))) = UPPER(TRIM(?))
+       ORDER BY d.iccid ASC`,
+    )
+    .bind(customer)
     .all<{
       iccid: string;
       status: string;
+      rate_plan: string | null;
       imsi: string | null;
       msisdn: string | null;
       ctd_usage_mb: number | null;
@@ -226,10 +238,170 @@ export async function pickAvailableCcDevices(
   return (rows.results ?? []).map((row) => ({
     iccid: row.iccid,
     status: row.status,
+    ratePlan: row.rate_plan,
     imsi: row.imsi,
     msisdn: row.msisdn,
     ctdUsageMb: row.ctd_usage_mb,
   }));
+}
+
+/**
+ * Ensure every CC SIM for this Customer exists in the reseller warehouse (sims).
+ * Idempotent — safe to run on sell stock and after Jasper sync.
+ */
+export async function materializeWarehouseForCcCustomer(input: {
+  tenantId: string;
+  ccCustomer: string;
+  formFactor: string;
+  platformPlanId: string;
+  orderId?: string | null;
+}): Promise<{ inserted: number; total: number }> {
+  const devices = await listCcDevicesForCustomer(input.ccCustomer);
+  if (devices.length === 0) return { inserted: 0, total: 0 };
+
+  const db = getDB();
+  const now = isoNow();
+  const owned = new Map<string, string>();
+  const iccids = devices.map((device) => device.iccid);
+  for (let i = 0; i < iccids.length; i += 80) {
+    const chunk = iccids.slice(i, i + 80);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = await db
+      .prepare(`SELECT iccid, tenant_id FROM sims WHERE iccid IN (${placeholders})`)
+      .bind(...chunk)
+      .all<{ iccid: string; tenant_id: string }>();
+    for (const row of rows.results ?? []) {
+      owned.set(row.iccid, row.tenant_id);
+    }
+  }
+
+  let inserted = 0;
+  const statements: D1PreparedStatement[] = [];
+
+  for (const device of devices) {
+    const existingTenant = owned.get(device.iccid);
+    if (existingTenant) {
+      if (existingTenant !== input.tenantId) continue;
+      statements.push(
+        overlaySimStatement(device.iccid, {
+          status: device.status,
+          ratePlan: device.ratePlan,
+          polledAt: now,
+          imsi: device.imsi,
+          msisdn: device.msisdn,
+          usageMb: device.ctdUsageMb,
+        }),
+      );
+      continue;
+    }
+
+    const state = mapCcStatus(device.status) ?? "Ready";
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, platform_plan_id, created_at, imsi, msisdn, current_volume_mb, cc_status, cc_polled_at)
+           VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          newId("sim"),
+          input.tenantId,
+          device.iccid,
+          input.formFactor,
+          state,
+          input.orderId ?? null,
+          device.ratePlan,
+          input.platformPlanId,
+          now,
+          device.imsi,
+          device.msisdn,
+          device.ctdUsageMb,
+          device.status,
+          now,
+        ),
+    );
+    inserted += 1;
+  }
+
+  for (let i = 0; i < statements.length; i += 40) {
+    await db.batch(statements.slice(i, i + 40));
+  }
+  return { inserted, total: devices.length };
+}
+
+let ccBindingCache: Map<string, CcCustomerBinding> | null = null;
+
+function clearCcBindingCache(): void {
+  ccBindingCache = null;
+}
+
+async function bindingForCcCustomer(ccCustomer: string): Promise<CcCustomerBinding | null> {
+  const key = ccCustomer.trim().toLowerCase();
+  if (!key) return null;
+  if (!ccBindingCache) {
+    const bindings = await listCcCustomerBindings();
+    ccBindingCache = new Map(bindings.map((row) => [row.ccCustomer.toLowerCase(), row]));
+  }
+  return ccBindingCache.get(key) ?? null;
+}
+
+/** After Jasper upsert/enrich: if Customer is bound, ensure this ICCID is in that reseller warehouse. */
+async function ensureBoundWarehouseSim(input: {
+  iccid: string;
+  customer: string | null | undefined;
+  status: string;
+  ratePlan?: string | null;
+  imsi?: string | null;
+  msisdn?: string | null;
+  usageMb?: number | null;
+}): Promise<void> {
+  const customer = input.customer?.trim();
+  if (!customer) return;
+  const binding = await bindingForCcCustomer(customer);
+  if (!binding?.skuId || !binding.platformPlanId) return;
+  const sku = await getSimSku(binding.skuId);
+  if (!sku) return;
+
+  const db = getDB();
+  const existing = await db
+    .prepare("SELECT tenant_id FROM sims WHERE iccid = ?")
+    .bind(input.iccid)
+    .first<{ tenant_id: string }>();
+  const now = isoNow();
+  if (existing) {
+    if (existing.tenant_id !== binding.tenantId) return;
+    await overlaySimStatement(input.iccid, {
+      status: input.status,
+      ratePlan: input.ratePlan,
+      polledAt: now,
+      imsi: input.imsi,
+      msisdn: input.msisdn,
+      usageMb: input.usageMb,
+    }).run();
+    return;
+  }
+
+  const state = mapCcStatus(input.status) ?? "Ready";
+  await db
+    .prepare(
+      `INSERT INTO sims (id, tenant_id, iccid, form_factor, state, customer_id, plan_id, pool_id, order_id, wholesale_plan, platform_plan_id, created_at, imsi, msisdn, current_volume_mb, cc_status, cc_polled_at)
+       VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      newId("sim"),
+      binding.tenantId,
+      input.iccid,
+      sku.formFactor,
+      state,
+      input.ratePlan ?? null,
+      binding.platformPlanId,
+      now,
+      input.imsi ?? null,
+      input.msisdn ?? null,
+      input.usageMb ?? null,
+      input.status,
+      now,
+    )
+    .run();
 }
 
 export async function getCcSyncState(): Promise<CcSyncState> {
@@ -919,19 +1091,33 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
   const db = getDB();
   const upserts: D1PreparedStatement[] = [];
   const overlays: D1PreparedStatement[] = [];
+  const warehouseJobs: {
+    iccid: string;
+    customer: string | null;
+    status: string;
+    ratePlan: string | null;
+  }[] = [];
   for (const device of devices) {
     const iccid = device.iccid.replace(/\s/g, "");
     if (!iccid) continue;
+    const customer = textOrNull(device.customer);
+    warehouseJobs.push({
+      iccid,
+      customer,
+      status: device.status,
+      ratePlan: device.ratePlan ?? null,
+    });
     upserts.push(
       db
         .prepare(
-          `INSERT INTO cc_devices (iccid, supplier, status, rate_plan, communication_plan, polled_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+          `INSERT INTO cc_devices (iccid, supplier, status, rate_plan, communication_plan, customer, polled_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(iccid) DO UPDATE SET
            supplier = excluded.supplier,
            status = excluded.status,
            rate_plan = excluded.rate_plan,
            communication_plan = excluded.communication_plan,
+           customer = COALESCE(excluded.customer, cc_devices.customer),
            polled_at = excluded.polled_at`,
         )
         .bind(
@@ -940,6 +1126,7 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
           device.status,
           device.ratePlan ?? null,
           device.communicationPlan ?? null,
+          customer,
           polledAt,
         ),
     );
@@ -953,6 +1140,9 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
   }
   if (upserts.length > 0) await db.batch(upserts);
   if (overlays.length > 0) await db.batch(overlays);
+  for (const job of warehouseJobs) {
+    await ensureBoundWarehouseSim(job);
+  }
   return upserts.length;
 }
 
@@ -1075,6 +1265,20 @@ async function persistDeviceEnrichment(
   if (status) {
     await overlaySim(iccid, { status, ratePlan, polledAt: now, imsi, msisdn, usageMb });
   }
+
+  const customerRow = await getDB()
+    .prepare("SELECT customer, status FROM cc_devices WHERE iccid = ?")
+    .bind(iccid)
+    .first<{ customer: string | null; status: string }>();
+  await ensureBoundWarehouseSim({
+    iccid,
+    customer: customerRow?.customer,
+    status: status || customerRow?.status || "INVENTORY",
+    ratePlan,
+    imsi,
+    msisdn,
+    usageMb,
+  });
 }
 
 async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
@@ -1138,6 +1342,7 @@ export async function syncCcDevices(input?: {
     catchup ? CATCHUP_JASPER_CALLS : unlimited ? JASPER_CALLS_AUTO : JASPER_CALLS_MANUAL,
   );
   bulkDetailsAvailable = null;
+  clearCcBindingCache();
   const locked = await acquireLock();
   if (!locked) throw new CcBusyError();
 
