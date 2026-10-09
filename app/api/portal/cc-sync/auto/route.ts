@@ -1,7 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import { ensurePortalSchema } from "@/lib/portal/schema";
-import { setCcAutoPoll, syncCcDevices } from "@/lib/cc/devices";
+import { getCcSyncState, setCcAutoPoll, syncCcDevices } from "@/lib/cc/devices";
 
 export async function POST(request: Request) {
   const ctx = await requirePortalApi();
@@ -18,10 +18,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send { enabled: true | false }." }, { status: 400 });
   }
 
+  if (enabled) {
+    const state = await getCcSyncState();
+    if (!state.lastPageComplete) {
+      return NextResponse.json(
+        {
+          error:
+            "Finish Sync now (Search window catch-up) first. Auto poll is for short incremental updates after the list is in D1.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   await setCcAutoPoll(enabled);
   if (enabled) {
     after(() =>
-      syncCcDevices({ unlimited: true }).catch(() => {
+      syncCcDevices({ mode: "auto" }).catch(() => {
         // last_error is stored on cc_sync_state
       }),
     );

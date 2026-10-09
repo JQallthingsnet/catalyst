@@ -63,7 +63,9 @@ const STATEMENTS = [
     last_total INTEGER,
     last_page INTEGER,
     last_page_complete INTEGER NOT NULL DEFAULT 0,
-    auto_poll INTEGER NOT NULL DEFAULT 1
+    auto_poll INTEGER NOT NULL DEFAULT 1,
+    list_cycle_started_at TEXT,
+    search_reset_v1 INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS sim_skus (
     id TEXT PRIMARY KEY,
@@ -133,6 +135,8 @@ const ALTERS = [
   `ALTER TABLE cc_devices ADD COLUMN custom_fields TEXT`,
   `ALTER TABLE cc_devices ADD COLUMN details_json TEXT`,
   `ALTER TABLE cc_sync_state ADD COLUMN auto_poll INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE cc_sync_state ADD COLUMN list_cycle_started_at TEXT`,
+  `ALTER TABLE cc_sync_state ADD COLUMN search_reset_v1 INTEGER NOT NULL DEFAULT 0`,
   `CREATE UNIQUE INDEX IF NOT EXISTS sims_iccid ON sims (iccid)`,
   `ALTER TABLE tenants ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE platform_plans ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
@@ -154,6 +158,16 @@ const BACKFILLS = [
      WHERE IFNULL(TRIM(push_status), '') IN ('', 'pending')
        AND pushed_at IS NULL
        AND created_at < '2026-10-08T00:00:00.000Z'`,
+  // One-shot: re-open ~360d Search after cursor advanced before full estate was in D1.
+  `UPDATE cc_sync_state
+     SET modified_since = strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now', '-360 days'),
+         next_page = 1,
+         last_page_complete = 0,
+         list_cycle_started_at = NULL,
+         last_error = NULL,
+         locked_until = NULL,
+         search_reset_v1 = 1
+     WHERE id = 'devices' AND IFNULL(search_reset_v1, 0) = 0`,
 ];
 
 /**

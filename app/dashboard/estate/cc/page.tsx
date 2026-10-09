@@ -167,16 +167,18 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            Copy of Control Center in D1. Filter by supplier, status, plans, customer, modem, global SIM, profile, session, and Added / Activated / Updated dates.
-            Search ICCID, IMSI, MSISDN, IMEI, customer, account, device ID, modem, eUICCID, SIM profile, notes, or custom fields.
-            Export CSV downloads the current filtered view (all matching rows).
+            Copy of Control Center in D1. Use <span className="text-ink">Sync now</span> to pull the full Search window into D1 (progress bar; Auto poll stays off until done). After that, Auto poll keeps a short incremental window. Filter and export apply to the current view.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CcAutoPollToggle enabled={sync.autoPoll} />
           <CcImportDialog />
           <CcExportButton queryString={exportQuery} />
-          <SyncCcButton />
+          <SyncCcButton
+            initialDevices={total}
+            initialJasperTotal={sync.lastTotal}
+            initialComplete={sync.lastPageComplete}
+          />
         </div>
       </div>
 
@@ -185,10 +187,13 @@ export default async function CcSnapshotPage({
           <p className="text-sm text-quiet">Devices in copy</p>
           <p className="mt-2 text-3xl font-semibold">{total.toLocaleString("en-AU")}</p>
           <p className="mt-1 text-xs text-quiet">
-            Jasper search total {sync.lastTotal != null ? sync.lastTotal.toLocaleString("en-AU") : "—"}
-            {sync.lastTotal != null && sync.lastTotal > total
-              ? ` · ${ (sync.lastTotal - total).toLocaleString("en-AU")} still missing from this crawl`
-              : ""}
+            Last full Search total{" "}
+            {sync.lastTotal != null && sync.lastTotal > 0 ? sync.lastTotal.toLocaleString("en-AU") : "—"}
+            {sync.lastPageComplete
+              ? " · incremental (only SIMs changed since last cycle)"
+              : sync.lastTotal != null && sync.lastTotal > total
+                ? ` · ${(sync.lastTotal - total).toLocaleString("en-AU")} still missing from this crawl`
+                : ""}
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
@@ -209,7 +214,10 @@ export default async function CcSnapshotPage({
                 }`}
           </p>
           <p className="mt-1 text-xs text-quiet">
-            Since {sync.modifiedSince ? formatAuDateTime(sync.modifiedSince) : "default ~360 days"}
+            Search since {sync.modifiedSince ? formatAuDateTime(sync.modifiedSince) : "default ~360 days"}
+            {sync.listCycleStartedAt && !sync.lastPageComplete
+              ? ` · window walk since ${formatAuDateTime(sync.listCycleStartedAt)} (not advanced until last page)`
+              : ""}
             {" · "}
             {sync.autoPoll ? "Auto poll ON" : "Auto poll OFF"}
             {" · "}

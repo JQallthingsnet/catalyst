@@ -20,7 +20,7 @@ import { ccDevicesToCsv } from "@/lib/cc/csv";
 import { parseYmd, sydneyDayEndExclusiveIso, sydneyDayStartIso } from "@/lib/portal/time";
 
 const SYNC_ID = "devices";
-/** Manual Sync while auto poll is off — keep the click short. */
+/** Legacy short Sync (unused by Sync now catch-up). */
 const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
@@ -30,11 +30,24 @@ const JASPER_CALLS_MANUAL = 16;
 /** ~100 session refreshes/tick when list is quiet (bulk details + usage + session). */
 const JASPER_CALLS_AUTO = 220;
 /**
+ * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
+ * List-only — do not burn budget on session/usage until the window is complete.
+ */
+const CATCHUP_PAGES_PER_RUN = 40;
+const CATCHUP_JASPER_CALLS = 45;
+const CATCHUP_BUDGET_MS = 55_000;
+/**
  * After one full list cycle, only spend a few Search pages on incremental changes
  * so most of the budget refreshes In session / usage.
  */
 const AUTO_LIST_PAGES_WHEN_COMPLETE = 8;
+/** Manual Sync: refresh details if older than this. */
 const DETAILS_STALE_MS = 15 * 60 * 1000;
+/**
+ * Auto poll: once the estate is in D1, do not re-hit every ICCID every few hours.
+ * Never-enriched (details_polled_at NULL) are still first in line.
+ */
+const AUTO_DETAILS_STALE_MS = 24 * 60 * 60 * 1000;
 /** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 
@@ -82,6 +95,8 @@ export type CcSyncState = {
   lastTotal: number | null;
   lastPage: number | null;
   lastPageComplete: boolean;
+  /** When the current Search window walk began (page 1). Used as modifiedSince on lastPage. */
+  listCycleStartedAt: string | null;
   autoPoll: boolean;
   configured: boolean;
 };
@@ -93,6 +108,28 @@ export type CcSyncResult = {
   lastPage: boolean;
   totalCount: number;
   nextPage: number;
+};
+
+export type CcCatchUpProgress = {
+  devicesInCopy: number;
+  jasperTotal: number | null;
+  nextPage: number;
+  lastFetchedPage: number | null;
+  lastPageComplete: boolean;
+  autoPoll: boolean;
+  lastError: string | null;
+  lastPolledAt: string | null;
+  modifiedSince: string | null;
+  /** 0–100 when jasperTotal known; null if unknown. */
+  percent: number | null;
+};
+
+export type CcCatchUpBatchResult = CcSyncResult & {
+  devicesInCopy: number;
+  complete: boolean;
+  autoPoll: boolean;
+  lastError: string | null;
+  percent: number | null;
 };
 
 function isoNow(): string {
@@ -198,7 +235,8 @@ export async function pickAvailableCcDevices(
 export async function getCcSyncState(): Promise<CcSyncState> {
   const row = await getDB()
     .prepare(
-      `SELECT modified_since, next_page, locked_until, last_polled_at, last_error, last_total, last_page, last_page_complete, auto_poll
+      `SELECT modified_since, next_page, locked_until, last_polled_at, last_error, last_total, last_page,
+              last_page_complete, list_cycle_started_at, auto_poll
        FROM cc_sync_state WHERE id = ?`,
     )
     .bind(SYNC_ID)
@@ -211,6 +249,7 @@ export async function getCcSyncState(): Promise<CcSyncState> {
       last_total: number | null;
       last_page: number | null;
       last_page_complete: number;
+      list_cycle_started_at: string | null;
       auto_poll: number | null;
     }>();
   return {
@@ -222,6 +261,7 @@ export async function getCcSyncState(): Promise<CcSyncState> {
     lastTotal: row?.last_total ?? null,
     lastPage: row?.last_page ?? null,
     lastPageComplete: Boolean(row?.last_page_complete),
+    listCycleStartedAt: row?.list_cycle_started_at ?? null,
     autoPoll: Boolean(row?.auto_poll) && isCcAutoPollEnabled(),
     configured: jasperConfigured(),
   };
@@ -235,13 +275,125 @@ export async function setCcAutoPoll(enabled: boolean): Promise<void> {
     .run();
 }
 
+function catchUpPercent(devicesInCopy: number, jasperTotal: number | null): number | null {
+  if (jasperTotal == null || jasperTotal <= 0) return null;
+  return Math.min(100, Math.round((devicesInCopy / jasperTotal) * 100));
+}
+
+export async function getCcCatchUpProgress(): Promise<CcCatchUpProgress> {
+  const [state, devicesInCopy] = await Promise.all([getCcSyncState(), countCcDevices()]);
+  const jasperTotal = state.lastTotal != null && state.lastTotal > 0 ? state.lastTotal : null;
+  return {
+    devicesInCopy,
+    jasperTotal,
+    nextPage: state.nextPage,
+    lastFetchedPage: state.lastPage,
+    lastPageComplete: state.lastPageComplete,
+    autoPoll: state.autoPoll,
+    lastError: state.lastError,
+    lastPolledAt: state.lastPolledAt,
+    modifiedSince: state.modifiedSince,
+    percent: catchUpPercent(devicesInCopy, jasperTotal),
+  };
+}
+
+/**
+ * Start / resume Sync now catch-up: Auto poll OFF.
+ * Reopen ~360d Search only when the last cycle finished but D1 is still short of Jasper total
+ * (early cursor advance). Mid-crawl resumes next_page. If already caught up, leave window as-is.
+ */
+export async function beginCcCatchUp(): Promise<CcCatchUpProgress> {
+  await ensureSyncRow();
+  const state = await getCcSyncState();
+  const devicesInCopy = await countCcDevices();
+  const shortOfSearch =
+    state.lastPageComplete &&
+    state.lastTotal != null &&
+    state.lastTotal > 0 &&
+    devicesInCopy < Math.floor(state.lastTotal * 0.95);
+
+  if (shortOfSearch || (state.lastPageComplete && (state.lastTotal == null || state.lastTotal <= 0))) {
+    const modifiedSince = defaultModifiedSince();
+    await getDB()
+      .prepare(
+        `UPDATE cc_sync_state
+         SET modified_since = ?,
+             next_page = 1,
+             last_page_complete = 0,
+             list_cycle_started_at = NULL,
+             last_error = NULL,
+             locked_until = NULL,
+             auto_poll = 0
+         WHERE id = ?`,
+      )
+      .bind(modifiedSince, SYNC_ID)
+      .run();
+  } else if (!state.lastPageComplete) {
+    await getDB()
+      .prepare(
+        `UPDATE cc_sync_state
+         SET auto_poll = 0,
+             last_error = NULL,
+             locked_until = NULL
+         WHERE id = ?`,
+      )
+      .bind(SYNC_ID)
+      .run();
+  }
+  // Already caught up: leave auto_poll / modified_since alone; batch may no-op quickly via lastPage.
+  return getCcCatchUpProgress();
+}
+
+/**
+ * One Sync now batch: Search pages only (same modifiedSince, next_page++).
+ * When Jasper lastPage: mark complete and turn Auto poll ON for short incremental ticks.
+ */
+export async function runCcCatchUpBatch(): Promise<CcCatchUpBatchResult> {
+  const before = await getCcCatchUpProgress();
+  const alreadyCaughtUp =
+    before.lastPageComplete &&
+    before.jasperTotal != null &&
+    before.devicesInCopy >= Math.floor(before.jasperTotal * 0.95);
+  if (alreadyCaughtUp) {
+    if (!before.autoPoll) await setCcAutoPoll(true);
+    const progress = await getCcCatchUpProgress();
+    return {
+      pages: 0,
+      upserted: 0,
+      details: 0,
+      lastPage: true,
+      totalCount: progress.jasperTotal ?? 0,
+      nextPage: 1,
+      devicesInCopy: progress.devicesInCopy,
+      complete: true,
+      autoPoll: progress.autoPoll,
+      lastError: progress.lastError,
+      percent: progress.percent,
+    };
+  }
+
+  const result = await syncCcDevices({ mode: "catchup" });
+  if (result.lastPage) {
+    await setCcAutoPoll(true);
+  }
+  const progress = await getCcCatchUpProgress();
+  return {
+    ...result,
+    devicesInCopy: progress.devicesInCopy,
+    complete: result.lastPage || progress.lastPageComplete,
+    autoPoll: progress.autoPoll,
+    lastError: progress.lastError,
+    percent: progress.percent,
+  };
+}
+
 /** Cron entry. Runs when the Auto poll button is ON (and CC_AUTO_POLL is not false). */
 export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   if (!jasperConfigured()) return null;
   const state = await getCcSyncState();
   if (!state.autoPoll) return null;
   try {
-    return await syncCcDevices({ unlimited: true });
+    return await syncCcDevices({ mode: "auto" });
   } catch (err) {
     if (err instanceof CcBusyError) return null;
     throw err;
@@ -643,8 +795,10 @@ async function heartbeatLock(progress?: {
   lastTotal?: number;
   lastPage?: number;
   lastPageComplete?: boolean;
+  listCycleStartedAt?: string | null;
 }): Promise<void> {
   const until = new Date(Date.now() + LOCK_MS).toISOString();
+  const touchCycle = progress?.listCycleStartedAt !== undefined;
   await getDB()
     .prepare(
       `UPDATE cc_sync_state
@@ -652,7 +806,8 @@ async function heartbeatLock(progress?: {
            next_page = COALESCE(?, next_page),
            last_total = COALESCE(?, last_total),
            last_page = COALESCE(?, last_page),
-           last_page_complete = COALESCE(?, last_page_complete)
+           last_page_complete = COALESCE(?, last_page_complete),
+           list_cycle_started_at = CASE WHEN ? = 1 THEN ? ELSE list_cycle_started_at END
        WHERE id = ?`,
     )
     .bind(
@@ -661,6 +816,8 @@ async function heartbeatLock(progress?: {
       progress?.lastTotal ?? null,
       progress?.lastPage ?? null,
       progress?.lastPageComplete == null ? null : progress.lastPageComplete ? 1 : 0,
+      touchCycle ? 1 : 0,
+      touchCycle ? progress.listCycleStartedAt : null,
       SYNC_ID,
     )
     .run();
@@ -674,7 +831,10 @@ async function releaseLock(patch: {
   lastTotal?: number;
   lastPage?: number;
   lastPageComplete?: boolean;
+  /** undefined = leave; null = clear; string = set */
+  listCycleStartedAt?: string | null;
 }): Promise<void> {
+  const touchCycle = patch.listCycleStartedAt !== undefined;
   await getDB()
     .prepare(
       `UPDATE cc_sync_state
@@ -685,7 +845,8 @@ async function releaseLock(patch: {
            last_error = ?,
            last_total = COALESCE(?, last_total),
            last_page = COALESCE(?, last_page),
-           last_page_complete = COALESCE(?, last_page_complete)
+           last_page_complete = COALESCE(?, last_page_complete),
+           list_cycle_started_at = CASE WHEN ? = 1 THEN ? ELSE list_cycle_started_at END
        WHERE id = ?`,
     )
     .bind(
@@ -696,6 +857,8 @@ async function releaseLock(patch: {
       patch.lastTotal ?? null,
       patch.lastPage ?? null,
       patch.lastPageComplete == null ? null : patch.lastPageComplete ? 1 : 0,
+      touchCycle ? 1 : 0,
+      touchCycle ? patch.listCycleStartedAt : null,
       SYNC_ID,
     )
     .run();
@@ -915,7 +1078,8 @@ async function persistDeviceEnrichment(
 }
 
 async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
-  const staleBefore = new Date(Date.now() - DETAILS_STALE_MS).toISOString();
+  const staleMs = input.unlimited ? AUTO_DETAILS_STALE_MS : DETAILS_STALE_MS;
+  const staleBefore = new Date(Date.now() - staleMs).toISOString();
   const batch = input.unlimited
     ? JASPER_BULK_DEVICE_LIMIT
     : Math.min(MANUAL_DETAILS_PER_RUN, JASPER_BULK_DEVICE_LIMIT);
@@ -954,18 +1118,35 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
   return enriched;
 }
 
-export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<CcSyncResult> {
+export type CcSyncMode = "catchup" | "auto" | "manual";
+
+export async function syncCcDevices(input?: {
+  unlimited?: boolean;
+  mode?: CcSyncMode;
+}): Promise<CcSyncResult> {
   if (!jasperConfigured()) {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
   }
-  const unlimited = Boolean(input?.unlimited);
-  const deadline = Date.now() + (unlimited ? AUTO_BUDGET_MS : MANUAL_BUDGET_MS);
-  beginJasperBudget(unlimited ? JASPER_CALLS_AUTO : JASPER_CALLS_MANUAL);
+  const mode: CcSyncMode =
+    input?.mode ?? (input?.unlimited ? "auto" : "manual");
+  const catchup = mode === "catchup";
+  const unlimited = mode === "auto";
+  const deadline =
+    Date.now() +
+    (catchup ? CATCHUP_BUDGET_MS : unlimited ? AUTO_BUDGET_MS : MANUAL_BUDGET_MS);
+  beginJasperBudget(
+    catchup ? CATCHUP_JASPER_CALLS : unlimited ? JASPER_CALLS_AUTO : JASPER_CALLS_MANUAL,
+  );
   bulkDetailsAvailable = null;
   const locked = await acquireLock();
   if (!locked) throw new CcBusyError();
 
   const state = await getCcSyncState();
+  // Heal last_total=0 wiped by an empty incremental Search window.
+  let storedSearchTotal = state.lastTotal ?? 0;
+  if (state.lastPageComplete && storedSearchTotal <= 0) {
+    storedSearchTotal = await countCcDevices();
+  }
   const pollStarted = isoNow().replace(/\.\d{3}Z$/, "+00:00");
   const modifiedSince = state.modifiedSince || defaultModifiedSince();
   let page = state.nextPage || 1;
@@ -973,50 +1154,86 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
   let pages = 0;
   let details = 0;
   let lastPage = false;
-  let totalCount = state.lastTotal ?? 0;
+  let searchMatchCount = storedSearchTotal;
   let fetchedPage = page;
+  /**
+   * Stamp when this Search window walk began (page 1). Only advance modifiedSince to
+   * this stamp when Jasper returns lastPage — never on a mid-crawl budget stop, and
+   * never using the finishing tick's clock (that skipped updates during a multi-tick crawl).
+   */
+  let listCycleStartedAt =
+    page <= 1 ? pollStarted : (state.listCycleStartedAt ?? pollStarted);
+  /**
+   * Jasper totalCount is for the current modifiedSince window only.
+   * After the first full crawl, incremental windows often match 0 devices — never
+   * overwrite the stored full-crawl total with that.
+   */
+  const rememberSearchTotal = (count: number): number => {
+    if (!state.lastPageComplete || catchup) return count;
+    return count > 0 ? Math.max(storedSearchTotal, count) : storedSearchTotal;
+  };
+  let totalCount = rememberSearchTotal(searchMatchCount);
 
   try {
-    // First full crawl: keep listing. Once complete, cap Search pages so enrich gets the budget.
-    const maxPages = unlimited
-      ? state.lastPageComplete
-        ? AUTO_LIST_PAGES_WHEN_COMPLETE
-        : Number.POSITIVE_INFINITY
-      : MANUAL_PAGES_PER_RUN;
+    // Catch-up / first crawl: page forward only. Auto after complete: few incremental pages.
+    const maxPages = catchup
+      ? CATCHUP_PAGES_PER_RUN
+      : unlimited
+        ? state.lastPageComplete
+          ? AUTO_LIST_PAGES_WHEN_COMPLETE
+          : Number.POSITIVE_INFINITY
+        : MANUAL_PAGES_PER_RUN;
     while (pages < maxPages && Date.now() < deadline && jasperHasBudget()) {
       // Identical search: same account, modifiedSince, pageSize=50; only pageNumber increases.
       const result = await fetchJasperDevicesPage({ modifiedSince, pageNumber: page });
       upserted += await persistDevices(result.devices, isoNow());
       pages += 1;
       lastPage = result.lastPage;
-      totalCount = result.totalCount;
+      searchMatchCount = result.totalCount;
+      totalCount = rememberSearchTotal(searchMatchCount);
       fetchedPage = result.pageNumber;
       if (result.lastPage) {
         page = 1;
-        await heartbeatLock({ nextPage: 1, lastTotal: totalCount, lastPage: fetchedPage, lastPageComplete: true });
+        await heartbeatLock({
+          nextPage: 1,
+          lastTotal: totalCount,
+          lastPage: fetchedPage,
+          lastPageComplete: true,
+          listCycleStartedAt: null,
+        });
         break;
       }
       page += 1;
-      // Mid first crawl only — do not clear "cycle complete" during capped incremental Search.
+      // Mid crawl: keep next_page; do not touch modified_since; keep cycle start.
+      // Never mark complete here — only Jasper lastPage does. Preserve flag during incremental caps.
       await heartbeatLock({
         nextPage: page,
         lastTotal: totalCount,
         lastPage: fetchedPage,
-        lastPageComplete: state.lastPageComplete ? true : false,
+        lastPageComplete: state.lastPageComplete && !catchup ? true : false,
+        listCycleStartedAt,
       });
     }
 
-    details = await enrichStaleDevices({ unlimited, deadline });
+    // Catch-up: list only until lastPage. Auto/manual: enrich after window complete (or last page this run).
+    if (!catchup && (lastPage || state.lastPageComplete)) {
+      details = await enrichStaleDevices({ unlimited, deadline });
+    } else if (catchup && lastPage) {
+      // One light enrich pass after the estate is listed (optional small spend of leftover budget).
+      details = await enrichStaleDevices({ unlimited: false, deadline });
+    }
 
     await releaseLock({
-      modifiedSince: lastPage ? pollStarted : modifiedSince,
+      // Advance Search cursor only after Jasper lastPage for this window.
+      modifiedSince: lastPage ? listCycleStartedAt : undefined,
       nextPage: page,
       lastPolledAt: isoNow(),
       lastError: null,
       lastTotal: totalCount,
       lastPage: fetchedPage,
       // Keep "cycle complete" when an incremental run stops mid-cap without finishing Search.
-      lastPageComplete: lastPage || state.lastPageComplete,
+      lastPageComplete: lastPage || (state.lastPageComplete && !catchup),
+      listCycleStartedAt: lastPage ? null : listCycleStartedAt,
     });
 
     return { pages, upserted, details, lastPage, totalCount, nextPage: page };
@@ -1028,7 +1245,7 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
     if (isSubrequestLimit(err) || err instanceof CcBudgetError || err instanceof CcRateLimitError) {
       const rateLimited = err instanceof CcRateLimitError;
       await releaseLock({
-        modifiedSince: lastPage ? pollStarted : modifiedSince,
+        modifiedSince: lastPage ? listCycleStartedAt : undefined,
         nextPage: page,
         lastPolledAt: isoNow(),
         lastError: rateLimited
@@ -1036,7 +1253,8 @@ export async function syncCcDevices(input?: { unlimited?: boolean }): Promise<Cc
           : null,
         lastTotal: totalCount,
         lastPage: fetchedPage,
-        lastPageComplete: lastPage || state.lastPageComplete,
+        lastPageComplete: lastPage || (state.lastPageComplete && !catchup),
+        listCycleStartedAt: lastPage ? null : listCycleStartedAt,
       });
       return { pages, upserted, details, lastPage, totalCount, nextPage: page };
     }

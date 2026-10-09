@@ -52,7 +52,7 @@ CC is the radio source. Pages read D1, not Jasper. Super admin Dashboard and **C
 3. `GET /rws/api/v1/devices/{iccid}/ctdUsages` — cycle-to-date data bytes
 4. `GET /rws/api/v1/devices/{iccid}/sessionInfo` — in session
 
-One HTTP call at a time, at most 5/s. Super admin **Auto poll** on the CC snapshot page turns the Worker cron on or off. While ON, the Worker runs every 10 minutes and continues until every page is stored and every SIM has details, staying under the Worker subrequest cap. **Sync** is a one-off batch. Locally you can also set `CC_AUTO_POLL=false` to force cron off. Auth is HTTP Basic: Base64 of `JASPER_ACCOUNT_NAME:JASPER_API_KEY` (colon, no space). Set `JASPER_ACCOUNT_ID` if your Control Center returns `AccountId is required` on device search (many production accounts do). Do not put these in `wrangler.jsonc`. No CDR history — snapshots overwrite in place.
+One HTTP call at a time, at most 5/s. **Sync now** catch-up pages Search (`pageNumber` only, same `modifiedSince`) until Jasper `lastPage`, with a progress bar; Auto poll is off during catch-up and turns on when the window is complete. **Auto poll** (cron every 10 minutes) is for short incremental Search + session/usage after that — not for the first full estate load. Locally you can set `CC_AUTO_POLL=false` to force cron off. Auth is HTTP Basic: Base64 of `JASPER_ACCOUNT_NAME:JASPER_API_KEY` (colon, no space). Set `JASPER_ACCOUNT_ID` if your Control Center returns `AccountId is required` on device search (many production accounts do). Do not put these in `wrangler.jsonc`. No CDR history — snapshots overwrite in place.
 
 ## Auth
 
