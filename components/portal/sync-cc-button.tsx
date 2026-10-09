@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Progress = {
   devicesInCopy: number;
@@ -44,6 +45,11 @@ export function SyncCcButton({
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function runCatchUp() {
     setBusy(true);
@@ -142,7 +148,6 @@ export function SyncCcButton({
           return;
         }
 
-        // Brief pause so the UI can paint and Jasper is not slammed.
         await sleep(400);
       }
     } catch {
@@ -153,10 +158,53 @@ export function SyncCcButton({
   }
 
   const percent = progress?.percent;
-  const barWidth = percent != null ? percent : progress ? Math.min(95, (progress.nextPage / 150) * 100) : 0;
+  const barWidth =
+    percent != null ? percent : progress ? Math.min(92, Math.max(4, (progress.nextPage / 160) * 100)) : 4;
+  const showPanel = busy || Boolean(progress) || Boolean(error) || Boolean(ok);
+  const slot = mounted ? document.getElementById("cc-sync-progress") : null;
+
+  const panel =
+    showPanel && slot
+      ? createPortal(
+          <div className="mt-4 rounded-card border border-line bg-panel p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-ink">
+                  {busy ? "Syncing Control Center list…" : ok ? "Sync finished" : error ? "Sync stopped" : "Sync"}
+                </p>
+                <p className="mt-1 text-sm text-quiet">
+                  {progress
+                    ? `${progress.devicesInCopy.toLocaleString("en-AU")} devices in copy` +
+                      (progress.jasperTotal != null
+                        ? ` of ${progress.jasperTotal.toLocaleString("en-AU")} from Search`
+                        : " · Search total updating…") +
+                      ` · list page ${progress.nextPage.toLocaleString("en-AU")}`
+                    : ok || error || "Starting catch-up…"}
+                </p>
+              </div>
+              {busy || percent != null ? (
+                <p className="text-2xl font-semibold tabular-nums text-ink">
+                  {percent != null ? `${percent}%` : "…"}
+                </p>
+              ) : null}
+            </div>
+            {(busy || progress) && !ok ? (
+              <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-canvas">
+                <div
+                  className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
+                  style={{ width: `${barWidth}%` }}
+                />
+              </div>
+            ) : null}
+            {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+            {ok ? <p className="mt-3 text-sm text-ok">{ok}</p> : null}
+          </div>,
+          slot,
+        )
+      : null;
 
   return (
-    <div className="flex min-w-56 flex-col items-end gap-2">
+    <>
       <button
         type="button"
         disabled={busy}
@@ -165,28 +213,7 @@ export function SyncCcButton({
       >
         {busy ? "Syncing…" : "Sync now"}
       </button>
-      {busy || progress ? (
-        <div className="w-full max-w-xs space-y-1">
-          <div className="h-2 overflow-hidden rounded-full bg-line">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-300"
-              style={{ width: `${barWidth}%` }}
-            />
-          </div>
-          <p className="text-right text-xs text-quiet">
-            {progress
-              ? `${progress.devicesInCopy.toLocaleString("en-AU")} in copy` +
-                (progress.jasperTotal != null
-                  ? ` / ${progress.jasperTotal.toLocaleString("en-AU")} Search`
-                  : "") +
-                ` · page ${progress.nextPage.toLocaleString("en-AU")}` +
-                (percent != null ? ` · ${percent}%` : "")
-              : "Starting…"}
-          </p>
-        </div>
-      ) : null}
-      {error ? <p className="max-w-xs text-right text-xs text-danger">{error}</p> : null}
-      {ok ? <p className="max-w-xs text-right text-xs text-ok">{ok}</p> : null}
-    </div>
+      {panel}
+    </>
   );
 }
