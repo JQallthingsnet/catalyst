@@ -24,7 +24,7 @@ export default async function CataloguePage() {
         </Link>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(16rem,20rem))] gap-4">
         {skus.length === 0 ? (
           <p className="text-sm text-quiet">No SKUs yet. Create the nano / MFF2 / eSIM products you actually sell.</p>
         ) : null}
