@@ -30,6 +30,7 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, email TEXT NOT NULL, role TEXT NOT NULL, tenant_id TEXT NOT NULL, invited_by TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS platform_plans (id TEXT PRIMARY KEY, name TEXT NOT NULL, cc_rate_plan TEXT NOT NULL, comm_plan TEXT NOT NULL, created_at TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, supplier TEXT NOT NULL DEFAULT 'Optus')`,
   `CREATE TABLE IF NOT EXISTS tenant_plan_assignments (tenant_id TEXT NOT NULL, platform_plan_id TEXT NOT NULL, created_at TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (tenant_id, platform_plan_id))`,
+  `CREATE TABLE IF NOT EXISTS tenant_sku_assignments (tenant_id TEXT NOT NULL, sku_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (tenant_id, sku_id))`,
   `CREATE UNIQUE INDEX IF NOT EXISTS tenant_members_one_org ON tenant_members (email)`,
   `CREATE TABLE IF NOT EXISTS cc_devices (
     iccid TEXT PRIMARY KEY,
@@ -161,6 +162,7 @@ const ALTERS = [
   `ALTER TABLE tenant_plan_assignments ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE platform_plans ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
   `ALTER TABLE sim_skus ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
+  `CREATE TABLE IF NOT EXISTS tenant_sku_assignments (tenant_id TEXT NOT NULL, sku_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (tenant_id, sku_id))`,
   `ALTER TABLE cc_devices ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
   `ALTER TABLE sim_rate_plan_changes ADD COLUMN push_status TEXT NOT NULL DEFAULT 'pending'`,
   `ALTER TABLE sim_rate_plan_changes ADD COLUMN pushed_at TEXT`,

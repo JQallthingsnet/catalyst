@@ -228,5 +228,107 @@ export async function deleteSimSku(id: string, confirmName?: string): Promise<vo
   if (bound) {
     throw new Error("This SKU is the default for a bound reseller. Clear that bind before deleting.");
   }
-  await getDB().prepare("DELETE FROM sim_skus WHERE id = ?").bind(id).run();
+  const db = getDB();
+  await db.batch([
+    db.prepare("DELETE FROM tenant_sku_assignments WHERE sku_id = ?").bind(id),
+    db.prepare("DELETE FROM sim_skus WHERE id = ?").bind(id),
+  ]);
+}
+
+export type ContractSkuLine = {
+  skuId: string;
+  name: string;
+  formFactor: string;
+  tech: string;
+  region: string;
+  active: boolean;
+};
+
+/** Catalogue SKUs bound on a reseller’s contract (Order SIMs allowlist). */
+export async function listResellerSkus(tenantId: string): Promise<ContractSkuLine[]> {
+  try {
+    const rows = await getDB()
+      .prepare(
+        `SELECT s.id, s.name, s.form_factor, s.tech, s.region, IFNULL(s.active, 1) AS active
+         FROM tenant_sku_assignments a
+         JOIN sim_skus s ON s.id = a.sku_id
+         WHERE a.tenant_id = ?
+         ORDER BY IFNULL(s.active, 1) DESC, s.name COLLATE NOCASE`,
+      )
+      .bind(tenantId)
+      .all<{
+        id: string;
+        name: string;
+        form_factor: string;
+        tech: string;
+        region: string;
+        active: number;
+      }>();
+    return (rows.results ?? []).map((row) => ({
+      skuId: row.id,
+      name: row.name,
+      formFactor: row.form_factor,
+      tech: row.tech,
+      region: row.region,
+      active: Boolean(row.active),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function listAllTenantSkuIds(): Promise<{ tenantId: string; skuId: string }[]> {
+  try {
+    const rows = await getDB()
+      .prepare(`SELECT tenant_id, sku_id FROM tenant_sku_assignments`)
+      .all<{ tenant_id: string; sku_id: string }>();
+    return (rows.results ?? []).map((row) => ({
+      tenantId: row.tenant_id,
+      skuId: row.sku_id,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function tenantHasSku(tenantId: string, skuId: string): Promise<boolean> {
+  try {
+    const row = await getDB()
+      .prepare(
+        `SELECT 1 AS ok FROM tenant_sku_assignments WHERE tenant_id = ? AND sku_id = ? LIMIT 1`,
+      )
+      .bind(tenantId, skuId)
+      .first<{ ok: number }>();
+    return Boolean(row);
+  } catch {
+    return false;
+  }
+}
+
+export async function assignSkuToTenant(tenantId: string, skuId: string): Promise<void> {
+  const sku = await getSimSku(skuId);
+  if (!sku) throw new Error("Catalogue item not found.");
+  if (!sku.active) throw new Error("Reactivate this SKU before binding it on a contract.");
+  const tenant = await getDB()
+    .prepare(`SELECT id, IFNULL(active, 1) AS active FROM tenants WHERE id = ?`)
+    .bind(tenantId)
+    .first<{ id: string; active: number }>();
+  if (!tenant) throw new Error("Organisation not found.");
+  if (!tenant.active) throw new Error("That organisation is deactivated.");
+  const now = new Date().toISOString();
+  await getDB()
+    .prepare(
+      `INSERT INTO tenant_sku_assignments (tenant_id, sku_id, created_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(tenant_id, sku_id) DO NOTHING`,
+    )
+    .bind(tenantId, skuId, now)
+    .run();
+}
+
+export async function unassignSkuFromTenant(tenantId: string, skuId: string): Promise<void> {
+  await getDB()
+    .prepare(`DELETE FROM tenant_sku_assignments WHERE tenant_id = ? AND sku_id = ?`)
+    .bind(tenantId, skuId)
+    .run();
 }

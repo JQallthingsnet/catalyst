@@ -436,6 +436,15 @@ export type ContractBookEntry = {
     isDefault: boolean;
     simCount: number;
   }[];
+  /** Catalogue SKUs this reseller may Order SIMs for. */
+  skus: {
+    skuId: string;
+    name: string;
+    formFactor: string;
+    tech: string;
+    region: string;
+    active: boolean;
+  }[];
 };
 
 /** Master-admin contract book: reseller → rate plans. */
@@ -489,11 +498,46 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
     byTenant.set(row.tenant_id, list);
   }
 
+  const skusByTenant = new Map<string, ContractBookEntry["skus"]>();
+  try {
+    const skuRows = await db
+      .prepare(
+        `SELECT a.tenant_id, s.id AS sku_id, s.name, s.form_factor, s.tech, s.region, IFNULL(s.active, 1) AS active
+         FROM tenant_sku_assignments a
+         JOIN sim_skus s ON s.id = a.sku_id
+         ORDER BY s.name COLLATE NOCASE`,
+      )
+      .all<{
+        tenant_id: string;
+        sku_id: string;
+        name: string;
+        form_factor: string;
+        tech: string;
+        region: string;
+        active: number;
+      }>();
+    for (const row of skuRows.results ?? []) {
+      const list = skusByTenant.get(row.tenant_id) ?? [];
+      list.push({
+        skuId: row.sku_id,
+        name: row.name,
+        formFactor: row.form_factor,
+        tech: row.tech,
+        region: row.region,
+        active: Boolean(row.active),
+      });
+      skusByTenant.set(row.tenant_id, list);
+    }
+  } catch {
+    // Table may not exist until schema migrate runs.
+  }
+
   return (tenants.results ?? []).map((tenant) => ({
     tenantId: tenant.id,
     tenantName: tenant.name,
     tenantActive: Boolean(tenant.active),
     plans: byTenant.get(tenant.id) ?? [],
+    skus: skusByTenant.get(tenant.id) ?? [],
   }));
 }
 

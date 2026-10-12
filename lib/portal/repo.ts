@@ -3,7 +3,7 @@ import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { runCcMutation } from "@/lib/cc/adapter";
 import { listCcDevicesForCustomer, materializeWarehouseForCcCustomer } from "@/lib/cc/devices";
 import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
-import { getSimSku } from "@/lib/portal/skus";
+import { getSimSku, tenantHasSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import {
   bindTenantCcCustomer,
@@ -481,12 +481,19 @@ export async function createPool(
 
 export async function createOrder(
   tenantId: string,
-  actorEmail: string,
+  actor: { email: string; role: PortalRole },
   input: { skuId: string; quantity: number; logistics: string; destination?: string },
 ): Promise<Order> {
   const sku = await getSimSku(input.skuId);
   if (!sku) throw new Error("Unknown catalogue item.");
   if (!sku.active) throw new Error("This catalogue SKU is deactivated.");
+  // Resellers may only order SKUs bound on their Contract. Super admin sees the full catalogue.
+  if (actor.role !== "super_admin") {
+    const allowed = await tenantHasSku(tenantId, sku.id);
+    if (!allowed) {
+      throw new Error("This catalogue SKU is not on your contract. Ask ATN to bind it first.");
+    }
+  }
   if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
 
   const id = newId("ord");
@@ -509,7 +516,7 @@ export async function createOrder(
     throw new Error(job.error ?? "Control Center rejected the order.");
   }
 
-  await writeAudit(tenantId, actorEmail, "order", `Order ${sku.name} × ${input.quantity} submitted`);
+  await writeAudit(tenantId, actor.email, "order", `Order ${sku.name} × ${input.quantity} submitted`);
   return {
     id,
     skuName: sku.name,
