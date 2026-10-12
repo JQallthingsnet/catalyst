@@ -1,34 +1,38 @@
 "use client";
 
+import { CatalogueSkuMultiSelect } from "@/components/portal/catalogue-sku-multi-select";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 export function BindPlanToResellerForm({
   tenantId,
   plans,
-  unboundSkus,
+  catalogueSkus,
   hasCatalogue,
 }: {
   tenantId: string;
   plans: { id: string; ratePlanNew: string; remarks: string }[];
-  unboundSkus: { id: string; name: string; formFactor: string }[];
+  catalogueSkus: { id: string; name: string; formFactor: string; active?: boolean }[];
   /** Reseller already has at least one catalogue SKU on contract. */
   hasCatalogue: boolean;
 }) {
   const router = useRouter();
-  const [platformPlanId, setPlatformPlanId] = useState(plans[0]?.id ?? "");
+  const [pickedPlanId, setPickedPlanId] = useState("");
+  const unboundSkus = catalogueSkus; // when needsCatalogue, all active options are choosable
   const [selectedSkuIds, setSelectedSkuIds] = useState<string[]>(() =>
     !hasCatalogue && unboundSkus[0] ? [unboundSkus[0].id] : [],
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  const platformPlanId = useMemo(() => {
+    if (plans.some((plan) => plan.id === pickedPlanId)) return pickedPlanId;
+    return plans[0]?.id ?? "";
+  }, [plans, pickedPlanId]);
+
   const needsCatalogue = !hasCatalogue;
-  const canSubmit = useMemo(() => {
-    if (!platformPlanId) return false;
-    if (needsCatalogue && selectedSkuIds.length === 0) return false;
-    return true;
-  }, [platformPlanId, needsCatalogue, selectedSkuIds.length]);
+  const canSubmit =
+    Boolean(platformPlanId) && (!needsCatalogue || selectedSkuIds.length > 0) && !busy;
 
   if (plans.length === 0) {
     return (
@@ -53,13 +57,15 @@ export function BindPlanToResellerForm({
     );
   }
 
-  function toggleSku(id: string) {
-    setSelectedSkuIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-    );
-  }
-
   async function submit() {
+    if (!platformPlanId) {
+      setError("Choose a rate plan.");
+      return;
+    }
+    if (needsCatalogue && selectedSkuIds.length === 0) {
+      setError("Select at least one catalogue SKU.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -96,8 +102,8 @@ export function BindPlanToResellerForm({
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={platformPlanId}
-          onChange={(event) => setPlatformPlanId(event.target.value)}
-          className="rounded-xl border border-line bg-canvas px-2 py-1.5 text-xs"
+          onChange={(event) => setPickedPlanId(event.target.value)}
+          className="min-w-48 rounded-xl border border-line bg-canvas px-2 py-1.5 text-xs"
         >
           {plans.map((plan) => (
             <option key={plan.id} value={plan.id}>
@@ -107,44 +113,25 @@ export function BindPlanToResellerForm({
         </select>
         <button
           type="submit"
-          disabled={busy || !canSubmit}
-          className="rounded-full border border-line px-3 py-1.5 text-xs text-ink hover:border-accent disabled:opacity-40"
+          disabled={!canSubmit}
+          className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-ink disabled:opacity-40"
         >
           {busy ? "Binding…" : needsCatalogue ? "Bind plan + catalogue" : "Add rate plan"}
         </button>
       </div>
 
-      {unboundSkus.length > 0 ? (
-        <fieldset className="space-y-1.5">
-          <legend className="text-xs text-quiet">
-            {needsCatalogue
-              ? "Catalogue SKUs required (select one or more)"
-              : "Also bind catalogue SKUs (optional)"}
-          </legend>
-          <div className="flex flex-wrap gap-2">
-            {unboundSkus.map((sku) => {
-              const checked = selectedSkuIds.includes(sku.id);
-              return (
-                <label
-                  key={sku.id}
-                  className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-xs ${
-                    checked ? "border-accent bg-panel-2 text-ink" : "border-line text-quiet hover:border-accent"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => toggleSku(sku.id)}
-                    className="sr-only"
-                  />
-                  {sku.name}
-                  <span className="text-quiet">{sku.formFactor}</span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
-      ) : null}
+      {needsCatalogue ? (
+        <CatalogueSkuMultiSelect
+          label="Tick catalogue SKUs to bind with this rate plan"
+          options={unboundSkus}
+          selectedIds={selectedSkuIds}
+          onChange={setSelectedSkuIds}
+          disabled={busy}
+          placeholder="Select catalogue SKUs"
+        />
+      ) : (
+        <p className="text-xs text-quiet">Catalogue already on this contract — you can add the rate plan now.</p>
+      )}
 
       {error ? <p className="text-xs text-danger">{error}</p> : null}
     </form>

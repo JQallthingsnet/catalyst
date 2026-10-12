@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { BindPlanToResellerForm } from "@/components/portal/bind-plan-to-reseller-form";
-import { BindSkuToResellerForm } from "@/components/portal/bind-sku-to-reseller-form";
+import { ContractCataloguePicker } from "@/components/portal/contract-catalogue-picker";
 import { ContractRules } from "@/components/portal/contract-rules";
 import { SetDefaultPlanButton } from "@/components/portal/set-default-plan-button";
 import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
-import { UnassignSkuButton } from "@/components/portal/unassign-sku-button";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
 import type { SimSku } from "@/lib/portal/skus";
 
@@ -23,8 +22,8 @@ export function ContractsAdminView({
         <div className="max-w-3xl">
           <h1 className="text-3xl font-semibold">Contract</h1>
           <p className="mt-1 text-sm text-quiet">
-            Per reseller: bind rate plans and one or more catalogue SKUs. A new rate plan must include catalogue
-            products so they can Order SIMs. Map rate plans to a supplier on{" "}
+            Per reseller: bind rate plans and tick catalogue SKUs they may order. A new rate plan needs catalogue
+            products when none are bound yet. Map rate plans to a supplier on{" "}
             <Link href="/dashboard/plans" className="text-accent">
               Plans
             </Link>
@@ -76,13 +75,7 @@ export function ContractsAdminView({
                   ratePlanNew: plan.ccRatePlan,
                   remarks: plan.name,
                 }))}
-              unboundSkus={catalogue
-                .filter((sku) => !entry.skus.some((bound) => bound.skuId === sku.id))
-                .map((sku) => ({
-                  id: sku.id,
-                  name: sku.name,
-                  formFactor: sku.formFactor,
-                }))}
+              catalogue={catalogue}
             />
           ))}
         </div>
@@ -94,24 +87,38 @@ export function ContractsAdminView({
 function ContractResellerCard({
   entry,
   unbound,
-  unboundSkus,
+  catalogue,
 }: {
   entry: ContractBookEntry;
   unbound: { id: string; ratePlanNew: string; remarks: string }[];
-  unboundSkus: { id: string; name: string; formFactor: string }[];
+  catalogue: SimSku[];
 }) {
   const hasCatalogue = entry.skus.length > 0;
+  const catalogueOptions = catalogue.map((sku) => ({
+    id: sku.id,
+    name: sku.name,
+    formFactor: sku.formFactor,
+    active: sku.active,
+  }));
+  const boundIds = entry.skus.map((sku) => sku.skuId);
 
   return (
-    <article className="rounded-card border border-line bg-panel p-5">
+    <article className="max-w-5xl rounded-card border border-line bg-panel p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className={`text-lg font-semibold ${entry.tenantActive ? "text-ink" : "text-quiet"}`}>
             {entry.tenantName}
           </h2>
           {!entry.tenantActive ? <p className="mt-1 text-xs text-danger">Deactivated</p> : null}
-          {entry.plans.length === 0 ? (
-            <p className="mt-1 text-xs text-danger">No rate plans — cannot sell SIMs yet.</p>
+          {entry.plans.length === 0 && hasCatalogue ? (
+            <p className="mt-1 text-xs text-quiet">
+              Catalogue is ready — choose a rate plan below and click <span className="text-ink">Add rate plan</span>.
+            </p>
+          ) : null}
+          {entry.plans.length === 0 && !hasCatalogue ? (
+            <p className="mt-1 text-xs text-danger">
+              Bind a rate plan with at least one catalogue SKU before selling or ordering SIMs.
+            </p>
           ) : null}
           {entry.plans.length > 0 && !hasCatalogue ? (
             <p className="mt-1 text-xs text-danger">Rate plans need catalogue SKUs for Order SIMs.</p>
@@ -159,9 +166,10 @@ function ContractResellerCard({
           {entry.tenantActive ? (
             <div className="mt-3 space-y-2">
               <BindPlanToResellerForm
+                key={`${entry.tenantId}-plans-${unbound.map((p) => p.id).join(",")}-${hasCatalogue ? "cat" : "nocat"}`}
                 tenantId={entry.tenantId}
                 plans={unbound}
-                unboundSkus={unboundSkus}
+                catalogueSkus={catalogueOptions.filter((sku) => sku.active !== false)}
                 hasCatalogue={hasCatalogue}
               />
               <Link href="/dashboard/plans/new?from=contract" className="inline-block text-xs text-accent">
@@ -173,36 +181,28 @@ function ContractResellerCard({
 
         <section>
           <h3 className="text-sm font-medium text-ink">Catalogue (Order SIMs)</h3>
-          <p className="mt-1 text-xs text-quiet">Bind multiple products. Keep at least one while rate plans remain.</p>
-          {entry.skus.length === 0 ? (
-            <p className="mt-2 text-sm text-danger">None bound — reseller cannot order yet.</p>
-          ) : (
-            <ul className="mt-2 flex flex-wrap gap-2">
-              {entry.skus.map((sku) => (
-                <li
-                  key={sku.skuId}
-                  className="inline-flex items-center gap-2 rounded-full border border-line bg-canvas px-3 py-1.5 text-xs"
-                >
-                  <Link href={`/dashboard/catalogue/${sku.skuId}`} className="text-ink hover:text-accent">
-                    {sku.name}
-                  </Link>
-                  <span className="text-quiet">{sku.formFactor}</span>
-                  {!sku.active ? <span className="text-danger">Deactivated</span> : null}
-                  {entry.tenantActive ? (
-                    <UnassignSkuButton tenantId={entry.tenantId} skuId={sku.skuId} skuName={sku.name} />
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <p className="mt-1 text-xs text-quiet">
+            Open the dropdown and tick products. Keep at least one while rate plans remain.
+          </p>
           {entry.tenantActive ? (
             <div className="mt-3 space-y-2">
-              <BindSkuToResellerForm tenantId={entry.tenantId} skus={unboundSkus} />
+              <ContractCataloguePicker
+                tenantId={entry.tenantId}
+                options={catalogueOptions}
+                boundIds={boundIds}
+                hasRatePlans={entry.plans.length > 0}
+              />
               <Link href="/dashboard/catalogue" className="inline-block text-xs text-accent">
                 Manage catalogue
               </Link>
             </div>
-          ) : null}
+          ) : (
+            <p className="mt-2 text-sm text-quiet">
+              {boundIds.length === 0
+                ? "None bound."
+                : `${boundIds.length} catalogue SKU${boundIds.length === 1 ? "" : "s"} bound.`}
+            </p>
+          )}
         </section>
       </div>
     </article>
