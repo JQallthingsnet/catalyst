@@ -12,7 +12,7 @@ export default async function AllocateStockPage() {
     listTenantOptions(),
     listPlatformPlans(),
     listAllTenantPlanIds(),
-    listSimSkus(),
+    listSimSkus({ activeOnly: true }),
     listCcCustomerStockOptions(),
   ]);
   const linksByTenant = new Map<string, { platformPlanId: string; isDefault: boolean }[]>();

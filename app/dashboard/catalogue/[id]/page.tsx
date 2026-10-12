@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DeleteSkuButton } from "@/components/portal/delete-sku-button";
+import { SkuLifecycle } from "@/components/portal/sku-lifecycle";
 import { SkuWizard } from "@/components/portal/sku-wizard";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { getSimSku } from "@/lib/portal/skus";
@@ -17,11 +17,16 @@ export default async function EditSkuPage({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/dashboard/catalogue" className="text-sm text-quiet hover:text-accent">
-          ← Catalogue
-        </Link>
-        <DeleteSkuButton id={sku.id} name={sku.name} />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link href="/dashboard/catalogue" className="text-sm text-quiet hover:text-accent">
+            ← Catalogue
+          </Link>
+          <p className={`mt-3 text-sm ${sku.active ? "text-ok" : "text-danger"}`}>
+            {sku.active ? "Active" : "Deactivated"}
+          </p>
+        </div>
+        <SkuLifecycle skuId={sku.id} name={sku.name} active={sku.active} orderCount={sku.orderCount} />
       </div>
       <div className="mt-4">
         <SkuWizard sku={sku} />

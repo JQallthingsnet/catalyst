@@ -5,7 +5,7 @@ import { listSimSkus } from "@/lib/portal/skus";
 
 export default async function OrderSimsPage() {
   await requirePrivilege("order.create");
-  const skus = await listSimSkus();
+  const skus = await listSimSkus({ activeOnly: true });
   return (
     <div>
       <Link href="/dashboard/sims" className="text-sm text-quiet hover:text-accent">

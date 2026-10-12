@@ -12,8 +12,8 @@ export default async function CataloguePage() {
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Catalogue</h1>
           <p className="mt-2 text-sm text-quiet">
-            SIM products ATN sells. Super admin creates and edits these. Sell stock and Order SIMs use this list — not
-            dummy SKUs.
+            SIM products ATN sells. Create, edit, deactivate, or delete SKUs here. Sell stock and Order SIMs only use
+            active items.
           </p>
         </div>
         <Link
@@ -32,9 +32,16 @@ export default async function CataloguePage() {
           <Link
             key={sku.id}
             href={`/dashboard/catalogue/${sku.id}`}
-            className="rounded-card border border-line bg-panel p-5 hover:border-accent"
+            className={`rounded-card border bg-panel p-5 hover:border-accent ${
+              sku.active ? "border-line" : "border-line opacity-70"
+            }`}
           >
-            <p className="text-lg font-semibold">{sku.name}</p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-lg font-semibold">{sku.name}</p>
+              <span className={`shrink-0 text-xs ${sku.active ? "text-ok" : "text-danger"}`}>
+                {sku.active ? "Active" : "Deactivated"}
+              </span>
+            </div>
             <p className="mt-1 text-sm text-quiet">
               {sku.formFactor} · {sku.tech} · {sku.region}
             </p>
