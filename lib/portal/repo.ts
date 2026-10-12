@@ -486,6 +486,7 @@ export async function createOrder(
 ): Promise<Order> {
   const sku = await getSimSku(input.skuId);
   if (!sku) throw new Error("Unknown catalogue item.");
+  if (!sku.active) throw new Error("This catalogue SKU is deactivated.");
   if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
 
   const id = newId("ord");
@@ -537,6 +538,7 @@ export async function allocateWholesaleStock(
   if (!tenant) throw new Error("Organisation not found.");
   const sku = await getSimSku(input.skuId);
   if (!sku) throw new Error("Unknown catalogue item.");
+  if (!sku.active) throw new Error("Reactivate this catalogue SKU before selling stock.");
   const platformPlan = await loadPlatformPlanRecord(input.platformPlanId);
   if (!platformPlan) throw new Error("Plan not found.");
   if (!platformPlan.active) throw new Error("This ATN plan is deactivated.");

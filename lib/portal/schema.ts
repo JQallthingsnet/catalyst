@@ -84,7 +84,8 @@ const STATEMENTS = [
     tech TEXT NOT NULL,
     region TEXT NOT NULL,
     blurb TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
   )`,
   `CREATE TABLE IF NOT EXISTS sim_rate_plan_changes (
     id TEXT PRIMARY KEY,
@@ -159,6 +160,7 @@ const ALTERS = [
   `ALTER TABLE platform_plans ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE tenant_plan_assignments ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE platform_plans ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
+  `ALTER TABLE sim_skus ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE cc_devices ADD COLUMN supplier TEXT NOT NULL DEFAULT 'Optus'`,
   `ALTER TABLE sim_rate_plan_changes ADD COLUMN push_status TEXT NOT NULL DEFAULT 'pending'`,
   `ALTER TABLE sim_rate_plan_changes ADD COLUMN pushed_at TEXT`,
