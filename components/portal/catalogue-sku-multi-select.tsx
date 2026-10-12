@@ -66,7 +66,7 @@ export function CatalogueSkuMultiSelect({
   }
 
   return (
-    <div ref={rootRef} className="relative w-full max-w-md">
+    <div ref={rootRef} className="relative w-full max-w-lg">
       {label ? <p className="mb-1.5 text-xs text-quiet">{label}</p> : null}
       <button
         type="button"
