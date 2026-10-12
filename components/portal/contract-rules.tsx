@@ -5,8 +5,9 @@ const SUPER_ADMIN_RULES = [
   "Every SIM a reseller assigns to a customer must map to one contracted rate plan.",
   "Sell stock (ATN → reseller warehouse): set Customer on SIMs in Jasper first, Sync into the CC snapshot, then sell stock binds that Customer name to the reseller admin once. Catalyst materializes all matching SIMs into that reseller’s warehouse; later Sync auto-warehouses new SIMs for the same Customer. Only that organisation can see and act on them.",
   "Assign SIMs (reseller → end customer) is separate: operators attach a warehouse ICCID to a portal customer and retail plan. Physical shipping to the end customer is outside Catalyst.",
-  "A reseller with no bound rate plans cannot receive stock. Binding a rate plan requires at least one catalogue SKU (you can bind several) so they can Order SIMs.",
-  "Only bound resellers can see and use a rate plan. Unbind rate plans before removing the last catalogue SKU from the contract.",
+  "Rate plans: only bound resellers can see and use a rate plan. Bind them on Contract before selling stock.",
+  "Catalogue: on Contract, tick which Catalogue SKUs each reseller may Order SIMs for (multiple allowed). Binding a rate plan requires at least one catalogue SKU if none are bound yet.",
+  "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
   "Before activation, a rate-plan change is allowed within contracted plans. Reseller admins or operators can change the rate plan on a SIM before shipping to end customer or activation.",
   "After activation: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
   "Activated rate-plan changes are flagged when the contracted supplier rate-plan code does not match the live code on the supplier snapshot; billing notification until charging is automated.",
@@ -24,7 +25,7 @@ const RESELLER_ADMIN_RULES = [
   "Assign SIMs maps warehouse ICCIDs to your end customers and retail plans. Physical shipping to the end customer is outside Catalyst.",
   "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",
-  "Order SIMs only offers catalogue products ATN bound to your organisation.",
+  "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
   "Before activation, you or an operator may change an ICCID’s rate plan to another plan on this contract (before shipping to the end customer or activation).",
   "After activation: rate-plan changes only until midnight on the 24th (Sydney), and only once per ICCID per month. After the cut-off: “Changes will be effective next month”.",
   "Plan changes is your log book of every ICCID rate-plan change for this organisation, with SIM status.",
@@ -51,6 +52,11 @@ export function ContractRules({ variant }: { variant: "super_admin" | "reseller_
           <Link href="/dashboard/plans" className="text-accent">
             {variant === "super_admin" ? "Supplier mapping on Plans" : "Retail plans"}
           </Link>
+          {variant === "super_admin" ? (
+            <Link href="/dashboard/catalogue" className="text-accent">
+              Catalogue
+            </Link>
+          ) : null}
         </div>
       </div>
       <ul className="mt-4 list-disc space-y-2 pl-5 text-sm leading-6 text-quiet">

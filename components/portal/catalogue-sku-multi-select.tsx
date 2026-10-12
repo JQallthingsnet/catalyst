@@ -16,6 +16,7 @@ export function CatalogueSkuMultiSelect({
   disabled,
   placeholder = "Select catalogue SKUs",
   label,
+  showChips = false,
 }: {
   options: CatalogueSkuOption[];
   selectedIds: string[];
@@ -23,6 +24,8 @@ export function CatalogueSkuMultiSelect({
   disabled?: boolean;
   placeholder?: string;
   label?: string;
+  /** Show selected SKUs as chips under the control. */
+  showChips?: boolean;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -50,7 +53,7 @@ export function CatalogueSkuMultiSelect({
       ? placeholder
       : selected.length === 1
         ? `${selected[0].name} · ${selected[0].formFactor}`
-        : `${selected.length} catalogue SKUs selected`;
+        : `${selected.length} selected`;
 
   function toggle(id: string) {
     if (disabled) return;
@@ -64,7 +67,7 @@ export function CatalogueSkuMultiSelect({
 
   return (
     <div ref={rootRef} className="relative w-full max-w-md">
-      {label ? <p className="mb-1 text-xs text-quiet">{label}</p> : null}
+      {label ? <p className="mb-1.5 text-xs text-quiet">{label}</p> : null}
       <button
         type="button"
         disabled={disabled}
@@ -72,20 +75,46 @@ export function CatalogueSkuMultiSelect({
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-canvas px-3 py-2 text-left text-xs text-ink hover:border-accent disabled:opacity-40"
+        className={`flex w-full items-center justify-between gap-2 rounded-xl border bg-canvas px-3 py-2.5 text-left text-sm hover:border-accent disabled:opacity-40 ${
+          open ? "border-accent" : "border-line"
+        }`}
       >
-        <span className={selected.length === 0 ? "text-quiet" : "text-ink"}>{summary}</span>
+        <span className={selected.length === 0 ? "text-quiet" : "font-medium text-ink"}>{summary}</span>
         <span className="text-quiet" aria-hidden>
           {open ? "▴" : "▾"}
         </span>
       </button>
+
+      {showChips && selected.length > 0 ? (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {selected.map((sku) => (
+            <li
+              key={sku.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-[11px] text-ink"
+            >
+              {sku.name}
+              <span className="text-quiet">{sku.formFactor}</span>
+              {!disabled ? (
+                <button
+                  type="button"
+                  title={`Remove ${sku.name}`}
+                  onClick={() => toggle(sku.id)}
+                  className="text-danger hover:underline"
+                >
+                  ×
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {open ? (
         <ul
           id={listId}
           role="listbox"
           aria-multiselectable
-          className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-line bg-panel py-1 shadow-lg"
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-line bg-panel py-1 shadow-lg"
         >
           {options.map((sku) => {
             const checked = selectedIds.includes(sku.id);
@@ -95,11 +124,15 @@ export function CatalogueSkuMultiSelect({
                   type="button"
                   disabled={disabled || sku.active === false}
                   onClick={() => toggle(sku.id)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-panel-2 disabled:opacity-40"
+                  className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-panel-2 disabled:opacity-40 ${
+                    checked ? "bg-panel-2/60" : ""
+                  }`}
                 >
                   <span
-                    className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-                      checked ? "border-accent bg-accent text-accent-ink" : "border-line text-transparent"
+                    className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[11px] leading-none ${
+                      checked
+                        ? "border-accent bg-accent font-semibold text-accent-ink"
+                        : "border-line bg-canvas text-transparent"
                     }`}
                     aria-hidden
                   >
@@ -107,8 +140,8 @@ export function CatalogueSkuMultiSelect({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="text-ink">{sku.name}</span>
-                    <span className="ml-1 text-quiet">{sku.formFactor}</span>
-                    {sku.active === false ? <span className="ml-1 text-danger">Deactivated</span> : null}
+                    <span className="ml-1.5 text-quiet">{sku.formFactor}</span>
+                    {sku.active === false ? <span className="ml-1.5 text-danger">Deactivated</span> : null}
                   </span>
                 </button>
               </li>

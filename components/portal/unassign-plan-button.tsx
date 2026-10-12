@@ -53,7 +53,7 @@ export function UnassignPlanButton({
           setError("");
           setOpen(true);
         }}
-        className="text-sm text-danger disabled:opacity-40"
+        className="rounded-full border border-danger/40 px-2.5 py-1 text-xs text-danger hover:border-danger disabled:opacity-40"
       >
         Unbind
       </button>

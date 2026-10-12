@@ -103,7 +103,7 @@ function ContractResellerCard({
   const boundIds = entry.skus.map((sku) => sku.skuId);
 
   return (
-    <article className="max-w-5xl rounded-card border border-line bg-panel p-5">
+    <article className="rounded-card border border-line bg-panel p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className={`text-lg font-semibold ${entry.tenantActive ? "text-ink" : "text-quiet"}`}>
@@ -181,9 +181,7 @@ function ContractResellerCard({
 
         <section>
           <h3 className="text-sm font-medium text-ink">Catalogue (Order SIMs)</h3>
-          <p className="mt-1 text-xs text-quiet">
-            Open the dropdown and tick products. Keep at least one while rate plans remain.
-          </p>
+          <p className="mt-1 text-xs text-quiet">Tick to bind. Keep at least one while rate plans remain.</p>
           {entry.tenantActive ? (
             <div className="mt-3 space-y-2">
               <ContractCataloguePicker
