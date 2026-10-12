@@ -27,11 +27,17 @@ const SYNC_ID = "devices";
 const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
-/** Auto poll continues on the next cron; stay under the Worker subrequest cap (~1000). */
-const AUTO_BUDGET_MS = 12 * 60 * 1000;
+/**
+ * Auto poll wall budget — must stay under the 10-minute cron so ticks do not overlap.
+ * Stay under the Worker subrequest cap (~1000).
+ */
+const AUTO_BUDGET_MS = 8 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
-/** ~100 session refreshes/tick when list is quiet (bulk details + usage + session). */
-const JASPER_CALLS_AUTO = 220;
+/**
+ * Auto tick Jasper call cap. Usage+session = 2 calls/SIM when details already known
+ * (~200–220 session refreshes/tick after list). First-time enrich still adds details.
+ */
+const JASPER_CALLS_AUTO = 480;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
  * List-only — do not burn budget on session/usage until the window is complete.
@@ -43,14 +49,18 @@ const CATCHUP_BUDGET_MS = 55_000;
  * After one full list cycle, only spend a few Search pages on incremental changes
  * so most of the budget refreshes In session / usage.
  */
-const AUTO_LIST_PAGES_WHEN_COMPLETE = 8;
+const AUTO_LIST_PAGES_WHEN_COMPLETE = 2;
 /** Manual Sync: refresh details if older than this. */
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
- * Auto poll: once the estate is in D1, do not re-hit every ICCID every few hours.
- * Never-enriched (details_polled_at NULL) are still first in line.
+ * Auto poll: full Get Device / bulk details this often. Never-enriched stay first.
  */
 const AUTO_DETAILS_STALE_MS = 24 * 60 * 60 * 1000;
+/**
+ * Auto poll: refresh usage + In session this often without re-fetching full details.
+ * At ~200 SIMs/tick every 10 minutes, ~10k estate cycles in ~8–9 hours.
+ */
+const AUTO_SESSION_STALE_MS = 2 * 60 * 60 * 1000;
 /** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 
@@ -1281,42 +1291,113 @@ async function persistDeviceEnrichment(
   });
 }
 
+/** Usage + In session only — does not advance details_polled_at. */
+async function persistSessionRefresh(
+  iccid: string,
+  usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
+  session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
+): Promise<void> {
+  const now = isoNow();
+  const status = usage?.status ?? "";
+  const ratePlan = usage?.ratePlan ?? null;
+  const communicationPlan = usage?.communicationPlan ?? null;
+  const imsi = textOrNull(usage?.imsi);
+  const msisdn = textOrNull(usage?.msisdn);
+  const usageMb = bytesToMb(usage?.ctdDataUsage);
+  const inSession = session ? (sessionActive(session.dateSessionStarted, session.dateSessionEnded) ? 1 : 0) : null;
+
+  await getDB()
+    .prepare(
+      `UPDATE cc_devices
+       SET status = CASE WHEN ? != '' THEN ? ELSE status END,
+           rate_plan = COALESCE(?, rate_plan),
+           communication_plan = COALESCE(?, communication_plan),
+           imsi = COALESCE(?, imsi),
+           msisdn = COALESCE(?, msisdn),
+           ctd_usage_mb = COALESCE(?, ctd_usage_mb),
+           in_session = COALESCE(?, in_session),
+           polled_at = ?
+       WHERE iccid = ?`,
+    )
+    .bind(status, status, ratePlan, communicationPlan, imsi, msisdn, usageMb, inSession, now, iccid)
+    .run();
+
+  if (status) {
+    await overlaySim(iccid, { status, ratePlan, polledAt: now, imsi, msisdn, usageMb });
+  }
+}
+
 async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
-  const staleMs = input.unlimited ? AUTO_DETAILS_STALE_MS : DETAILS_STALE_MS;
-  const staleBefore = new Date(Date.now() - staleMs).toISOString();
+  const detailsStaleMs = input.unlimited ? AUTO_DETAILS_STALE_MS : DETAILS_STALE_MS;
+  const detailsStaleBefore = new Date(Date.now() - detailsStaleMs).toISOString();
+  const sessionStaleBefore = new Date(Date.now() - AUTO_SESSION_STALE_MS).toISOString();
   const batch = input.unlimited
     ? JASPER_BULK_DEVICE_LIMIT
     : Math.min(MANUAL_DETAILS_PER_RUN, JASPER_BULK_DEVICE_LIMIT);
   let enriched = 0;
   while (Date.now() < input.deadline) {
-    // Bulk details = 1 call; usage+session still 2 each — reserve budget for a full batch when possible.
-    const need = bulkDetailsAvailable === false ? batch * 3 : 1 + batch * 2;
-    if (!jasperHasBudget(Math.min(need, 3))) return enriched;
+    if (!jasperHasBudget(2)) return enriched;
 
-    const rows = await getDB()
-      .prepare(
-        `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NULL OR details_polled_at < ?
-         ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
-         LIMIT ?`,
-      )
-      .bind(staleBefore, batch)
-      .all<{ iccid: string }>();
+    const rows = input.unlimited
+      ? await getDB()
+          .prepare(
+            `SELECT iccid, details_polled_at FROM cc_devices
+             WHERE details_polled_at IS NULL
+                OR details_polled_at < ?
+                OR polled_at IS NULL
+                OR polled_at < ?
+             ORDER BY details_polled_at IS NULL DESC,
+                      CASE WHEN details_polled_at IS NULL OR details_polled_at < ? THEN 0 ELSE 1 END,
+                      COALESCE(polled_at, '') ASC
+             LIMIT ?`,
+          )
+          .bind(detailsStaleBefore, sessionStaleBefore, detailsStaleBefore, batch)
+          .all<{ iccid: string; details_polled_at: string | null }>()
+      : await getDB()
+          .prepare(
+            `SELECT iccid, details_polled_at FROM cc_devices
+             WHERE details_polled_at IS NULL OR details_polled_at < ?
+             ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
+             LIMIT ?`,
+          )
+          .bind(detailsStaleBefore, batch)
+          .all<{ iccid: string; details_polled_at: string | null }>();
+
     const devices = rows.results ?? [];
     if (devices.length === 0) break;
 
-    const iccids = devices.map((row) => row.iccid);
-    const detailsMap = await fetchDeviceDetailsBatch(iccids);
+    const needDetails = devices.filter(
+      (row) => !row.details_polled_at || row.details_polled_at < detailsStaleBefore,
+    );
+    const sessionOnly = input.unlimited
+      ? devices.filter((row) => row.details_polled_at && row.details_polled_at >= detailsStaleBefore)
+      : [];
 
-    for (const iccid of iccids) {
+    const detailsMap =
+      needDetails.length > 0
+        ? await fetchDeviceDetailsBatch(needDetails.map((row) => row.iccid))
+        : new Map<string, JasperDevice>();
+
+    for (const row of needDetails) {
       if (Date.now() >= input.deadline) return enriched;
       if (!jasperHasBudget(2)) return enriched;
-      const usage = await fetchJasperCtdUsage(iccid);
-      const session = await fetchJasperSessionInfo(iccid);
-      await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, session);
+      const usage = await fetchJasperCtdUsage(row.iccid);
+      const session = await fetchJasperSessionInfo(row.iccid);
+      await persistDeviceEnrichment(row.iccid, detailsMap.get(row.iccid) ?? null, usage, session);
       enriched += 1;
       if (enriched % 10 === 0) await heartbeatLock();
     }
+
+    for (const row of sessionOnly) {
+      if (Date.now() >= input.deadline) return enriched;
+      if (!jasperHasBudget(2)) return enriched;
+      const usage = await fetchJasperCtdUsage(row.iccid);
+      const session = await fetchJasperSessionInfo(row.iccid);
+      await persistSessionRefresh(row.iccid, usage, session);
+      enriched += 1;
+      if (enriched % 10 === 0) await heartbeatLock();
+    }
+
     if (!input.unlimited) break;
   }
   return enriched;
