@@ -1,20 +1,42 @@
 import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
-import { createSimSku, deleteSimSku, setSimSkuActive, updateSimSku } from "@/lib/portal/skus";
+import {
+  assignSkuToTenant,
+  createSimSku,
+  deleteSimSku,
+  setSimSkuActive,
+  unassignSkuFromTenant,
+  updateSimSku,
+} from "@/lib/portal/skus";
 
 export async function POST(request: Request) {
   const ctx = await requirePortalApi();
   if (isResponse(ctx)) return ctx;
-  const denied = denyUnless(ctx, "platform.catalogue");
-  if (denied) return denied;
   try {
     const body = (await request.json()) as {
+      action?: string;
+      tenantId?: string;
+      skuId?: string;
       name?: string;
       formFactor?: string;
       tech?: string;
       region?: string;
       blurb?: string;
     };
+
+    if (body.action === "assign" || body.action === "unassign") {
+      const denied = denyUnless(ctx, "platform.plan");
+      if (denied) return denied;
+      if (!body.tenantId || !body.skuId) {
+        return NextResponse.json({ error: "tenantId and skuId are required." }, { status: 400 });
+      }
+      if (body.action === "assign") await assignSkuToTenant(body.tenantId, body.skuId);
+      else await unassignSkuFromTenant(body.tenantId, body.skuId);
+      return NextResponse.json({ success: true });
+    }
+
+    const denied = denyUnless(ctx, "platform.catalogue");
+    if (denied) return denied;
     const sku = await createSimSku(body);
     return NextResponse.json({ success: true, sku });
   } catch (err) {

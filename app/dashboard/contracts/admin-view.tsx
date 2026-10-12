@@ -1,17 +1,22 @@
 import Link from "next/link";
 import { BindPlanToResellerForm } from "@/components/portal/bind-plan-to-reseller-form";
+import { BindSkuToResellerForm } from "@/components/portal/bind-sku-to-reseller-form";
 import { ContractRules } from "@/components/portal/contract-rules";
 import { SetDefaultPlanButton } from "@/components/portal/set-default-plan-button";
 import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
+import { UnassignSkuButton } from "@/components/portal/unassign-sku-button";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
+import type { SimSku } from "@/lib/portal/skus";
 import { Fragment } from "react";
 
 export function ContractsAdminView({
   book,
   plans,
+  catalogue,
 }: {
   book: ContractBookEntry[];
   plans: PlatformPlan[];
+  catalogue: SimSku[];
 }) {
   return (
     <div>
@@ -19,8 +24,8 @@ export function ContractsAdminView({
         <div className="max-w-3xl">
           <h1 className="text-3xl font-semibold">Contract</h1>
           <p className="mt-1 text-sm text-quiet">
-            Agreements ATN has signed with each reseller. Bind rate plans here before you sell stock — only bound
-            resellers can see and use them. Map each line to a supplier on{" "}
+            Agreements ATN has signed with each reseller. Bind rate plans and catalogue SKUs here before you sell stock
+            or they Order SIMs — only bound items show for that organisation. Map each rate plan to a supplier on{" "}
             <Link href="/dashboard/plans" className="text-accent">
               Plans
             </Link>
@@ -35,10 +40,16 @@ export function ContractsAdminView({
             Add reseller
           </Link>
           <Link
+            href="/dashboard/catalogue"
+            className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent"
+          >
+            Catalogue
+          </Link>
+          <Link
             href="/dashboard/plans/new?from=contract"
             className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
           >
-            Add rate plan
+            Create Rate Plan
           </Link>
         </div>
       </div>
@@ -65,7 +76,7 @@ export function ContractsAdminView({
                   <Link href="/dashboard/admin" className="text-accent">
                     Admin
                   </Link>
-                  , then add contracted rate plans.
+                  , then add contracted rate plans and catalogue SKUs.
                 </td>
               </tr>
             ) : null}
@@ -80,6 +91,13 @@ export function ContractsAdminView({
                     ratePlanNew: plan.ccRatePlan,
                     remarks: plan.name,
                   }))}
+                unboundSkus={catalogue
+                  .filter((sku) => !entry.skus.some((bound) => bound.skuId === sku.id))
+                  .map((sku) => ({
+                    id: sku.id,
+                    name: sku.name,
+                    formFactor: sku.formFactor,
+                  }))}
               />
             ))}
           </tbody>
@@ -92,9 +110,11 @@ export function ContractsAdminView({
 function ContractResellerBlock({
   entry,
   unbound,
+  unboundSkus,
 }: {
   entry: ContractBookEntry;
   unbound: { id: string; ratePlanNew: string; remarks: string }[];
+  unboundSkus: { id: string; name: string; formFactor: string }[];
 }) {
   const bodyRows = Math.max(entry.plans.length, 1);
 
@@ -102,7 +122,7 @@ function ContractResellerBlock({
     <Fragment>
       {entry.plans.length === 0 ? (
         <tr className="border-t border-line align-top">
-          <td className="px-4 py-3" rowSpan={2}>
+          <td className="px-4 py-3" rowSpan={3}>
             <p className={entry.tenantActive ? "font-medium text-ink" : "font-medium text-quiet"}>{entry.tenantName}</p>
             {!entry.tenantActive ? <p className="text-xs text-danger">Deactivated</p> : null}
             <p className="mt-1 text-xs text-danger">No rate plans — cannot sell SIMs yet.</p>
@@ -116,7 +136,7 @@ function ContractResellerBlock({
         entry.plans.map((plan, index) => (
           <tr key={plan.platformPlanId} className="border-t border-line align-top">
             {index === 0 ? (
-              <td className="px-4 py-3" rowSpan={bodyRows + 1}>
+              <td className="px-4 py-3" rowSpan={bodyRows + 2}>
                 <p className={entry.tenantActive ? "font-medium text-ink" : "font-medium text-quiet"}>
                   {entry.tenantName}
                 </p>
@@ -152,11 +172,50 @@ function ContractResellerBlock({
       <tr className="border-t border-line/40 bg-canvas/30">
         <td className="px-4 py-3" colSpan={5}>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xs text-quiet">Possibility to add more</span>
+            <span className="text-xs text-quiet">Add rate plan</span>
             {entry.tenantActive ? <BindPlanToResellerForm tenantId={entry.tenantId} plans={unbound} /> : null}
             <Link href="/dashboard/plans/new?from=contract" className="text-xs text-accent">
               Create new rate plan
             </Link>
+          </div>
+        </td>
+      </tr>
+      <tr className="border-t border-line/40 bg-canvas/20">
+        <td className="px-4 py-3" colSpan={5}>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-ink">Catalogue (Order SIMs)</span>
+              {entry.skus.length === 0 ? (
+                <span className="text-xs text-danger">None bound — reseller cannot order yet.</span>
+              ) : null}
+            </div>
+            {entry.skus.length > 0 ? (
+              <ul className="flex flex-wrap gap-2">
+                {entry.skus.map((sku) => (
+                  <li
+                    key={sku.skuId}
+                    className="inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1 text-xs"
+                  >
+                    <Link href={`/dashboard/catalogue/${sku.skuId}`} className="text-ink hover:text-accent">
+                      {sku.name}
+                    </Link>
+                    <span className="text-quiet">{sku.formFactor}</span>
+                    {!sku.active ? <span className="text-danger">Deactivated</span> : null}
+                    {entry.tenantActive ? (
+                      <UnassignSkuButton tenantId={entry.tenantId} skuId={sku.skuId} skuName={sku.name} />
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              {entry.tenantActive ? (
+                <BindSkuToResellerForm tenantId={entry.tenantId} skus={unboundSkus} />
+              ) : null}
+              <Link href="/dashboard/catalogue" className="text-xs text-accent">
+                Manage catalogue
+              </Link>
+            </div>
           </div>
         </td>
       </tr>

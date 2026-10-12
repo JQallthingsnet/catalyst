@@ -14,7 +14,7 @@ export async function POST(request: Request) {
       logistics?: string;
       destination?: string;
     };
-    const order = await createOrder(ctx.tenantId, ctx.email, {
+    const order = await createOrder(ctx.tenantId, ctx, {
       skuId: body.skuId ?? "",
       quantity: Number(body.quantity),
       logistics: body.logistics?.trim() || "Warehouse AU",
