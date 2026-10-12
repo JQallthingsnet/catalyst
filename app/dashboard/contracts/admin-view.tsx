@@ -7,7 +7,6 @@ import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
 import { UnassignSkuButton } from "@/components/portal/unassign-sku-button";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
 import type { SimSku } from "@/lib/portal/skus";
-import { Fragment } from "react";
 
 export function ContractsAdminView({
   book,
@@ -24,8 +23,8 @@ export function ContractsAdminView({
         <div className="max-w-3xl">
           <h1 className="text-3xl font-semibold">Contract</h1>
           <p className="mt-1 text-sm text-quiet">
-            Agreements ATN has signed with each reseller. Bind rate plans and catalogue SKUs here before you sell stock
-            or they Order SIMs — only bound items show for that organisation. Map each rate plan to a supplier on{" "}
+            Per reseller: bind rate plans and one or more catalogue SKUs. A new rate plan must include catalogue
+            products so they can Order SIMs. Map rate plans to a supplier on{" "}
             <Link href="/dashboard/plans" className="text-accent">
               Plans
             </Link>
@@ -56,58 +55,43 @@ export function ContractsAdminView({
 
       <ContractRules variant="super_admin" />
 
-      <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
-        <table className="w-full min-w-190 text-left text-sm">
-          <thead className="border-b border-line text-quiet">
-            <tr>
-              <th className="px-4 py-3 font-medium">Reseller</th>
-              <th className="px-4 py-3 font-medium">Rate plan</th>
-              <th className="px-4 py-3 font-medium">Remarks</th>
-              <th className="px-4 py-3 font-medium">Default</th>
-              <th className="px-4 py-3 font-medium">SIMs</th>
-              <th className="px-4 py-3 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {book.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-quiet">
-                  No reseller organisations yet. Create one from{" "}
-                  <Link href="/dashboard/admin" className="text-accent">
-                    Admin
-                  </Link>
-                  , then add contracted rate plans and catalogue SKUs.
-                </td>
-              </tr>
-            ) : null}
-            {book.map((entry) => (
-              <ContractResellerBlock
-                key={entry.tenantId}
-                entry={entry}
-                unbound={plans
-                  .filter((plan) => !entry.plans.some((bound) => bound.platformPlanId === plan.id))
-                  .map((plan) => ({
-                    id: plan.id,
-                    ratePlanNew: plan.ccRatePlan,
-                    remarks: plan.name,
-                  }))}
-                unboundSkus={catalogue
-                  .filter((sku) => !entry.skus.some((bound) => bound.skuId === sku.id))
-                  .map((sku) => ({
-                    id: sku.id,
-                    name: sku.name,
-                    formFactor: sku.formFactor,
-                  }))}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {book.length === 0 ? (
+        <p className="mt-6 text-sm text-quiet">
+          No reseller organisations yet. Create one from{" "}
+          <Link href="/dashboard/admin" className="text-accent">
+            Admin
+          </Link>
+          .
+        </p>
+      ) : (
+        <div className="mt-6 space-y-4">
+          {book.map((entry) => (
+            <ContractResellerCard
+              key={entry.tenantId}
+              entry={entry}
+              unbound={plans
+                .filter((plan) => !entry.plans.some((bound) => bound.platformPlanId === plan.id))
+                .map((plan) => ({
+                  id: plan.id,
+                  ratePlanNew: plan.ccRatePlan,
+                  remarks: plan.name,
+                }))}
+              unboundSkus={catalogue
+                .filter((sku) => !entry.skus.some((bound) => bound.skuId === sku.id))
+                .map((sku) => ({
+                  id: sku.id,
+                  name: sku.name,
+                  formFactor: sku.formFactor,
+                }))}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function ContractResellerBlock({
+function ContractResellerCard({
   entry,
   unbound,
   unboundSkus,
@@ -116,109 +100,111 @@ function ContractResellerBlock({
   unbound: { id: string; ratePlanNew: string; remarks: string }[];
   unboundSkus: { id: string; name: string; formFactor: string }[];
 }) {
-  const bodyRows = Math.max(entry.plans.length, 1);
+  const hasCatalogue = entry.skus.length > 0;
 
   return (
-    <Fragment>
-      {entry.plans.length === 0 ? (
-        <tr className="border-t border-line align-top">
-          <td className="px-4 py-3" rowSpan={3}>
-            <p className={entry.tenantActive ? "font-medium text-ink" : "font-medium text-quiet"}>{entry.tenantName}</p>
-            {!entry.tenantActive ? <p className="text-xs text-danger">Deactivated</p> : null}
+    <article className="rounded-card border border-line bg-panel p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className={`text-lg font-semibold ${entry.tenantActive ? "text-ink" : "text-quiet"}`}>
+            {entry.tenantName}
+          </h2>
+          {!entry.tenantActive ? <p className="mt-1 text-xs text-danger">Deactivated</p> : null}
+          {entry.plans.length === 0 ? (
             <p className="mt-1 text-xs text-danger">No rate plans — cannot sell SIMs yet.</p>
-          </td>
-          <td className="px-4 py-3 text-quiet" colSpan={4}>
-            —
-          </td>
-          <td className="px-4 py-3" />
-        </tr>
-      ) : (
-        entry.plans.map((plan, index) => (
-          <tr key={plan.platformPlanId} className="border-t border-line align-top">
-            {index === 0 ? (
-              <td className="px-4 py-3" rowSpan={bodyRows + 2}>
-                <p className={entry.tenantActive ? "font-medium text-ink" : "font-medium text-quiet"}>
-                  {entry.tenantName}
-                </p>
-                {!entry.tenantActive ? <p className="text-xs text-danger">Deactivated</p> : null}
-              </td>
-            ) : null}
-            <td className="px-4 py-3">
-              <Link href={`/dashboard/plans/${plan.platformPlanId}`} className="font-mono text-accent">
-                {plan.ratePlanNew}
-              </Link>
-              {!plan.active ? <span className="ml-2 text-xs text-danger">Deactivated</span> : null}
-            </td>
-            <td className="px-4 py-3 text-quiet">{plan.remarks}</td>
-            <td className="px-4 py-3">
-              <SetDefaultPlanButton
-                tenantId={entry.tenantId}
-                platformPlanId={plan.platformPlanId}
-                isDefault={plan.isDefault}
-              />
-            </td>
-            <td className="px-4 py-3">{plan.simCount}</td>
-            <td className="px-4 py-3 text-right">
-              <UnassignPlanButton
-                platformPlanId={plan.platformPlanId}
-                tenantId={entry.tenantId}
-                tenantName={entry.tenantName}
-                simCount={plan.simCount}
-              />
-            </td>
-          </tr>
-        ))
-      )}
-      <tr className="border-t border-line/40 bg-canvas/30">
-        <td className="px-4 py-3" colSpan={5}>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xs text-quiet">Add rate plan</span>
-            {entry.tenantActive ? <BindPlanToResellerForm tenantId={entry.tenantId} plans={unbound} /> : null}
-            <Link href="/dashboard/plans/new?from=contract" className="text-xs text-accent">
-              Create new rate plan
-            </Link>
-          </div>
-        </td>
-      </tr>
-      <tr className="border-t border-line/40 bg-canvas/20">
-        <td className="px-4 py-3" colSpan={5}>
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-ink">Catalogue (Order SIMs)</span>
-              {entry.skus.length === 0 ? (
-                <span className="text-xs text-danger">None bound — reseller cannot order yet.</span>
-              ) : null}
-            </div>
-            {entry.skus.length > 0 ? (
-              <ul className="flex flex-wrap gap-2">
-                {entry.skus.map((sku) => (
-                  <li
-                    key={sku.skuId}
-                    className="inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1 text-xs"
-                  >
-                    <Link href={`/dashboard/catalogue/${sku.skuId}`} className="text-ink hover:text-accent">
-                      {sku.name}
+          ) : null}
+          {entry.plans.length > 0 && !hasCatalogue ? (
+            <p className="mt-1 text-xs text-danger">Rate plans need catalogue SKUs for Order SIMs.</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-6 lg:grid-cols-2">
+        <section>
+          <h3 className="text-sm font-medium text-ink">Rate plans</h3>
+          {entry.plans.length === 0 ? (
+            <p className="mt-2 text-sm text-quiet">None bound yet.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-line rounded-xl border border-line">
+              {entry.plans.map((plan) => (
+                <li key={plan.platformPlanId} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/dashboard/plans/${plan.platformPlanId}`} className="font-mono text-accent">
+                      {plan.ratePlanNew}
                     </Link>
-                    <span className="text-quiet">{sku.formFactor}</span>
-                    {!sku.active ? <span className="text-danger">Deactivated</span> : null}
-                    {entry.tenantActive ? (
-                      <UnassignSkuButton tenantId={entry.tenantId} skuId={sku.skuId} skuName={sku.name} />
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-3">
-              {entry.tenantActive ? (
-                <BindSkuToResellerForm tenantId={entry.tenantId} skus={unboundSkus} />
-              ) : null}
-              <Link href="/dashboard/catalogue" className="text-xs text-accent">
+                    <span className="ml-2 text-quiet">{plan.remarks}</span>
+                    {!plan.active ? <span className="ml-2 text-xs text-danger">Deactivated</span> : null}
+                    <p className="mt-0.5 text-xs text-quiet">
+                      {plan.simCount} SIM{plan.simCount === 1 ? "" : "s"}
+                      {plan.isDefault ? " · default" : ""}
+                    </p>
+                  </div>
+                  <SetDefaultPlanButton
+                    tenantId={entry.tenantId}
+                    platformPlanId={plan.platformPlanId}
+                    isDefault={plan.isDefault}
+                  />
+                  {entry.tenantActive ? (
+                    <UnassignPlanButton
+                      platformPlanId={plan.platformPlanId}
+                      tenantId={entry.tenantId}
+                      tenantName={entry.tenantName}
+                      simCount={plan.simCount}
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {entry.tenantActive ? (
+            <div className="mt-3 space-y-2">
+              <BindPlanToResellerForm
+                tenantId={entry.tenantId}
+                plans={unbound}
+                unboundSkus={unboundSkus}
+                hasCatalogue={hasCatalogue}
+              />
+              <Link href="/dashboard/plans/new?from=contract" className="inline-block text-xs text-accent">
+                Create Rate Plan
+              </Link>
+            </div>
+          ) : null}
+        </section>
+
+        <section>
+          <h3 className="text-sm font-medium text-ink">Catalogue (Order SIMs)</h3>
+          <p className="mt-1 text-xs text-quiet">Bind multiple products. Keep at least one while rate plans remain.</p>
+          {entry.skus.length === 0 ? (
+            <p className="mt-2 text-sm text-danger">None bound — reseller cannot order yet.</p>
+          ) : (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {entry.skus.map((sku) => (
+                <li
+                  key={sku.skuId}
+                  className="inline-flex items-center gap-2 rounded-full border border-line bg-canvas px-3 py-1.5 text-xs"
+                >
+                  <Link href={`/dashboard/catalogue/${sku.skuId}`} className="text-ink hover:text-accent">
+                    {sku.name}
+                  </Link>
+                  <span className="text-quiet">{sku.formFactor}</span>
+                  {!sku.active ? <span className="text-danger">Deactivated</span> : null}
+                  {entry.tenantActive ? (
+                    <UnassignSkuButton tenantId={entry.tenantId} skuId={sku.skuId} skuName={sku.name} />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {entry.tenantActive ? (
+            <div className="mt-3 space-y-2">
+              <BindSkuToResellerForm tenantId={entry.tenantId} skus={unboundSkus} />
+              <Link href="/dashboard/catalogue" className="inline-block text-xs text-accent">
                 Manage catalogue
               </Link>
             </div>
-          </div>
-        </td>
-      </tr>
-    </Fragment>
+          ) : null}
+        </section>
+      </div>
+    </article>
   );
 }

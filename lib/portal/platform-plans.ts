@@ -1,6 +1,7 @@
 import { getDB } from "@/lib/env";
 import { newId } from "@/lib/portal/ids";
 import { DEFAULT_PLAN_SUPPLIER, isListedPlanSupplier, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
+import { assignSkuToTenant, listResellerSkus } from "@/lib/portal/skus";
 import { loadTenant } from "@/lib/portal/tenant";
 
 export { PLAN_SUPPLIERS, type PlanSupplier } from "@/lib/portal/plan-suppliers";
@@ -279,12 +280,25 @@ export async function assignPlatformPlanToTenant(
   tenantId: string,
   platformPlanId: string,
   homeTenantId: string,
+  skuIds?: string[],
 ): Promise<void> {
   const tenant = await assertResellerTenant(tenantId, homeTenantId);
   const plan = await getPlatformPlan(platformPlanId);
   if (!plan) throw new Error("Plan not found.");
   if (!plan.active) throw new Error("Reactivate this plan before assigning contracts.");
+
+  const existingSkus = await listResellerSkus(tenant.id);
+  const extraSkuIds = [...new Set((skuIds ?? []).map((id) => id.trim()).filter(Boolean))];
+  if (existingSkus.length === 0 && extraSkuIds.length === 0) {
+    throw new Error(
+      "Bind at least one catalogue SKU with this rate plan — the reseller needs products for Order SIMs.",
+    );
+  }
+
   await bindPlanToReseller(getDB(), actorEmail, tenant.id, plan.id, plan.name, new Date().toISOString());
+  for (const skuId of extraSkuIds) {
+    await assignSkuToTenant(tenant.id, skuId);
+  }
 }
 
 export async function unassignPlatformPlanFromTenant(

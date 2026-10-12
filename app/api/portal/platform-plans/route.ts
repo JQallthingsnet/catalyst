@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       resellerIds?: string[];
       tenantId?: string;
       platformPlanId?: string;
+      skuIds?: string[];
       action?: string;
     };
     if (body.action === "unassign" && body.tenantId && body.platformPlanId) {
@@ -34,7 +35,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
     if (body.tenantId && body.platformPlanId) {
-      await assignPlatformPlanToTenant(ctx.email, body.tenantId, body.platformPlanId, ctx.homeTenantId);
+      await assignPlatformPlanToTenant(
+        ctx.email,
+        body.tenantId,
+        body.platformPlanId,
+        ctx.homeTenantId,
+        body.skuIds,
+      );
       return NextResponse.json({ success: true });
     }
     const plan = await createPlatformPlan(

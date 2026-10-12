@@ -327,6 +327,17 @@ export async function assignSkuToTenant(tenantId: string, skuId: string): Promis
 }
 
 export async function unassignSkuFromTenant(tenantId: string, skuId: string): Promise<void> {
+  const bound = await listResellerSkus(tenantId);
+  const plansLeft = await getDB()
+    .prepare(`SELECT COUNT(*) AS c FROM tenant_plan_assignments WHERE tenant_id = ?`)
+    .bind(tenantId)
+    .first<{ c: number }>();
+  const removingLast = bound.length <= 1 && bound.some((row) => row.skuId === skuId);
+  if (removingLast && (plansLeft?.c ?? 0) > 0) {
+    throw new Error(
+      "Unbind rate plans first, or keep at least one catalogue SKU while rate plans are on the contract.",
+    );
+  }
   await getDB()
     .prepare(`DELETE FROM tenant_sku_assignments WHERE tenant_id = ? AND sku_id = ?`)
     .bind(tenantId, skuId)
