@@ -35,9 +35,9 @@ const AUTO_BUDGET_MS = 8 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
  * Auto tick Jasper call cap. Usage+session = 2 calls/SIM when details already known
- * (~200–220 session refreshes/tick after list). First-time enrich still adds details.
+ * (~250–280 session refreshes/tick after list + capped details).
  */
-const JASPER_CALLS_AUTO = 480;
+const JASPER_CALLS_AUTO = 600;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
  * List-only — do not burn budget on session/usage until the window is complete.
@@ -57,10 +57,15 @@ const DETAILS_STALE_MS = 15 * 60 * 1000;
  */
 const AUTO_DETAILS_STALE_MS = 24 * 60 * 60 * 1000;
 /**
- * Auto poll: refresh usage + In session this often without re-fetching full details.
- * At ~200 SIMs/tick every 10 minutes, ~10k estate cycles in ~8–9 hours.
+ * Per auto tick, cap full details refreshes so a daily details wave cannot starve
+ * the oldest session/usage queue (which is what keeps In session honest).
  */
-const AUTO_SESSION_STALE_MS = 2 * 60 * 60 * 1000;
+const AUTO_DETAILS_PER_TICK = 40;
+/**
+ * Auto poll: refresh usage (Cycle to date MB) + In session at least this often.
+ * Once/day is the product bar; work oldest `polled_at` first so >48h drains first.
+ */
+const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
 /** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 
@@ -1254,7 +1259,12 @@ async function persistDeviceEnrichment(
   const imsi = textOrNull(details?.imsi ?? usage?.imsi);
   const msisdn = textOrNull(details?.msisdn ?? usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
-  const inSession = session ? (sessionActive(session.dateSessionStarted, session.dateSessionEnded) ? 1 : 0) : null;
+  // null sessionInfo (404) ⇒ not in session; do not leave a sticky previous Yes.
+  const inSession = session
+    ? sessionActive(session.dateSessionStarted, session.dateSessionEnded)
+      ? 1
+      : 0
+    : 0;
   const customFields = details ? packCustomFields(details) : null;
   const detailsJson = details ? JSON.stringify(details) : null;
 
@@ -1270,7 +1280,7 @@ async function persistDeviceEnrichment(
            customer = COALESCE(?, customer),
            end_consumer_id = COALESCE(?, end_consumer_id),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
-           in_session = COALESCE(?, in_session),
+           in_session = ?,
            date_added = COALESCE(?, date_added),
            date_activated = COALESCE(?, date_activated),
            date_updated = COALESCE(?, date_updated),
@@ -1357,7 +1367,11 @@ async function persistSessionRefresh(
   const imsi = textOrNull(usage?.imsi);
   const msisdn = textOrNull(usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
-  const inSession = session ? (sessionActive(session.dateSessionStarted, session.dateSessionEnded) ? 1 : 0) : null;
+  const inSession = session
+    ? sessionActive(session.dateSessionStarted, session.dateSessionEnded)
+      ? 1
+      : 0
+    : 0;
 
   await getDB()
     .prepare(
@@ -1368,7 +1382,7 @@ async function persistSessionRefresh(
            imsi = COALESCE(?, imsi),
            msisdn = COALESCE(?, msisdn),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
-           in_session = COALESCE(?, in_session),
+           in_session = ?,
            polled_at = ?
        WHERE iccid = ?`,
     )
@@ -1380,79 +1394,129 @@ async function persistSessionRefresh(
   }
 }
 
+async function enrichFullDetailsBatch(
+  iccids: string[],
+  input: { deadline: number; done: Set<string> },
+): Promise<number> {
+  const pending = iccids.filter((iccid) => !input.done.has(iccid));
+  if (pending.length === 0) return 0;
+  let enriched = 0;
+  const detailsMap = await fetchDeviceDetailsBatch(pending);
+  for (const iccid of pending) {
+    if (Date.now() >= input.deadline) return enriched;
+    if (!jasperHasBudget(2)) return enriched;
+    const usage = await fetchJasperCtdUsage(iccid);
+    const session = await fetchJasperSessionInfo(iccid);
+    await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, session);
+    input.done.add(iccid);
+    enriched += 1;
+    if (enriched % 10 === 0) await heartbeatLock();
+  }
+  return enriched;
+}
+
+async function enrichSessionOnlyBatch(
+  iccids: string[],
+  input: { deadline: number; done: Set<string> },
+): Promise<number> {
+  let enriched = 0;
+  for (const iccid of iccids) {
+    if (input.done.has(iccid)) continue;
+    if (Date.now() >= input.deadline) return enriched;
+    if (!jasperHasBudget(2)) return enriched;
+    const usage = await fetchJasperCtdUsage(iccid);
+    const session = await fetchJasperSessionInfo(iccid);
+    await persistSessionRefresh(iccid, usage, session);
+    input.done.add(iccid);
+    enriched += 1;
+    if (enriched % 10 === 0) await heartbeatLock();
+  }
+  return enriched;
+}
+
 async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
   const detailsStaleMs = input.unlimited ? AUTO_DETAILS_STALE_MS : DETAILS_STALE_MS;
   const detailsStaleBefore = new Date(Date.now() - detailsStaleMs).toISOString();
   const sessionStaleBefore = new Date(Date.now() - AUTO_SESSION_STALE_MS).toISOString();
-  const batch = input.unlimited
-    ? JASPER_BULK_DEVICE_LIMIT
-    : Math.min(MANUAL_DETAILS_PER_RUN, JASPER_BULK_DEVICE_LIMIT);
+  const done = new Set<string>();
   let enriched = 0;
-  while (Date.now() < input.deadline) {
-    if (!jasperHasBudget(2)) return enriched;
 
-    const rows = input.unlimited
-      ? await getDB()
-          .prepare(
-            `SELECT iccid, details_polled_at FROM cc_devices
-             WHERE details_polled_at IS NULL
-                OR details_polled_at < ?
-                OR polled_at IS NULL
-                OR polled_at < ?
-             ORDER BY details_polled_at IS NULL DESC,
-                      CASE WHEN details_polled_at IS NULL OR details_polled_at < ? THEN 0 ELSE 1 END,
-                      COALESCE(polled_at, '') ASC
-             LIMIT ?`,
-          )
-          .bind(detailsStaleBefore, sessionStaleBefore, detailsStaleBefore, batch)
-          .all<{ iccid: string; details_polled_at: string | null }>()
-      : await getDB()
-          .prepare(
-            `SELECT iccid, details_polled_at FROM cc_devices
-             WHERE details_polled_at IS NULL OR details_polled_at < ?
-             ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
-             LIMIT ?`,
-          )
-          .bind(detailsStaleBefore, batch)
-          .all<{ iccid: string; details_polled_at: string | null }>();
-
-    const devices = rows.results ?? [];
-    if (devices.length === 0) break;
-
-    const needDetails = devices.filter(
-      (row) => !row.details_polled_at || row.details_polled_at < detailsStaleBefore,
+  if (!input.unlimited) {
+    const batch = Math.min(MANUAL_DETAILS_PER_RUN, JASPER_BULK_DEVICE_LIMIT);
+    const rows = await getDB()
+      .prepare(
+        `SELECT iccid FROM cc_devices
+         WHERE details_polled_at IS NULL OR details_polled_at < ?
+         ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
+         LIMIT ?`,
+      )
+      .bind(detailsStaleBefore, batch)
+      .all<{ iccid: string }>();
+    return enrichFullDetailsBatch(
+      (rows.results ?? []).map((row) => row.iccid),
+      { deadline: input.deadline, done },
     );
-    const sessionOnly = input.unlimited
-      ? devices.filter((row) => row.details_polled_at && row.details_polled_at >= detailsStaleBefore)
-      : [];
-
-    const detailsMap =
-      needDetails.length > 0
-        ? await fetchDeviceDetailsBatch(needDetails.map((row) => row.iccid))
-        : new Map<string, JasperDevice>();
-
-    for (const row of needDetails) {
-      if (Date.now() >= input.deadline) return enriched;
-      if (!jasperHasBudget(2)) return enriched;
-      const usage = await fetchJasperCtdUsage(row.iccid);
-      const session = await fetchJasperSessionInfo(row.iccid);
-      await persistDeviceEnrichment(row.iccid, detailsMap.get(row.iccid) ?? null, usage, session);
-      enriched += 1;
-      if (enriched % 10 === 0) await heartbeatLock();
-    }
-
-    for (const row of sessionOnly) {
-      if (Date.now() >= input.deadline) return enriched;
-      if (!jasperHasBudget(2)) return enriched;
-      const usage = await fetchJasperCtdUsage(row.iccid);
-      const session = await fetchJasperSessionInfo(row.iccid);
-      await persistSessionRefresh(row.iccid, usage, session);
-      enriched += 1;
-      if (enriched % 10 === 0) await heartbeatLock();
-    }
-
-    if (!input.unlimited) break;
   }
+
+  // Auto: never-enriched first, then oldest session/usage, then a capped details wave.
+  // (Previously details-stale always ranked above session-only and starved >48h session ages.)
+  while (Date.now() < input.deadline && jasperHasBudget(2)) {
+    const neverRows = await getDB()
+      .prepare(
+        `SELECT iccid FROM cc_devices
+         WHERE details_polled_at IS NULL
+         ORDER BY COALESCE(polled_at, '') ASC
+         LIMIT ?`,
+      )
+      .bind(JASPER_BULK_DEVICE_LIMIT)
+      .all<{ iccid: string }>();
+    const neverList = (neverRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
+    if (neverList.length === 0) break;
+    enriched += await enrichFullDetailsBatch(neverList, { deadline: input.deadline, done });
+    if (Date.now() >= input.deadline || !jasperHasBudget(2)) return enriched;
+    if (neverList.length < JASPER_BULK_DEVICE_LIMIT) break;
+  }
+
+  // Keep enough calls for the capped details wave (bulk + usage + session ≈ 3/SIM).
+  const detailsReserveCalls = AUTO_DETAILS_PER_TICK * 3;
+  while (Date.now() < input.deadline && jasperHasBudget(2 + detailsReserveCalls)) {
+    const sessionRows = await getDB()
+      .prepare(
+        `SELECT iccid FROM cc_devices
+         WHERE details_polled_at IS NOT NULL
+           AND (polled_at IS NULL OR polled_at < ?)
+         ORDER BY COALESCE(polled_at, '') ASC
+         LIMIT ?`,
+      )
+      .bind(sessionStaleBefore, JASPER_BULK_DEVICE_LIMIT)
+      .all<{ iccid: string }>();
+    const sessionList = (sessionRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
+    if (sessionList.length === 0) break;
+    enriched += await enrichSessionOnlyBatch(sessionList, { deadline: input.deadline, done });
+    if (Date.now() >= input.deadline || !jasperHasBudget(2 + detailsReserveCalls)) break;
+    if (sessionList.length < JASPER_BULK_DEVICE_LIMIT) break;
+  }
+
+  let detailsLeft = AUTO_DETAILS_PER_TICK;
+  while (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(2)) {
+    const take = Math.min(detailsLeft, JASPER_BULK_DEVICE_LIMIT);
+    const detailRows = await getDB()
+      .prepare(
+        `SELECT iccid FROM cc_devices
+         WHERE details_polled_at IS NULL OR details_polled_at < ?
+         ORDER BY details_polled_at IS NULL DESC, COALESCE(details_polled_at, '') ASC
+         LIMIT ?`,
+      )
+      .bind(detailsStaleBefore, take)
+      .all<{ iccid: string }>();
+    const detailList = (detailRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
+    if (detailList.length === 0) break;
+    const got = await enrichFullDetailsBatch(detailList, { deadline: input.deadline, done });
+    enriched += got;
+    detailsLeft -= got;
+    if (got === 0) break;
+  }
+
   return enriched;
 }
 
