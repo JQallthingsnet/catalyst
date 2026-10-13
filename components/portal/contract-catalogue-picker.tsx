@@ -35,7 +35,6 @@ export function ContractCataloguePicker({
       return;
     }
 
-    // Optimistic: ticks flip immediately.
     setSelectedIds(nextIds);
     setError("");
 
@@ -48,7 +47,7 @@ export function ContractCataloguePicker({
     const gen = ++syncGen.current;
     setSaving(true);
     try {
-      const results = await Promise.all([
+      await Promise.all([
         ...toAdd.map(async (skuId) => {
           const res = await fetch("/api/portal/skus", {
             method: "POST",
@@ -68,7 +67,6 @@ export function ContractCataloguePicker({
           if (!res.ok) throw new Error(data.error ?? "Could not update catalogue.");
         }),
       ]);
-      void results;
       if (gen !== syncGen.current) return;
       startTransition(() => {
         router.refresh();
@@ -82,19 +80,22 @@ export function ContractCataloguePicker({
     }
   }
 
+  const showSaving = saving || pending;
+
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-quiet">Tick products for Order SIMs</p>
+        {showSaving ? <span className="text-[11px] text-quiet">Saving…</span> : null}
+      </div>
       <CatalogueSkuMultiSelect
-        label="Tick products this reseller may order"
         options={options}
         selectedIds={selectedIds}
         onChange={(next) => void apply(next)}
         placeholder="Choose catalogue SKUs…"
         showChips
+        fullWidth
       />
-      <p className="text-[11px] text-quiet">
-        {saving || pending ? "Saving…" : selectedIds.length === 0 ? "None bound yet." : "Saved."}
-      </p>
       {error ? <p className="text-xs text-danger">{error}</p> : null}
     </div>
   );

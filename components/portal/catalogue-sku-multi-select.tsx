@@ -17,6 +17,7 @@ export function CatalogueSkuMultiSelect({
   placeholder = "Select catalogue SKUs",
   label,
   showChips = false,
+  fullWidth = false,
 }: {
   options: CatalogueSkuOption[];
   selectedIds: string[];
@@ -26,6 +27,8 @@ export function CatalogueSkuMultiSelect({
   label?: string;
   /** Show selected SKUs as chips under the control. */
   showChips?: boolean;
+  /** Stretch to container width (Contract card). */
+  fullWidth?: boolean;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -66,7 +69,7 @@ export function CatalogueSkuMultiSelect({
   }
 
   return (
-    <div ref={rootRef} className="relative w-full max-w-lg">
+    <div ref={rootRef} className={`relative w-full ${fullWidth ? "" : "max-w-lg"}`}>
       {label ? <p className="mb-1.5 text-xs text-quiet">{label}</p> : null}
       <button
         type="button"
@@ -86,20 +89,22 @@ export function CatalogueSkuMultiSelect({
       </button>
 
       {showChips && selected.length > 0 ? (
-        <ul className="mt-2 flex flex-wrap gap-1.5">
+        <ul className="mt-2 flex flex-wrap gap-1">
           {selected.map((sku) => (
             <li
               key={sku.id}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-[11px] text-ink"
+              className="inline-flex max-w-full items-center gap-1 rounded-lg border border-line/80 bg-panel px-2 py-0.5 text-xs text-ink"
             >
-              {sku.name}
-              <span className="text-quiet">{sku.formFactor}</span>
+              <span className="truncate">
+                {sku.name}
+                <span className="text-quiet"> · {sku.formFactor}</span>
+              </span>
               {!disabled ? (
                 <button
                   type="button"
                   title={`Remove ${sku.name}`}
                   onClick={() => toggle(sku.id)}
-                  className="text-danger hover:underline"
+                  className="ml-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-quiet hover:bg-canvas hover:text-danger"
                 >
                   ×
                 </button>

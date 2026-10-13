@@ -36,12 +36,9 @@ export function BindPlanToResellerForm({
 
   if (plans.length === 0) {
     return (
-      <p className="text-xs text-quiet">
-        All active rate plans are already bound.{" "}
-        <a href="/dashboard/plans/new?from=contract" className="text-accent">
-          Create Rate Plan
-        </a>{" "}
-        to add another.
+      <p className="text-sm text-quiet">
+        All active rate plans are already bound. Use <span className="text-ink">Create Rate Plan</span> above to add
+        another.
       </p>
     );
   }
@@ -99,11 +96,12 @@ export function BindPlanToResellerForm({
         void submit();
       }}
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <p className="text-xs font-medium text-ink">Add rate plan</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <select
           value={platformPlanId}
           onChange={(event) => setPickedPlanId(event.target.value)}
-          className="min-w-48 rounded-xl border border-line bg-canvas px-2 py-1.5 text-xs"
+          className="min-h-10 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
         >
           {plans.map((plan) => (
             <option key={plan.id} value={plan.id}>
@@ -114,9 +112,9 @@ export function BindPlanToResellerForm({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-ink disabled:opacity-40"
+          className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-accent px-4 text-sm font-medium text-accent-ink disabled:opacity-40"
         >
-          {busy ? "Binding…" : needsCatalogue ? "Bind plan + catalogue" : "Add rate plan"}
+          {busy ? "Binding…" : needsCatalogue ? "Bind + catalogue" : "Add rate plan"}
         </button>
       </div>
 
@@ -128,6 +126,7 @@ export function BindPlanToResellerForm({
           onChange={setSelectedSkuIds}
           disabled={busy}
           placeholder="Select catalogue SKUs"
+          fullWidth
         />
       ) : (
         <p className="text-xs text-quiet">Catalogue already on this contract — you can add the rate plan now.</p>
