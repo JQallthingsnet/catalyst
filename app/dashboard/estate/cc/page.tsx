@@ -189,16 +189,32 @@ export default async function CcSnapshotPage({
           <p className="text-sm text-quiet">Devices in copy</p>
           <p className="mt-2 text-3xl font-semibold">{total.toLocaleString("en-AU")}</p>
           <p className="mt-1 text-xs text-quiet">
-            Last full Search total{" "}
+            Jasper Search total{" "}
             {sync.lastTotal != null && sync.lastTotal > 0 ? sync.lastTotal.toLocaleString("en-AU") : "—"}
-            {sync.lastPageComplete
-              ? " · incremental (only SIMs changed since last cycle)"
-              : sync.lastTotal != null && sync.lastTotal > total
-                ? ` · ${(sync.lastTotal - total).toLocaleString("en-AU")} still missing from this crawl`
-                : ""}
+            {!sync.lastPageComplete && sync.lastTotal != null && sync.lastTotal > total
+              ? ` · ${(sync.lastTotal - total).toLocaleString("en-AU")} still missing`
+              : ""}
           </p>
           <p className="mt-2 text-sm text-quiet">Activated</p>
           <p className="mt-1 text-2xl font-semibold">{summary.activated.toLocaleString("en-AU")}</p>
+          <p className="mt-3 text-sm text-quiet">ICCID list (Jasper Search)</p>
+          <p className="mt-1 text-sm font-medium">
+            {sync.lastPageComplete
+              ? "Full list in D1 — auto poll only pulls changed SIMs"
+              : `Catching up · page ${sync.nextPage.toLocaleString("en-AU")}${
+                  sync.lastPage != null ? ` (last fetched ${sync.lastPage.toLocaleString("en-AU")})` : ""
+                }`}
+          </p>
+          <p className="mt-1 text-xs text-quiet">
+            Changes since {sync.modifiedSince ? formatAuDateTime(sync.modifiedSince) : "default ~360 days"}
+            {sync.listCycleStartedAt && !sync.lastPageComplete
+              ? ` · walk started ${formatAuDateTime(sync.listCycleStartedAt)}`
+              : ""}
+            {" · "}
+            {sync.autoPoll ? "Auto poll ON" : "Auto poll OFF"}
+            {" · "}
+            Last tick {sync.lastPolledAt ? formatAuDateTime(sync.lastPolledAt) : "never"}
+          </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
           <p className="text-sm text-quiet">In session</p>
@@ -208,7 +224,7 @@ export default async function CcSnapshotPage({
             {" · "}
             unknown {summary.sessionUnknown.toLocaleString("en-AU")}
           </p>
-          <p className="mt-3 text-sm text-quiet">Session enrich age</p>
+          <p className="mt-3 text-sm text-quiet">Session / CTD enrich age</p>
           <p className="mt-1 text-xs text-quiet">
             &lt;24h {summary.sessionFresh24h.toLocaleString("en-AU")}
             {" · "}
@@ -226,6 +242,9 @@ export default async function CcSnapshotPage({
           <p className="text-sm text-quiet">Details enriched</p>
           <p className="mt-2 text-3xl font-semibold">{summary.detailsEnriched.toLocaleString("en-AU")}</p>
           <p className="mt-1 text-xs text-quiet">
+            Full Jasper device profile (IMEI, customer, custom fields, …)
+          </p>
+          <p className="mt-3 text-xs text-quiet">
             <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
               {summary.neverEnriched.toLocaleString("en-AU")} still list-only
             </span>
@@ -235,24 +254,6 @@ export default async function CcSnapshotPage({
             <span className={summary.detailsOlder48h > 0 ? "text-danger" : ""}>
               &gt;48h {summary.detailsOlder48h.toLocaleString("en-AU")}
             </span>
-          </p>
-          <p className="mt-3 text-sm text-quiet">List crawl</p>
-          <p className="mt-1 text-sm font-medium">
-            {sync.lastPageComplete
-              ? "Cycle complete (incremental)"
-              : `Page ${sync.nextPage.toLocaleString("en-AU")}${
-                  sync.lastPage != null ? ` · last fetched ${sync.lastPage.toLocaleString("en-AU")}` : ""
-                }`}
-          </p>
-          <p className="mt-1 text-xs text-quiet">
-            Search since {sync.modifiedSince ? formatAuDateTime(sync.modifiedSince) : "default ~360 days"}
-            {sync.listCycleStartedAt && !sync.lastPageComplete
-              ? ` · window walk since ${formatAuDateTime(sync.listCycleStartedAt)} (not advanced until last page)`
-              : ""}
-            {" · "}
-            {sync.autoPoll ? "Auto poll ON" : "Auto poll OFF"}
-            {" · "}
-            Last poll {sync.lastPolledAt ? formatAuDateTime(sync.lastPolledAt) : "never"}
           </p>
         </article>
       </div>
