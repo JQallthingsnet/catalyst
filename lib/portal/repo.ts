@@ -14,6 +14,7 @@ import {
 import { newId } from "@/lib/portal/ids";
 import { type PortalRole } from "@/lib/portal/role-model";
 import { isListedSuperAdmin } from "@/lib/portal/roles";
+import { parseYmd, sydneyDayEndExclusiveIso, sydneyDayStartIso } from "@/lib/portal/time";
 
 export type { PortalRole };
 
@@ -63,6 +64,8 @@ export type Sim = {
   ccStatus: string | null;
   ccPolledAt: string | null;
 };
+export type OrderKind = "order_sims" | "sell_stock";
+
 export type Order = {
   id: string;
   skuName: string;
@@ -71,9 +74,26 @@ export type Order = {
   destination: string | null;
   status: OrderStatus;
   createdAt: string;
+  kind: OrderKind;
+  createdBy: string | null;
+  poNumber: string | null;
   tenantId?: string;
   tenantName?: string;
 };
+
+export function orderKindLabel(kind: OrderKind | string | null | undefined): string {
+  if (kind === "sell_stock") return "Sell stock";
+  return "Order SIMs";
+}
+
+function normalizeOrderKind(value: string | null | undefined, fallback?: {
+  status?: string;
+  logistics?: string;
+}): OrderKind {
+  if (value === "sell_stock" || value === "order_sims") return value;
+  if (fallback?.status === "Received" || fallback?.logistics === "ATN wholesale") return "sell_stock";
+  return "order_sims";
+}
 export type AuditEvent = { id: string; action: string; detail: string; createdAt: string };
 export type UsagePoint = { day: string; mb: number };
 
@@ -340,13 +360,147 @@ export async function listPools(tenantId: string): Promise<Pool[]> {
   }));
 }
 
-export async function listOrders(tenantId: string): Promise<Order[]> {
+export type OrderFilter = {
+  /** Reseller view: only this tenant. */
+  scopeTenantId?: string;
+  /** Platform view: exclude ATN home tenant (orders live on resellers). */
+  excludeTenantId?: string;
+  organisationId?: string;
+  query?: string;
+  status?: string;
+  kind?: string;
+  skuName?: string;
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+export type OrderFilterOptions = {
+  organisations: { id: string; name: string }[];
+  statuses: string[];
+  kinds: OrderKind[];
+  skuNames: string[];
+};
+
+export function normalizeOrderFilter(input: OrderFilter): OrderFilter {
+  const status = (input.status ?? "").trim();
+  const kind = (input.kind ?? "").trim();
+  return {
+    scopeTenantId: input.scopeTenantId?.trim() || undefined,
+    excludeTenantId: input.excludeTenantId?.trim() || undefined,
+    organisationId: input.organisationId?.trim() || undefined,
+    query: (input.query ?? "").trim() || undefined,
+    status: status || undefined,
+    kind: kind === "sell_stock" || kind === "order_sims" ? kind : undefined,
+    skuName: (input.skuName ?? "").trim() || undefined,
+    dateFrom: parseYmd(input.dateFrom)?.key,
+    dateTo: parseYmd(input.dateTo)?.key,
+  };
+}
+
+export function orderFilterActive(filter: OrderFilter): boolean {
+  return Boolean(
+    filter.organisationId ||
+      filter.query ||
+      filter.status ||
+      filter.kind ||
+      filter.skuName ||
+      filter.dateFrom ||
+      filter.dateTo,
+  );
+}
+
+function orderFilterSql(filter: OrderFilter): { where: string; binds: unknown[] } {
+  const clauses: string[] = [];
+  const binds: unknown[] = [];
+  if (filter.scopeTenantId) {
+    clauses.push("o.tenant_id = ?");
+    binds.push(filter.scopeTenantId);
+  } else if (filter.excludeTenantId) {
+    clauses.push("o.tenant_id != ?");
+    binds.push(filter.excludeTenantId);
+  }
+  if (filter.organisationId) {
+    clauses.push("o.tenant_id = ?");
+    binds.push(filter.organisationId);
+  }
+  if (filter.status) {
+    clauses.push("o.status = ?");
+    binds.push(filter.status);
+  }
+  if (filter.kind) {
+    clauses.push("o.kind = ?");
+    binds.push(filter.kind);
+  }
+  if (filter.skuName) {
+    clauses.push("o.sku_name = ?");
+    binds.push(filter.skuName);
+  }
+  if (filter.query) {
+    const like = `%${filter.query}%`;
+    clauses.push(
+      `(o.id LIKE ? OR o.sku_name LIKE ? OR o.logistics LIKE ? OR IFNULL(o.destination, '') LIKE ? OR IFNULL(t.name, '') LIKE ? OR IFNULL(o.created_by, '') LIKE ? OR IFNULL(o.po_number, '') LIKE ?)`,
+    );
+    binds.push(like, like, like, like, like, like, like);
+  }
+  const fromIso = filter.dateFrom ? sydneyDayStartIso(filter.dateFrom) : null;
+  const toExclusive = filter.dateTo ? sydneyDayEndExclusiveIso(filter.dateTo) : null;
+  if (fromIso) {
+    clauses.push("o.created_at >= ?");
+    binds.push(fromIso);
+  }
+  if (toExclusive) {
+    clauses.push("o.created_at < ?");
+    binds.push(toExclusive);
+  }
+  return {
+    where: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
+    binds,
+  };
+}
+
+function mapOrderRow(row: {
+  id: string;
+  sku_name: string;
+  quantity: number;
+  logistics: string;
+  destination: string | null;
+  status: OrderStatus;
+  created_at: string;
+  kind: string | null;
+  created_by: string | null;
+  po_number: string | null;
+  tenant_id: string;
+  tenant_name: string | null;
+}): Order {
+  return {
+    id: row.id,
+    skuName: row.sku_name,
+    quantity: row.quantity,
+    logistics: row.logistics,
+    destination: row.destination,
+    status: row.status,
+    createdAt: row.created_at,
+    kind: normalizeOrderKind(row.kind, { status: row.status, logistics: row.logistics }),
+    createdBy: row.created_by?.trim() || null,
+    poNumber: row.po_number?.trim() || null,
+    tenantId: row.tenant_id,
+    tenantName: row.tenant_name ?? undefined,
+  };
+}
+
+export async function listOrders(filter: OrderFilter): Promise<Order[]> {
+  const normalized = normalizeOrderFilter(filter);
+  const { where, binds } = orderFilterSql(normalized);
   const rows = await getDB()
     .prepare(
-      `SELECT id, sku_name, quantity, logistics, destination, status, created_at
-       FROM orders WHERE tenant_id = ? ORDER BY created_at DESC`,
+      `SELECT o.id, o.sku_name, o.quantity, o.logistics, o.destination, o.status, o.created_at,
+              o.kind, o.created_by, o.po_number, o.tenant_id, t.name as tenant_name
+       FROM orders o
+       LEFT JOIN tenants t ON t.id = o.tenant_id
+       ${where}
+       ORDER BY o.created_at DESC`,
     )
-    .bind(tenantId)
+    .bind(...binds)
     .all<{
       id: string;
       sku_name: string;
@@ -355,16 +509,76 @@ export async function listOrders(tenantId: string): Promise<Order[]> {
       destination: string | null;
       status: OrderStatus;
       created_at: string;
+      kind: string | null;
+      created_by: string | null;
+      po_number: string | null;
+      tenant_id: string;
+      tenant_name: string | null;
     }>();
-  return (rows.results ?? []).map((row) => ({
-    id: row.id,
-    skuName: row.sku_name,
-    quantity: row.quantity,
-    logistics: row.logistics,
-    destination: row.destination,
-    status: row.status,
-    createdAt: row.created_at,
-  }));
+  return (rows.results ?? []).map(mapOrderRow);
+}
+
+export async function listOrderFilterOptions(filter: {
+  scopeTenantId?: string;
+  excludeTenantId?: string;
+}): Promise<OrderFilterOptions> {
+  const clauses: string[] = [];
+  const binds: unknown[] = [];
+  if (filter.scopeTenantId) {
+    clauses.push("o.tenant_id = ?");
+    binds.push(filter.scopeTenantId);
+  } else if (filter.excludeTenantId) {
+    clauses.push("o.tenant_id != ?");
+    binds.push(filter.excludeTenantId);
+  }
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  const db = getDB();
+  const [orgs, statuses, kinds, skus] = await Promise.all([
+    db
+      .prepare(
+        `SELECT DISTINCT o.tenant_id as id, t.name as name
+         FROM orders o
+         LEFT JOIN tenants t ON t.id = o.tenant_id
+         ${where}
+         ORDER BY t.name ASC`,
+      )
+      .bind(...binds)
+      .all<{ id: string; name: string | null }>(),
+    db
+      .prepare(
+        `SELECT DISTINCT o.status as status FROM orders o ${where} ORDER BY o.status ASC`,
+      )
+      .bind(...binds)
+      .all<{ status: string }>(),
+    db
+      .prepare(
+        `SELECT DISTINCT o.kind as kind FROM orders o ${where} ORDER BY o.kind ASC`,
+      )
+      .bind(...binds)
+      .all<{ kind: string | null }>(),
+    db
+      .prepare(
+        `SELECT DISTINCT o.sku_name as sku_name FROM orders o ${where} ORDER BY o.sku_name ASC`,
+      )
+      .bind(...binds)
+      .all<{ sku_name: string }>(),
+  ]);
+  const kindSet = new Set<OrderKind>();
+  for (const row of kinds.results ?? []) {
+    if (row.kind === "sell_stock" || row.kind === "order_sims") kindSet.add(row.kind);
+  }
+  if (kindSet.size === 0) {
+    kindSet.add("order_sims");
+    kindSet.add("sell_stock");
+  }
+  return {
+    organisations: (orgs.results ?? [])
+      .filter((row) => row.id)
+      .map((row) => ({ id: row.id, name: row.name?.trim() || row.id })),
+    statuses: (statuses.results ?? []).map((row) => row.status).filter(Boolean),
+    kinds: [...kindSet],
+    skuNames: (skus.results ?? []).map((row) => row.sku_name).filter(Boolean),
+  };
 }
 
 export async function listUsage(tenantId: string): Promise<UsagePoint[]> {
@@ -479,10 +693,70 @@ export async function createPool(
   return { id, name: input.name, type: input.type, capMb: input.capMb, usedMb: 0, members: 0 };
 }
 
+function normalizePoNumber(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return null;
+  if (trimmed.length > 64) throw new Error("PO number must be 64 characters or fewer.");
+  return trimmed;
+}
+
+/**
+ * Cancel / delete an Order SIMs row.
+ * - Submitted: reseller admin (own org) or super admin
+ * - Accepted / Shipped / Received / Draft: super admin only
+ * Sell stock cannot be cancelled here.
+ */
+export async function cancelOrderSims(
+  actor: { email: string; role: PortalRole; tenantId: string; homeTenantId: string; isSuperAdmin: boolean },
+  orderId: string,
+): Promise<void> {
+  const row = await getDB()
+    .prepare(
+      `SELECT id, tenant_id, sku_name, quantity, status, kind, created_by
+       FROM orders WHERE id = ?`,
+    )
+    .bind(orderId)
+    .first<{
+      id: string;
+      tenant_id: string;
+      sku_name: string;
+      quantity: number;
+      status: OrderStatus;
+      kind: string | null;
+      created_by: string | null;
+    }>();
+  if (!row) throw new Error("Order not found.");
+
+  const kind = normalizeOrderKind(row.kind, { status: row.status });
+  if (kind !== "order_sims") {
+    throw new Error("Only Order SIMs requests can be cancelled. Sell stock cannot be deleted here.");
+  }
+
+  const isSuperAdminActor = actor.isSuperAdmin && actor.role === "super_admin";
+  const submitted = row.status === "Submitted" || row.status === "Draft";
+
+  if (submitted) {
+    if (!isSuperAdminActor && row.tenant_id !== actor.tenantId) {
+      throw new Error("You can only revoke orders for your organisation.");
+    }
+  } else if (!isSuperAdminActor) {
+    throw new Error("Only a super admin can cancel an order after it is Accepted.");
+  }
+
+  await getDB().prepare("DELETE FROM orders WHERE id = ?").bind(orderId).run();
+  const verb = submitted ? "Revoked" : "Cancelled";
+  await writeAudit(
+    row.tenant_id,
+    actor.email,
+    "order",
+    `${verb} ${row.status} order ${row.sku_name} × ${row.quantity} (${orderId.slice(-8)})`,
+  );
+}
+
 export async function createOrder(
   tenantId: string,
   actor: { email: string; role: PortalRole },
-  input: { skuId: string; quantity: number; logistics: string; destination?: string },
+  input: { skuId: string; quantity: number; logistics: string; destination?: string; poNumber?: string },
 ): Promise<Order> {
   const sku = await getSimSku(input.skuId);
   if (!sku) throw new Error("Unknown catalogue item.");
@@ -495,15 +769,27 @@ export async function createOrder(
     }
   }
   if (input.quantity < 1 || input.quantity > 5000) throw new Error("Quantity must be between 1 and 5,000.");
+  const poNumber = normalizePoNumber(input.poNumber);
 
   const id = newId("ord");
   const now = new Date().toISOString();
   await getDB()
     .prepare(
-      `INSERT INTO orders (id, tenant_id, sku_id, sku_name, quantity, logistics, destination, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Submitted', ?)`,
+      `INSERT INTO orders (id, tenant_id, sku_id, sku_name, quantity, logistics, destination, status, created_at, kind, created_by, po_number)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Submitted', ?, 'order_sims', ?, ?)`,
     )
-    .bind(id, tenantId, sku.id, sku.name, input.quantity, input.logistics, input.destination ?? input.logistics, now)
+    .bind(
+      id,
+      tenantId,
+      sku.id,
+      sku.name,
+      input.quantity,
+      input.logistics,
+      input.destination ?? input.logistics,
+      now,
+      actor.email,
+      poNumber,
+    )
     .run();
 
   const job = await runCcMutation({
@@ -525,6 +811,10 @@ export async function createOrder(
     destination: input.destination ?? input.logistics,
     status: "Submitted",
     createdAt: now,
+    kind: "order_sims",
+    createdBy: actor.email,
+    poNumber,
+    tenantId,
   };
 }
 
@@ -536,6 +826,7 @@ export async function allocateWholesaleStock(
     platformPlanId: string;
     /** Jasper Control Center Customer field — required for sell stock. */
     ccCustomer: string;
+    poNumber?: string;
   },
 ): Promise<Order> {
   if (!actor.isSuperAdmin || actor.role !== "super_admin") {
@@ -589,13 +880,14 @@ export async function allocateWholesaleStock(
   const now = new Date().toISOString();
   const logistics = "ATN wholesale";
   const destination = `CC ${ccCustomer} · ${platformPlan.name}`;
+  const poNumber = normalizePoNumber(input.poNumber);
 
   await getDB()
     .prepare(
-      `INSERT INTO orders (id, tenant_id, sku_id, sku_name, quantity, logistics, destination, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Received', ?)`,
+      `INSERT INTO orders (id, tenant_id, sku_id, sku_name, quantity, logistics, destination, status, created_at, kind, created_by, po_number)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'Received', ?, 'sell_stock', ?, ?)`,
     )
-    .bind(id, tenant.id, sku.id, sku.name, devices.length, logistics, destination, now)
+    .bind(id, tenant.id, sku.id, sku.name, devices.length, logistics, destination, now, actor.email, poNumber)
     .run();
 
   const job = await runCcMutation({
@@ -640,6 +932,9 @@ export async function allocateWholesaleStock(
     destination,
     status: "Received",
     createdAt: now,
+    kind: "sell_stock",
+    createdBy: actor.email,
+    poNumber,
     tenantId: tenant.id,
     tenantName: tenant.name,
   };

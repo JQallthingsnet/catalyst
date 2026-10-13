@@ -14,12 +14,14 @@ export async function POST(request: Request) {
       skuId?: string;
       platformPlanId?: string;
       ccCustomer?: string;
+      poNumber?: string;
     };
     const order = await allocateWholesaleStock(ctx, {
       tenantId: body.tenantId ?? "",
       skuId: body.skuId ?? "",
       platformPlanId: body.platformPlanId ?? "",
       ccCustomer: body.ccCustomer ?? "",
+      poNumber: body.poNumber,
     });
     if (order.tenantId) await setActingTenantCookie(order.tenantId);
     return NextResponse.json({ success: true, order });

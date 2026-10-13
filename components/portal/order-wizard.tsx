@@ -10,6 +10,7 @@ export function OrderWizard({ skus }: { skus: SimSku[] }) {
   const [quantity, setQuantity] = useState(100);
   const [logistics, setLogistics] = useState("Warehouse AU");
   const [destination, setDestination] = useState("");
+  const [poNumber, setPoNumber] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +24,13 @@ export function OrderWizard({ skus }: { skus: SimSku[] }) {
       const res = await fetch("/api/portal/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skuId, quantity, logistics, destination: esim ? destination : logistics }),
+        body: JSON.stringify({
+          skuId,
+          quantity,
+          logistics,
+          destination: esim ? destination : logistics,
+          poNumber,
+        }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
@@ -48,6 +55,7 @@ export function OrderWizard({ skus }: { skus: SimSku[] }) {
           <p>{sku?.name ?? "Choose a SKU"}</p>
           <p>{quantity} units</p>
           <p>{esim ? destination || "eSIM destination" : logistics}</p>
+          <p>PO: {poNumber.trim() || "—"}</p>
           <p className="text-ok">Submitted to this tenant. ICCIDs come from Control Center, not a local reservation.</p>
         </>
       }
@@ -111,6 +119,16 @@ export function OrderWizard({ skus }: { skus: SimSku[] }) {
               />
             </label>
           )}
+          <label className="block text-sm">
+            PO number <span className="text-quiet">(optional)</span>
+            <input
+              value={poNumber}
+              onChange={(event) => setPoNumber(event.target.value)}
+              maxLength={64}
+              placeholder="Purchase order reference"
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+            />
+          </label>
         </div>
       ) : null}
 

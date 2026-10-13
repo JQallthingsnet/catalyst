@@ -20,7 +20,7 @@ const STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS plans (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, inclusive_mb INTEGER NOT NULL, overage TEXT NOT NULL, roaming TEXT NOT NULL, wholesale_plan TEXT NOT NULL, comm_plan TEXT NOT NULL, platform_plan_id TEXT, price_per_sim REAL, created_at TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS pools (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, cap_mb INTEGER NOT NULL, used_mb INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, sku_id TEXT NOT NULL, sku_name TEXT NOT NULL, quantity INTEGER NOT NULL, logistics TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, sku_id TEXT NOT NULL, sku_name TEXT NOT NULL, quantity INTEGER NOT NULL, logistics TEXT NOT NULL, destination TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL, kind TEXT, created_by TEXT, po_number TEXT)`,
   `CREATE TABLE IF NOT EXISTS sims (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, iccid TEXT NOT NULL, form_factor TEXT NOT NULL, state TEXT NOT NULL, customer_id TEXT, plan_id TEXT, pool_id TEXT, order_id TEXT, wholesale_plan TEXT, platform_plan_id TEXT, imsi TEXT, msisdn TEXT, current_volume_mb REAL, created_at TEXT NOT NULL)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS sims_tenant_iccid ON sims (tenant_id, iccid)`,
   `CREATE TABLE IF NOT EXISTS cc_jobs (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, correlation_id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
@@ -167,11 +167,22 @@ const ALTERS = [
   `ALTER TABLE sim_rate_plan_changes ADD COLUMN push_status TEXT NOT NULL DEFAULT 'pending'`,
   `ALTER TABLE sim_rate_plan_changes ADD COLUMN pushed_at TEXT`,
   `ALTER TABLE sim_rate_plan_changes ADD COLUMN push_error TEXT`,
+  `ALTER TABLE orders ADD COLUMN kind TEXT`,
+  `ALTER TABLE orders ADD COLUMN created_by TEXT`,
+  `ALTER TABLE orders ADD COLUMN po_number TEXT`,
 ];
 
 const BACKFILLS = [
   `UPDATE platform_plans SET supplier = 'Optus' WHERE supplier = 'Cisco IoT Control Center'`,
   `UPDATE cc_devices SET supplier = 'Optus' WHERE IFNULL(TRIM(supplier), '') = '' OR supplier = 'Cisco IoT Control Center'`,
+  `UPDATE orders
+     SET kind = 'sell_stock'
+     WHERE IFNULL(TRIM(kind), '') = ''
+       AND (status = 'Received' OR logistics = 'ATN wholesale')`,
+  `UPDATE orders
+     SET kind = 'order_sims'
+     WHERE IFNULL(TRIM(kind), '') = ''`,
+
   // Historical portal-only rows: do not auto-push when Jasper write is enabled later.
   `UPDATE sim_rate_plan_changes
      SET push_status = 'skipped',
