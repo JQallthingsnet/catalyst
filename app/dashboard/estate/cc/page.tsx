@@ -186,17 +186,23 @@ export default async function CcSnapshotPage({
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">Devices in copy</p>
-          <p className="mt-2 text-3xl font-semibold">{total.toLocaleString("en-AU")}</p>
-          <p className="mt-1 text-xs text-quiet">
-            Jasper Search total{" "}
-            {sync.lastTotal != null && sync.lastTotal > 0 ? sync.lastTotal.toLocaleString("en-AU") : "—"}
-            {!sync.lastPageComplete && sync.lastTotal != null && sync.lastTotal > total
-              ? ` · ${(sync.lastTotal - total).toLocaleString("en-AU")} still missing`
-              : ""}
-          </p>
-          <p className="mt-2 text-sm text-quiet">Activated</p>
-          <p className="mt-1 text-2xl font-semibold">{summary.activated.toLocaleString("en-AU")}</p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm text-quiet">Devices in copy</p>
+              <p className="mt-2 text-3xl font-semibold">{total.toLocaleString("en-AU")}</p>
+              <p className="mt-1 text-xs text-quiet">
+                Jasper Search total{" "}
+                {sync.lastTotal != null && sync.lastTotal > 0 ? sync.lastTotal.toLocaleString("en-AU") : "—"}
+                {!sync.lastPageComplete && sync.lastTotal != null && sync.lastTotal > total
+                  ? ` · ${(sync.lastTotal - total).toLocaleString("en-AU")} still missing`
+                  : ""}
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-sm text-quiet">Activated</p>
+              <p className="mt-2 text-3xl font-semibold">{summary.activated.toLocaleString("en-AU")}</p>
+            </div>
+          </div>
           <p className="mt-3 text-sm text-quiet">ICCID list (Jasper Search)</p>
           <p className="mt-1 text-sm font-medium">
             {sync.lastPageComplete
