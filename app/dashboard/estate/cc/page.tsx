@@ -184,7 +184,7 @@ export default async function CcSnapshotPage({
 
       <div id="cc-sync-progress" />
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <article className="rounded-card border border-line bg-panel p-5">
           <p className="text-sm text-quiet">Devices in copy</p>
           <p className="mt-2 text-3xl font-semibold">{total.toLocaleString("en-AU")}</p>
@@ -197,18 +197,47 @@ export default async function CcSnapshotPage({
                 ? ` · ${(sync.lastTotal - total).toLocaleString("en-AU")} still missing from this crawl`
                 : ""}
           </p>
-        </article>
-        <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">Activated</p>
-          <p className="mt-2 text-3xl font-semibold">{summary.activated.toLocaleString("en-AU")}</p>
+          <p className="mt-2 text-sm text-quiet">Activated</p>
+          <p className="mt-1 text-2xl font-semibold">{summary.activated.toLocaleString("en-AU")}</p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
           <p className="text-sm text-quiet">In session</p>
           <p className="mt-2 text-3xl font-semibold">{summary.inSession.toLocaleString("en-AU")}</p>
+          <p className="mt-1 text-xs text-quiet">
+            Known {summary.sessionKnown.toLocaleString("en-AU")}
+            {" · "}
+            unknown {summary.sessionUnknown.toLocaleString("en-AU")}
+          </p>
+          <p className="mt-3 text-sm text-quiet">Session enrich age</p>
+          <p className="mt-1 text-xs text-quiet">
+            &lt;24h {summary.sessionFresh24h.toLocaleString("en-AU")}
+            {" · "}
+            24–48h {summary.sessionStale24to48h.toLocaleString("en-AU")}
+            {" · "}
+            <span className={summary.sessionOlder48h > 0 || summary.sessionUnknown > 0 ? "text-danger" : ""}>
+              &gt;48h {summary.sessionOlder48h.toLocaleString("en-AU")}
+              {summary.sessionUnknown > 0
+                ? ` · +${summary.sessionUnknown.toLocaleString("en-AU")} unknown`
+                : ""}
+            </span>
+          </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">List crawl</p>
-          <p className="mt-2 text-sm font-medium">
+          <p className="text-sm text-quiet">Details enriched</p>
+          <p className="mt-2 text-3xl font-semibold">{summary.detailsEnriched.toLocaleString("en-AU")}</p>
+          <p className="mt-1 text-xs text-quiet">
+            <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
+              {summary.neverEnriched.toLocaleString("en-AU")} still list-only
+            </span>
+            {" · "}
+            &lt;24h {summary.detailsFresh24h.toLocaleString("en-AU")}
+            {" · "}
+            <span className={summary.detailsOlder48h > 0 ? "text-danger" : ""}>
+              &gt;48h {summary.detailsOlder48h.toLocaleString("en-AU")}
+            </span>
+          </p>
+          <p className="mt-3 text-sm text-quiet">List crawl</p>
+          <p className="mt-1 text-sm font-medium">
             {sync.lastPageComplete
               ? "Cycle complete (incremental)"
               : `Page ${sync.nextPage.toLocaleString("en-AU")}${

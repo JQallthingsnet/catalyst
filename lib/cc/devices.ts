@@ -929,21 +929,74 @@ export async function ccInventorySummary(): Promise<{
   total: number;
   activated: number;
   inSession: number;
+  /** SIMs with at least one details/session enrich attempt (`details_polled_at` set). */
+  detailsEnriched: number;
+  /** Listed from Search only — never ran details + session enrich. */
+  neverEnriched: number;
+  /** `in_session` is 0 or 1 (sessionInfo answered). */
+  sessionKnown: number;
+  /** Still NULL — enrich never got a session answer (or never ran). */
+  sessionUnknown: number;
+  /** Session/usage enrich (`polled_at`) within the last 24 hours. */
+  sessionFresh24h: number;
+  /** Session known but last enrich between 24h and 48h ago. */
+  sessionStale24to48h: number;
+  /** Session known but last enrich older than 48h (or polled_at missing). */
+  sessionOlder48h: number;
+  /** Details enrich (`details_polled_at`) within the last 24 hours. */
+  detailsFresh24h: number;
+  /** Details enriched but older than 48h. */
+  detailsOlder48h: number;
   usageMb: number;
 }> {
+  const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const row = await getDB()
     .prepare(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN UPPER(status) IN ('ACTIVATED','ACTIVE') THEN 1 ELSE 0 END) as activated,
               SUM(CASE WHEN in_session = 1 THEN 1 ELSE 0 END) as in_session,
+              SUM(CASE WHEN details_polled_at IS NOT NULL THEN 1 ELSE 0 END) as details_enriched,
+              SUM(CASE WHEN details_polled_at IS NULL THEN 1 ELSE 0 END) as never_enriched,
+              SUM(CASE WHEN in_session IS NOT NULL THEN 1 ELSE 0 END) as session_known,
+              SUM(CASE WHEN in_session IS NULL THEN 1 ELSE 0 END) as session_unknown,
+              SUM(CASE WHEN in_session IS NOT NULL AND polled_at >= ? THEN 1 ELSE 0 END) as session_fresh_24h,
+              SUM(CASE WHEN in_session IS NOT NULL AND polled_at < ? AND polled_at >= ? THEN 1 ELSE 0 END) as session_stale_24_48h,
+              SUM(CASE WHEN in_session IS NOT NULL AND (polled_at IS NULL OR polled_at < ?) THEN 1 ELSE 0 END) as session_older_48h,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_fresh_24h,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? THEN 1 ELSE 0 END) as details_older_48h,
               IFNULL(SUM(ctd_usage_mb), 0) as usage_mb
        FROM cc_devices`,
     )
-    .first<{ total: number; activated: number; in_session: number; usage_mb: number }>();
+    .bind(cutoff24h, cutoff24h, cutoff48h, cutoff48h, cutoff24h, cutoff48h)
+    .first<{
+      total: number;
+      activated: number;
+      in_session: number;
+      details_enriched: number;
+      never_enriched: number;
+      session_known: number;
+      session_unknown: number;
+      session_fresh_24h: number;
+      session_stale_24_48h: number;
+      session_older_48h: number;
+      details_fresh_24h: number;
+      details_older_48h: number;
+      usage_mb: number;
+    }>();
   return {
     total: row?.total ?? 0,
     activated: row?.activated ?? 0,
     inSession: row?.in_session ?? 0,
+    detailsEnriched: row?.details_enriched ?? 0,
+    neverEnriched: row?.never_enriched ?? 0,
+    sessionKnown: row?.session_known ?? 0,
+    sessionUnknown: row?.session_unknown ?? 0,
+    sessionFresh24h: row?.session_fresh_24h ?? 0,
+    sessionStale24to48h: row?.session_stale_24_48h ?? 0,
+    sessionOlder48h: row?.session_older_48h ?? 0,
+    detailsFresh24h: row?.details_fresh_24h ?? 0,
+    detailsOlder48h: row?.details_older_48h ?? 0,
     usageMb: row?.usage_mb ?? 0,
   };
 }
@@ -1120,6 +1173,7 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
     upserts.push(
       db
         .prepare(
+          // polled_at is set on insert only; list Search must not bump it (that means session/usage enrich).
           `INSERT INTO cc_devices (iccid, supplier, status, rate_plan, communication_plan, customer, polled_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(iccid) DO UPDATE SET
@@ -1127,8 +1181,7 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
            status = excluded.status,
            rate_plan = excluded.rate_plan,
            communication_plan = excluded.communication_plan,
-           customer = COALESCE(excluded.customer, cc_devices.customer),
-           polled_at = excluded.polled_at`,
+           customer = COALESCE(excluded.customer, cc_devices.customer)`,
         )
         .bind(
           iccid,

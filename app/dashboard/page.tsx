@@ -25,7 +25,21 @@ export default async function DashboardPage() {
     ctx.isSuperAdmin && ctx.role === "super_admin" ? listCcDevices("", 50) : Promise.resolve([]),
     ctx.isSuperAdmin && ctx.role === "super_admin"
       ? ccInventorySummary()
-      : Promise.resolve({ total: 0, activated: 0, inSession: 0, usageMb: 0 }),
+      : Promise.resolve({
+          total: 0,
+          activated: 0,
+          inSession: 0,
+          detailsEnriched: 0,
+          neverEnriched: 0,
+          sessionKnown: 0,
+          sessionUnknown: 0,
+          sessionFresh24h: 0,
+          sessionStale24to48h: 0,
+          sessionOlder48h: 0,
+          detailsFresh24h: 0,
+          detailsOlder48h: 0,
+          usageMb: 0,
+        }),
   ]);
   const resellers = excludeHomeTenant(tenants, ctx.homeTenantId);
   const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
@@ -111,8 +125,20 @@ export default async function DashboardPage() {
           <>
             <Kpi label="CC devices" value={ccSummary.total.toLocaleString("en-AU")} hint="Snapshot copy" />
             <Kpi label="Activated" value={ccSummary.activated.toLocaleString("en-AU")} />
-            <Kpi label="In session" value={ccSummary.inSession.toLocaleString("en-AU")} />
-            <Kpi label="Cycle usage" value={`${ccSummary.usageMb.toLocaleString("en-AU")} MB`} />
+            <Kpi
+              label="In session"
+              value={ccSummary.inSession.toLocaleString("en-AU")}
+              hint={`<24h ${ccSummary.sessionFresh24h.toLocaleString("en-AU")} · >48h ${ccSummary.sessionOlder48h.toLocaleString("en-AU")} · unknown ${ccSummary.sessionUnknown.toLocaleString("en-AU")}`}
+            />
+            <Kpi
+              label="Details enriched"
+              value={ccSummary.detailsEnriched.toLocaleString("en-AU")}
+              hint={
+                ccSummary.neverEnriched > 0
+                  ? `${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >48h ${ccSummary.detailsOlder48h.toLocaleString("en-AU")}`
+                  : `<24h ${ccSummary.detailsFresh24h.toLocaleString("en-AU")} · >48h ${ccSummary.detailsOlder48h.toLocaleString("en-AU")}`
+              }
+            />
           </>
         ) : (
           <>
