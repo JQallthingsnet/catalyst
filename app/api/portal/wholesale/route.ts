@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     };
     const order = await allocateWholesaleStock(ctx, {
       tenantId: body.tenantId ?? "",
-      skuId: body.skuId ?? "",
+      skuId: body.skuId,
       platformPlanId: body.platformPlanId ?? "",
       ccCustomer: body.ccCustomer ?? "",
       poNumber: body.poNumber,

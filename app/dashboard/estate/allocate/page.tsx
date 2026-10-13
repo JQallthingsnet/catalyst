@@ -3,16 +3,14 @@ import { AllocateWizard } from "@/components/portal/allocate-wizard";
 import { listCcCustomerStockOptions } from "@/lib/cc/devices";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { listAllTenantPlanIds, listPlatformPlans } from "@/lib/portal/platform-plans";
-import { listSimSkus } from "@/lib/portal/skus";
 import { getResellerAdminEmail, listTenantOptions, loadTenant } from "@/lib/portal/tenant";
 
 export default async function AllocateStockPage() {
   const ctx = await requirePrivilege("wholesale.allocate");
-  const [resellers, plans, links, skus, customerOptions] = await Promise.all([
+  const [resellers, plans, links, customerOptions] = await Promise.all([
     listTenantOptions(),
     listPlatformPlans(),
     listAllTenantPlanIds(),
-    listSimSkus({ activeOnly: true }),
     listCcCustomerStockOptions(),
   ]);
   const linksByTenant = new Map<string, { platformPlanId: string; isDefault: boolean }[]>();
@@ -52,7 +50,6 @@ export default async function AllocateStockPage() {
             id: item.id,
             name: `${item.ccRatePlan} · ${item.name}`,
           }))}
-          skus={skus}
           customerOptions={customerOptions}
         />
       </div>

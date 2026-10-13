@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
-import type { SimSku } from "@/lib/portal/skus";
 
 type Plan = { id: string; name: string };
 type Reseller = {
@@ -18,24 +17,21 @@ type CustomerOption = { customer: string; totalCount: number; inWarehouseCount: 
 export function AllocateWizard({
   resellers,
   plans,
-  skus,
   customerOptions,
 }: {
   resellers: Reseller[];
   plans: Plan[];
-  skus: SimSku[];
   customerOptions: CustomerOption[];
 }) {
   const [step, setStep] = useState(0);
   const [tenantId, setTenantId] = useState(resellers[0]?.id ?? "");
-  const [skuId, setSkuId] = useState<string>(skus[0]?.id ?? "");
   const [platformPlanId, setPlatformPlanId] = useState(resellers[0]?.defaultPlanId ?? "");
   const [ccCustomer, setCcCustomer] = useState(resellers[0]?.ccCustomer ?? "");
+  const [poNumber, setPoNumber] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const reseller = resellers.find((item) => item.id === tenantId);
-  const sku = skus.find((item) => item.id === skuId);
   const contracted = useMemo(
     () => plans.filter((plan) => reseller?.planIds.includes(plan.id)),
     [plans, reseller],
@@ -79,9 +75,9 @@ export function AllocateWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tenantId,
-          skuId,
           platformPlanId: selectedPlanId || plan?.id,
           ccCustomer: effectiveCustomer,
+          poNumber,
         }),
       });
       const data = (await res.json()) as { error?: string };
@@ -100,14 +96,14 @@ export function AllocateWizard({
   return (
     <WizardFrame
       title="Sell stock to reseller"
-      steps={["Reseller", "Catalogue", "Customer & plan"]}
+      steps={["Reseller", "Customer & plan"]}
       step={step}
       summary={
         <>
           <p>{reseller?.name ?? "Choose a reseller"}</p>
           <p className="text-quiet">{reseller?.adminEmail ?? "No reseller admin email"}</p>
-          <p>{sku?.name ?? "Choose a SKU"}</p>
           <p>CC customer: {effectiveCustomer || "—"}</p>
+          <p>PO: {poNumber.trim() || "—"}</p>
           <p>
             {totalForCustomer > 0
               ? `${totalForCustomer.toLocaleString("en-AU")} SIMs · ${plan?.name ?? "No contracted plan"}`
@@ -115,7 +111,7 @@ export function AllocateWizard({
           </p>
           <p className="text-ok">
             Bind once — all SIMs with this Jasper customer land in this reseller’s warehouse. Sync keeps adding new
-            ones.
+            ones. Catalogue is not selected here (contract / Order SIMs only).
           </p>
         </>
       }
@@ -157,37 +153,13 @@ export function AllocateWizard({
       ) : null}
 
       {step === 1 ? (
-        <div className="space-y-3">
-          {skus.length === 0 ? (
-            <p className="text-sm text-quiet">Create SKUs in Catalogue first. Super admin owns the product list.</p>
-          ) : null}
-          <div className="grid gap-3 sm:grid-cols-3">
-            {skus.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSkuId(item.id)}
-                className={`rounded-card border p-4 text-left ${
-                  skuId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
-                }`}
-              >
-                <p className="font-semibold">{item.name}</p>
-                <p className="mt-2 text-sm text-quiet">
-                  {item.tech} · {item.region}
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {step === 2 ? (
         <div className="space-y-4">
           <p className="text-sm text-quiet">
             Materialize every SIM with this Jasper <span className="text-ink">Customer</span> into the reseller
             warehouse (any rate plan / status). Binding uses{" "}
             <span className="text-ink">{reseller?.adminEmail ?? "the reseller admin email"}</span>. Later Sync
-            auto-warehouses new SIMs for the same customer.
+            auto-warehouses new SIMs for the same customer. Form factor is stamped from the reseller’s contract
+            catalogue (not chosen here).
           </p>
           {!reseller?.adminEmail ? (
             <p className="text-sm text-danger">Invite a reseller admin for this organisation before selling stock.</p>
@@ -249,6 +221,16 @@ export function AllocateWizard({
           {contracted.length === 0 ? (
             <p className="text-sm text-danger">Bind a rate plan for this reseller on Contract before selling stock.</p>
           ) : null}
+          <label className="block text-sm">
+            PO number <span className="text-quiet">(optional)</span>
+            <input
+              value={poNumber}
+              onChange={(event) => setPoNumber(event.target.value)}
+              maxLength={64}
+              placeholder="Purchase order reference"
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+            />
+          </label>
         </div>
       ) : null}
 
@@ -256,15 +238,14 @@ export function AllocateWizard({
       <WizardActions
         onBack={step > 0 ? () => setStep(step - 1) : undefined}
         onNext={() => {
-          if (step < 2) setStep(step + 1);
+          if (step < 1) setStep(step + 1);
           else void submit();
         }}
-        nextLabel={step < 2 ? "Continue" : "Sell stock"}
+        nextLabel={step < 1 ? "Continue" : "Sell stock"}
         busy={busy}
         disabled={
           (step === 0 && (!tenantId || !reseller?.adminEmail)) ||
-          (step === 1 && !skuId) ||
-          (step === 2 &&
+          (step === 1 &&
             (!plan || !effectiveCustomer || totalForCustomer < 1 || !reseller?.adminEmail))
         }
       />
