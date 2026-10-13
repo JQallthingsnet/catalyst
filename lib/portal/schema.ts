@@ -170,11 +170,25 @@ const ALTERS = [
   `ALTER TABLE orders ADD COLUMN kind TEXT`,
   `ALTER TABLE orders ADD COLUMN created_by TEXT`,
   `ALTER TABLE orders ADD COLUMN po_number TEXT`,
+  `ALTER TABLE cc_sync_state ADD COLUMN supplier_backfill_v1 INTEGER NOT NULL DEFAULT 0`,
+  // Auto-poll / list ORDER BY — without these each enrich tick full-scans ~6k devices.
+  `CREATE INDEX IF NOT EXISTS cc_devices_polled_at ON cc_devices (polled_at)`,
+  `CREATE INDEX IF NOT EXISTS cc_devices_details_polled_at ON cc_devices (details_polled_at)`,
+  `CREATE INDEX IF NOT EXISTS cc_devices_customer ON cc_devices (customer)`,
+  `CREATE INDEX IF NOT EXISTS cc_devices_status ON cc_devices (status)`,
 ];
 
 const BACKFILLS = [
   `UPDATE platform_plans SET supplier = 'Optus' WHERE supplier = 'Cisco IoT Control Center'`,
-  `UPDATE cc_devices SET supplier = 'Optus' WHERE IFNULL(TRIM(supplier), '') = '' OR supplier = 'Cisco IoT Control Center'`,
+  // One-shot only — do NOT rescan cc_devices on every Worker cold start.
+  `UPDATE cc_devices
+     SET supplier = 'Optus'
+     WHERE (IFNULL(TRIM(supplier), '') = '' OR supplier = 'Cisco IoT Control Center')
+       AND EXISTS (
+         SELECT 1 FROM cc_sync_state
+         WHERE id = 'devices' AND IFNULL(supplier_backfill_v1, 0) = 0
+       )`,
+  `UPDATE cc_sync_state SET supplier_backfill_v1 = 1 WHERE id = 'devices' AND IFNULL(supplier_backfill_v1, 0) = 0`,
   `UPDATE orders
      SET kind = 'sell_stock'
      WHERE IFNULL(TRIM(kind), '') = ''

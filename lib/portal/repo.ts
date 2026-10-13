@@ -3,7 +3,7 @@ import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { runCcMutation } from "@/lib/cc/adapter";
 import { listCcDevicesForCustomer, materializeWarehouseForCcCustomer } from "@/lib/cc/devices";
 import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
-import { getSimSku, tenantHasSku } from "@/lib/portal/skus";
+import { getSimSku, listResellerSkus, listSimSkus, tenantHasSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import {
   bindTenantCcCustomer,
@@ -818,11 +818,43 @@ export async function createOrder(
   };
 }
 
+/** Form-factor stamp for warehouse SIMs — not a stock filter. Prefer contract catalogue, then tenant default. */
+async function resolveSellStockSku(tenantId: string, preferredSkuId?: string | null) {
+  const contractSkus = (await listResellerSkus(tenantId)).filter((sku) => sku.active);
+  if (preferredSkuId) {
+    const preferred = contractSkus.find((sku) => sku.skuId === preferredSkuId);
+    if (preferred) {
+      const sku = await getSimSku(preferred.skuId);
+      if (sku?.active) return sku;
+    }
+  }
+  const tenant = await loadTenant(tenantId);
+  if (tenant?.ccDefaultSkuId) {
+    const fromDefault = contractSkus.find((sku) => sku.skuId === tenant.ccDefaultSkuId);
+    if (fromDefault) {
+      const sku = await getSimSku(fromDefault.skuId);
+      if (sku?.active) return sku;
+    }
+    const legacy = await getSimSku(tenant.ccDefaultSkuId);
+    if (legacy?.active) return legacy;
+  }
+  if (contractSkus[0]) {
+    const sku = await getSimSku(contractSkus[0].skuId);
+    if (sku?.active) return sku;
+  }
+  const anyActive = (await listSimSkus({ activeOnly: true }))[0];
+  if (anyActive) return anyActive;
+  throw new Error(
+    "No catalogue SKU available to stamp warehouse form factor. Create a Catalogue SKU and bind it on Contract.",
+  );
+}
+
 export async function allocateWholesaleStock(
   actor: { email: string; isSuperAdmin: boolean; role: PortalRole },
   input: {
     tenantId: string;
-    skuId: string;
+    /** Optional; otherwise resolved from contract / tenant default. */
+    skuId?: string;
     platformPlanId: string;
     /** Jasper Control Center Customer field — required for sell stock. */
     ccCustomer: string;
@@ -834,9 +866,7 @@ export async function allocateWholesaleStock(
   }
   const tenant = await loadTenant(input.tenantId);
   if (!tenant) throw new Error("Organisation not found.");
-  const sku = await getSimSku(input.skuId);
-  if (!sku) throw new Error("Unknown catalogue item.");
-  if (!sku.active) throw new Error("Reactivate this catalogue SKU before selling stock.");
+  const sku = await resolveSellStockSku(tenant.id, input.skuId);
   const platformPlan = await loadPlatformPlanRecord(input.platformPlanId);
   if (!platformPlan) throw new Error("Plan not found.");
   if (!platformPlan.active) throw new Error("This ATN plan is deactivated.");

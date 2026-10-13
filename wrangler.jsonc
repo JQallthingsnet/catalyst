@@ -7,7 +7,8 @@
   ],
   "main": "worker.ts",
   "triggers": {
-    "crons": ["*/10 * * * *"]
+    // Was */10 — enrich queue SELECTs without indexes burned free-tier D1 rows_read.
+    "crons": ["*/30 * * * *"]
   },
   "assets": {
     "directory": "dist/client",

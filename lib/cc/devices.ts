@@ -901,7 +901,14 @@ async function distinctCcValues(column: string): Promise<string[]> {
   return (rows.results ?? []).map((row) => row.value);
 }
 
+/** Avoid 9× full-table DISTINCT on every CC page load (D1 rows_read). */
+let filterOptionsCache: { at: number; value: CcFilterOptions } | null = null;
+const FILTER_OPTIONS_TTL_MS = 30 * 60 * 1000;
+
 export async function listCcFilterOptions(): Promise<CcFilterOptions> {
+  if (filterOptionsCache && Date.now() - filterOptionsCache.at < FILTER_OPTIONS_TTL_MS) {
+    return filterOptionsCache.value;
+  }
   const [suppliers, statuses, ratePlans, communicationPlans, customers, accountIds, modemIds, globalSimTypes, simProfileIds] =
     await Promise.all([
       distinctCcValues("supplier"),
@@ -917,7 +924,7 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
   const listedSuppliers = suppliers.includes(DEFAULT_PLAN_SUPPLIER)
     ? suppliers
     : [DEFAULT_PLAN_SUPPLIER, ...suppliers];
-  return {
+  const value: CcFilterOptions = {
     suppliers: listedSuppliers,
     statuses,
     ratePlans,
@@ -928,32 +935,37 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
     globalSimTypes,
     simProfileIds,
   };
+  filterOptionsCache = { at: Date.now(), value };
+  return value;
 }
 
-export async function ccInventorySummary(): Promise<{
+export function invalidateCcFilterOptionsCache(): void {
+  filterOptionsCache = null;
+}
+
+type CcInventorySummary = {
   total: number;
   activated: number;
   inSession: number;
-  /** SIMs with at least one details/session enrich attempt (`details_polled_at` set). */
   detailsEnriched: number;
-  /** Listed from Search only — never ran details + session enrich. */
   neverEnriched: number;
-  /** `in_session` is 0 or 1 (sessionInfo answered). */
   sessionKnown: number;
-  /** Still NULL — enrich never got a session answer (or never ran). */
   sessionUnknown: number;
-  /** Session/usage enrich (`polled_at`) within the last 24 hours. */
   sessionFresh24h: number;
-  /** Session known but last enrich between 24h and 48h ago. */
   sessionStale24to48h: number;
-  /** Session known but last enrich older than 48h (or polled_at missing). */
   sessionOlder48h: number;
-  /** Details enrich (`details_polled_at`) within the last 24 hours. */
   detailsFresh24h: number;
-  /** Details enriched but older than 48h. */
   detailsOlder48h: number;
   usageMb: number;
-}> {
+};
+
+let inventorySummaryCache: { at: number; value: CcInventorySummary } | null = null;
+const INVENTORY_SUMMARY_TTL_MS = 5 * 60 * 1000;
+
+export async function ccInventorySummary(): Promise<CcInventorySummary> {
+  if (inventorySummaryCache && Date.now() - inventorySummaryCache.at < INVENTORY_SUMMARY_TTL_MS) {
+    return inventorySummaryCache.value;
+  }
   const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const row = await getDB()
@@ -989,7 +1001,7 @@ export async function ccInventorySummary(): Promise<{
       details_older_48h: number;
       usage_mb: number;
     }>();
-  return {
+  const value: CcInventorySummary = {
     total: row?.total ?? 0,
     activated: row?.activated ?? 0,
     inSession: row?.in_session ?? 0,
@@ -1004,6 +1016,8 @@ export async function ccInventorySummary(): Promise<{
     detailsOlder48h: row?.details_older_48h ?? 0,
     usageMb: row?.usage_mb ?? 0,
   };
+  inventorySummaryCache = { at: Date.now(), value };
+  return value;
 }
 
 async function ensureSyncRow(): Promise<void> {
@@ -1639,6 +1653,8 @@ export async function syncCcDevices(input?: {
       listCycleStartedAt: lastPage ? null : listCycleStartedAt,
     });
 
+    inventorySummaryCache = null;
+    invalidateCcFilterOptionsCache();
     return { pages, upserted, details, lastPage, totalCount, nextPage: page };
   } catch (err) {
     if (err instanceof CcBusyError) {
