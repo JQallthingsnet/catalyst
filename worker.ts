@@ -2,6 +2,7 @@ import handler from "vinext/server/fetch-handler";
 import { runScheduledCcPoll } from "@/lib/cc/devices";
 import { snapshotPoolCustomerDailyIfNeeded } from "@/lib/portal/pools";
 import { ensurePortalSchema } from "@/lib/portal/schema";
+import { notifySimAllowanceAlerts } from "@/lib/portal/sim-usage";
 
 type VinextHandler = {
   fetch: (request: Request, env: unknown, ctx: ExecutionContext) => Response | Promise<Response>;
@@ -18,5 +19,10 @@ export default {
     await runScheduledCcPoll();
     // If auto poll is off / skipped, still take one Sydney-day snapshot from D1.
     await snapshotPoolCustomerDailyIfNeeded();
+    try {
+      await notifySimAllowanceAlerts();
+    } catch (err) {
+      console.error("[cron] sim allowance alerts failed", err);
+    }
   },
 };

@@ -128,6 +128,19 @@ const STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS pool_customer_daily_day ON pool_customer_daily (day)`,
   `CREATE INDEX IF NOT EXISTS pool_customer_daily_customer ON pool_customer_daily (customer)`,
+  `CREATE TABLE IF NOT EXISTS sim_allowance_alerts (
+    iccid TEXT NOT NULL,
+    day TEXT NOT NULL,
+    threshold INTEGER NOT NULL,
+    pct REAL NOT NULL,
+    ctd_usage_mb REAL NOT NULL,
+    allowance_mb REAL NOT NULL,
+    modem_id TEXT,
+    customer TEXT,
+    emailed_at TEXT NOT NULL,
+    PRIMARY KEY (iccid, day, threshold)
+  )`,
+  `CREATE INDEX IF NOT EXISTS sim_allowance_alerts_day ON sim_allowance_alerts (day)`,
 ];
 
 const ALTERS = [
