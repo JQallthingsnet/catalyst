@@ -115,8 +115,8 @@ export default async function UsagePage({
                 <tr>
                   <th className="px-4 py-3">ICCID</th>
                   <th className="px-4 py-3">CC customer</th>
-                  <th className="px-4 py-3">modem_ID</th>
-                  <th className="px-4 py-3">Rate plan</th>
+                  {basis === "modem" ? <th className="px-4 py-3">modem_ID</th> : null}
+                  {basis === "rate_plan" ? <th className="px-4 py-3">Rate plan</th> : null}
                   <th className="px-4 py-3">CTD MB</th>
                   <th className="px-4 py-3">
                     {basis === "rate_plan" ? "Rate plan allowance MB" : "Modem allowance MB"}
@@ -133,8 +133,12 @@ export default async function UsagePage({
                     <tr key={sim.iccid} className="border-t border-line">
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{sim.iccid}</td>
                       <td className="px-4 py-3">{sim.customer ?? "—"}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{sim.modemId ?? "—"}</td>
-                      <td className="px-4 py-3">{sim.ratePlan ?? "—"}</td>
+                      {basis === "modem" ? (
+                        <td className="px-4 py-3 font-mono text-xs">{sim.modemId ?? "—"}</td>
+                      ) : null}
+                      {basis === "rate_plan" ? (
+                        <td className="px-4 py-3">{sim.ratePlan ?? "—"}</td>
+                      ) : null}
                       <td className="px-4 py-3">
                         {sim.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
                       </td>
@@ -156,7 +160,7 @@ export default async function UsagePage({
                 })}
                 {sims.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-quiet">
+                    <td colSpan={7} className="px-4 py-8 text-quiet">
                       {basis === "rate_plan"
                         ? "No SIMs match. Set rate plan allowances, then Sync / enrich CTD."
                         : "No SIMs match. Modem allowances are set by ATN; Sync / enrich CTD if usage is empty."}
