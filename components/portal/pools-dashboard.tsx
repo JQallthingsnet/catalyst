@@ -121,7 +121,7 @@ function CustomerPickerDialog({
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggle(row.customer)}
-                      className="accent-[var(--accent,#2dd4bf)]"
+                      className="accent-(--accent,#2dd4bf)"
                     />
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
