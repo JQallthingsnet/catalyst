@@ -161,7 +161,7 @@ export default async function UsagePage({
                     <td colSpan={8} className="px-4 py-8 text-quiet">
                       {basis === "rate_plan"
                         ? "No SIMs match. Set rate plan allowances, then Sync / enrich CTD."
-                        : "No SIMs match. Set modem allowances on Pools (or here), Sync / enrich CTD."}
+                        : "No SIMs match. Modem allowances are set by ATN; Sync / enrich CTD if usage is empty."}
                     </td>
                   </tr>
                 ) : null}

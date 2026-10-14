@@ -3,6 +3,7 @@ import { requirePrivilege } from "@/lib/portal/guard";
 import { resolvePoolCustomerScope } from "@/lib/portal/pool-scope";
 import { listPoolCustomerLatest } from "@/lib/portal/pools";
 import { can } from "@/lib/portal/role-model";
+import type { UsageAllowanceBasis } from "@/lib/portal/sim-usage";
 
 export default async function PoolsPage({
   searchParams,
@@ -12,10 +13,14 @@ export default async function PoolsPage({
   const ctx = await requirePrivilege("pool.view");
   const params = await Promise.resolve(searchParams ?? {});
   const scope = await resolvePoolCustomerScope(ctx);
-  const customers = await listPoolCustomerLatest({
-    q: params.q ?? "",
-    exactCustomer: scope.unrestricted ? undefined : scope.exactCustomer,
-  });
+  const basis: UsageAllowanceBasis = scope.unrestricted ? "rate_plan" : "modem";
+  const customers = scope.unrestricted
+    ? await listPoolCustomerLatest({ q: params.q ?? "", basis })
+    : await listPoolCustomerLatest({
+        q: params.q ?? "",
+        exactCustomer: scope.exactCustomer,
+        basis,
+      });
 
   return (
     <PoolsDashboard
@@ -23,6 +28,7 @@ export default async function PoolsPage({
       canEdit={can(ctx.role, "pool.create")}
       scopedCustomer={scope.unrestricted ? null : scope.exactCustomer || null}
       platformView={scope.unrestricted}
+      basis={basis}
     />
   );
 }

@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModemAllowancesDialog } from "@/components/portal/modem-allowances-dialog";
+import { RatePlanAllowancesDialog } from "@/components/portal/rate-plan-allowances-dialog";
+
+type PoolAllowanceBasis = "rate_plan" | "modem";
 
 export type PoolLatestRow = {
   customer: string;
@@ -184,6 +187,7 @@ function MultiCustomerChart({
   seriesByCustomer,
   latestByCustomer,
   busy,
+  allowCustomerPick,
   onRemove,
   onOpenPicker,
 }: {
@@ -191,6 +195,7 @@ function MultiCustomerChart({
   seriesByCustomer: Map<string, PoolSeriesPoint[]>;
   latestByCustomer: Map<string, PoolLatestRow>;
   busy: boolean;
+  allowCustomerPick: boolean;
   onRemove: (customer: string) => void;
   onOpenPicker: () => void;
 }) {
@@ -236,25 +241,30 @@ function MultiCustomerChart({
         <div>
           <h2 className="font-semibold">CTD usage over time</h2>
           <p className="mt-1 text-xs text-quiet">
-            Solid = CTD MB (cycle-to-date). Dashed = allowance. Top 10 by usage by default.
+            Solid = CTD MB (cycle-to-date). Dashed = allowance
+            {allowCustomerPick ? ". Top 10 by usage by default." : "."}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {busy ? <span className="text-xs text-quiet">Loading…</span> : null}
-          <button
-            type="button"
-            onClick={onOpenPicker}
-            className="rounded-card border border-line px-3 py-1.5 text-sm hover:border-accent"
-          >
-            Add customers
-          </button>
+          {allowCustomerPick ? (
+            <button
+              type="button"
+              onClick={onOpenPicker}
+              className="rounded-card border border-line px-3 py-1.5 text-sm hover:border-accent"
+            >
+              Add customers
+            </button>
+          ) : null}
         </div>
       </div>
 
       <div className="mt-4 overflow-x-auto">
         {plotted.length === 0 || days.length === 0 ? (
           <p className="flex h-48 items-center text-sm text-quiet">
-            No series to plot. Snapshot today, then pick customers.
+            {allowCustomerPick
+              ? "No series to plot. Snapshot today, then pick customers."
+              : "No series to plot. Run Snapshot today after Sync."}
           </p>
         ) : (
           <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full min-w-100" role="img">
@@ -382,14 +392,16 @@ function MultiCustomerChart({
                     {latest.pct}%
                   </span>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => onRemove(customer)}
-                  className="rounded-full px-1.5 text-xs text-quiet hover:bg-panel-2 hover:text-ink"
-                  aria-label={`Remove ${customer} from chart`}
-                >
-                  ×
-                </button>
+                {allowCustomerPick ? (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(customer)}
+                    className="rounded-full px-1.5 text-xs text-quiet hover:bg-panel-2 hover:text-ink"
+                    aria-label={`Remove ${customer} from chart`}
+                  >
+                    ×
+                  </button>
+                ) : null}
               </li>
             );
           })}
@@ -407,21 +419,26 @@ export function PoolsDashboard({
   canEdit,
   scopedCustomer = null,
   platformView = true,
+  basis = "modem",
 }: {
   initialCustomers: PoolLatestRow[];
   canEdit: boolean;
   /** When set, reseller is limited to this Jasper/CC customer. */
   scopedCustomer?: string | null;
   platformView?: boolean;
+  /** Super admin → rate_plan; reseller → modem. Mapping UI is super-admin only. */
+  basis?: PoolAllowanceBasis;
 }) {
   const [customerQ, setCustomerQ] = useState("");
   const [plotted, setPlotted] = useState<string[]>(() => topCustomersByUsage(initialCustomers, 10));
   const [series, setSeries] = useState<PoolSeriesPoint[]>([]);
   const [seriesBusy, setSeriesBusy] = useState(false);
-  const [allowancesOpen, setAllowancesOpen] = useState(false);
+  const [modemAllowancesOpen, setModemAllowancesOpen] = useState(false);
+  const [ratePlanAllowancesOpen, setRatePlanAllowancesOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [snapBusy, setSnapBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const allowanceLabel = basis === "rate_plan" ? "Rate plan allowance MB" : "Modem allowance MB";
 
   const latestByCustomer = useMemo(() => {
     const map = new Map<string, PoolLatestRow>();
@@ -503,31 +520,40 @@ export function PoolsDashboard({
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">
             {platformView
-              ? "Per Jasper/CC customer, summed across SIMs: CTD MB per SIM, and manual modem_ID allowance applied per SIM (cycle-to-date, snapshotted once per Sydney day)."
+              ? "Per Jasper/CC customer, summed across SIMs: CTD MB ÷ rate plan allowance (cycle-to-date, snapshotted once per Sydney day). Modem_ID allowances are for reseller view only; both mappings are set here."
               : scopedCustomer
                 ? `Your organisation’s Control Center customer “${scopedCustomer}”: CTD MB and modem_ID allowance summed across your SIMs (cycle-to-date, snapshotted once per Sydney day).`
                 : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canEdit ? (
+          {canEdit && platformView ? (
             <>
               <button
                 type="button"
-                onClick={() => setAllowancesOpen(true)}
+                onClick={() => setRatePlanAllowancesOpen(true)}
+                className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
+              >
+                Rate plan allowances
+              </button>
+              <button
+                type="button"
+                onClick={() => setModemAllowancesOpen(true)}
                 className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
               >
                 Modem allowances
               </button>
-              <button
-                type="button"
-                disabled={snapBusy}
-                onClick={() => snapshotNow()}
-                className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
-              >
-                {snapBusy ? "Snapshot…" : "Snapshot today"}
-              </button>
             </>
+          ) : null}
+          {canEdit ? (
+            <button
+              type="button"
+              disabled={snapBusy}
+              onClick={() => snapshotNow()}
+              className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
+            >
+              {snapBusy ? "Snapshot…" : "Snapshot today"}
+            </button>
           ) : null}
         </div>
       </div>
@@ -540,37 +566,40 @@ export function PoolsDashboard({
           seriesByCustomer={seriesByCustomer}
           latestByCustomer={latestByCustomer}
           busy={seriesBusy}
+          allowCustomerPick={platformView}
           onRemove={(customer) => setPlotted((current) => current.filter((c) => c !== customer))}
           onOpenPicker={() => setPickerOpen(true)}
         />
       </div>
 
-      <form
-        className="mt-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-        }}
-      >
-        <input
-          value={customerQ}
-          onChange={(event) => setCustomerQ(event.target.value)}
-          placeholder="Filter CC customer"
-          className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent"
-        />
-      </form>
+      {platformView ? (
+        <form
+          className="mt-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+          }}
+        >
+          <input
+            value={customerQ}
+            onChange={(event) => setCustomerQ(event.target.value)}
+            placeholder="Filter CC customer"
+            className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent"
+          />
+        </form>
+      ) : null}
 
-      <div className="mt-4 overflow-x-auto rounded-card border border-line bg-panel">
+      <div className={`overflow-x-auto rounded-card border border-line bg-panel ${platformView ? "mt-4" : "mt-6"}`}>
         <table className="w-full min-w-180 text-left text-sm">
           <thead className="text-quiet">
             <tr>
               <th className="px-4 py-3">CC customer</th>
               <th className="px-4 py-3">Day</th>
               <th className="px-4 py-3">CTD MB</th>
-              <th className="px-4 py-3">Allowance MB</th>
+              <th className="px-4 py-3">{allowanceLabel}</th>
               <th className="px-4 py-3">%</th>
               <th className="px-4 py-3">SIMs w/ modem_ID</th>
               <th className="px-4 py-3">SIMs</th>
-              <th className="px-4 py-3">Chart</th>
+              {platformView ? <th className="px-4 py-3">Chart</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -605,27 +634,29 @@ export function PoolsDashboard({
                   </td>
                   <td className="px-4 py-3">{row.modemCount}</td>
                   <td className="px-4 py-3">{row.simCount}</td>
-                  <td className="px-4 py-3">
-                    {onChart ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPlotted((current) => current.filter((c) => c !== row.customer))
-                        }
-                        className="text-sm text-quiet hover:text-ink"
-                      >
-                        Remove
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => addToPlot(row.customer)}
-                        className="text-sm text-accent"
-                      >
-                        Add
-                      </button>
-                    )}
-                  </td>
+                  {platformView ? (
+                    <td className="px-4 py-3">
+                      {onChart ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPlotted((current) => current.filter((c) => c !== row.customer))
+                          }
+                          className="text-sm text-quiet hover:text-ink"
+                        >
+                          Remove
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => addToPlot(row.customer)}
+                          className="text-sm text-accent"
+                        >
+                          Add
+                        </button>
+                      )}
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}
@@ -633,14 +664,25 @@ export function PoolsDashboard({
         </table>
       </div>
 
-      <ModemAllowancesDialog open={allowancesOpen} onClose={() => setAllowancesOpen(false)} />
-      <CustomerPickerDialog
-        open={pickerOpen}
-        customers={initialCustomers}
-        selected={plotted}
-        onClose={() => setPickerOpen(false)}
-        onApply={setPlotted}
-      />
+      {platformView ? (
+        <>
+          <RatePlanAllowancesDialog
+            open={ratePlanAllowancesOpen}
+            onClose={() => setRatePlanAllowancesOpen(false)}
+          />
+          <ModemAllowancesDialog
+            open={modemAllowancesOpen}
+            onClose={() => setModemAllowancesOpen(false)}
+          />
+          <CustomerPickerDialog
+            open={pickerOpen}
+            customers={initialCustomers}
+            selected={plotted}
+            onClose={() => setPickerOpen(false)}
+            onApply={setPlotted}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

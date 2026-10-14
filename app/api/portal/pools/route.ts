@@ -20,16 +20,20 @@ export async function GET(request: Request) {
   if (denied) return denied;
 
   const scope = await resolvePoolCustomerScope(ctx);
+  const basis = scope.unrestricted ? ("rate_plan" as const) : ("modem" as const);
   const url = new URL(request.url);
   const view = url.searchParams.get("view") ?? "latest";
   const customer = url.searchParams.get("customer") ?? "";
 
   if (view === "modems") {
+    if (ctx.role !== "super_admin") {
+      return NextResponse.json(
+        { error: "Only super admin can view modem_ID allowances." },
+        { status: 403 },
+      );
+    }
     return NextResponse.json({
-      modems: await listModemAllowances({
-        q: customer,
-        exactCustomer: scope.unrestricted ? undefined : scope.exactCustomer,
-      }),
+      modems: await listModemAllowances({ q: customer }),
     });
   }
   if (view === "rate_plans") {
@@ -49,16 +53,20 @@ export async function GET(request: Request) {
         customer: customers.length ? undefined : customer,
         customers: customers.length ? customers : undefined,
         allowedCustomers: scope.unrestricted ? undefined : [scope.exactCustomer],
+        basis,
         fromDay: url.searchParams.get("from") ?? undefined,
         toDay: url.searchParams.get("to") ?? undefined,
       }),
     });
   }
   return NextResponse.json({
-    customers: await listPoolCustomerLatest({
-      q: customer,
-      exactCustomer: scope.unrestricted ? undefined : scope.exactCustomer,
-    }),
+    customers: scope.unrestricted
+      ? await listPoolCustomerLatest({ q: customer, basis })
+      : await listPoolCustomerLatest({
+          q: customer,
+          exactCustomer: scope.exactCustomer,
+          basis,
+        }),
   });
 }
 
@@ -88,6 +96,12 @@ export async function PUT(request: Request) {
     }
     if (!body.modemId?.trim()) {
       return NextResponse.json({ error: "modem_ID or rate plan is required." }, { status: 400 });
+    }
+    if (ctx.role !== "super_admin") {
+      return NextResponse.json(
+        { error: "Only super admin can edit modem_ID allowances." },
+        { status: 403 },
+      );
     }
     if (body.clear || body.allowanceMb == null) {
       await clearModemAllowance(body.modemId);

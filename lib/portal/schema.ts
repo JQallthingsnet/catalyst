@@ -121,6 +121,7 @@ const STATEMENTS = [
     day TEXT NOT NULL,
     ctd_usage_mb REAL NOT NULL,
     allowance_mb REAL NOT NULL,
+    rate_plan_allowance_mb REAL,
     modem_count INTEGER NOT NULL,
     sim_count INTEGER NOT NULL,
     snapshotted_at TEXT NOT NULL,
@@ -223,6 +224,7 @@ const ALTERS = [
     ON cc_devices (details_polled_at) WHERE details_polled_at IS NOT NULL`,
   `ALTER TABLE sim_allowance_alerts ADD COLUMN rate_plan TEXT`,
   `ALTER TABLE sim_allowance_alerts ADD COLUMN basis TEXT`,
+  `ALTER TABLE pool_customer_daily ADD COLUMN rate_plan_allowance_mb REAL`,
 ];
 
 const BACKFILLS = [

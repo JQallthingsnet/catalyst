@@ -122,7 +122,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
           <div>
             <h2 className="text-lg font-semibold">Modem allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB per modem_ID. Applied to every SIM with that ID when pooling.
+              Manual MB per modem_ID. Reseller Usage and Pools use CTD ÷ this allowance (set by ATN only).
             </p>
           </div>
           <button

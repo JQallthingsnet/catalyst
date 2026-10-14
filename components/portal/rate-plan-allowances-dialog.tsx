@@ -109,7 +109,7 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
           <div>
             <h2 className="text-lg font-semibold">Rate plan allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB per Jasper/CC rate plan. Super-admin Usage % = CTD ÷ this allowance.
+              Manual MB per Jasper/CC rate plan. Super-admin Usage and Pools use CTD ÷ this allowance.
             </p>
           </div>
           <button
