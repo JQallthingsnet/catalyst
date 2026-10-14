@@ -91,7 +91,8 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
           <div>
             <h2 className="text-lg font-semibold">Modem allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB allowance per Jasper modem_ID. Customer pool cap = sum of its modem_IDs.
+              Manual MB allowance per Jasper modem_ID. Customer pool cap = that allowance × each SIM
+              that carries the modem_ID (summed across SIMs).
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-sm text-quiet hover:text-ink">

@@ -98,8 +98,11 @@ export async function clearModemAllowance(modemId: string): Promise<void> {
 }
 
 /**
- * Snapshot sum(CTD) and sum(distinct modem allowances) per Jasper/CC customer
- * for the given Sydney day (default: today). Upserts so re-runs refresh the day.
+ * Snapshot per Jasper/CC customer for the Sydney day (upsert).
+ * modem_ID and CTD are per SIM — sum across every device row for that customer:
+ * - ctd_usage_mb = Σ CTD MB
+ * - allowance_mb = Σ manual allowance(modem_ID) for each SIM (same modem_ID on N SIMs counts N times)
+ * - modem_count = SIMs that have a non-empty modem_ID
  */
 export async function snapshotPoolCustomerDaily(day = sydneyDayKey()): Promise<number> {
   const db = getDB();
@@ -120,8 +123,9 @@ export async function snapshotPoolCustomerDaily(day = sydneyDayKey()): Promise<n
 
   type Agg = {
     ctd: number;
+    allowance: number;
     simCount: number;
-    modems: Set<string>;
+    simsWithModem: number;
   };
   const byCustomer = new Map<string, Agg>();
 
@@ -130,22 +134,21 @@ export async function snapshotPoolCustomerDaily(day = sydneyDayKey()): Promise<n
     if (!customer) continue;
     let agg = byCustomer.get(customer);
     if (!agg) {
-      agg = { ctd: 0, simCount: 0, modems: new Set() };
+      agg = { ctd: 0, allowance: 0, simCount: 0, simsWithModem: 0 };
       byCustomer.set(customer, agg);
     }
     agg.ctd += row.ctd_usage_mb ?? 0;
     agg.simCount += 1;
     const modem = row.modem_id?.trim();
-    if (modem) agg.modems.add(modem);
+    if (modem) {
+      agg.simsWithModem += 1;
+      agg.allowance += allowanceByModem.get(modem) ?? 0;
+    }
   }
 
   const now = new Date().toISOString();
   const statements = [];
   for (const [customer, agg] of byCustomer) {
-    let allowance = 0;
-    for (const modem of agg.modems) {
-      allowance += allowanceByModem.get(modem) ?? 0;
-    }
     statements.push(
       db
         .prepare(
@@ -159,7 +162,7 @@ export async function snapshotPoolCustomerDaily(day = sydneyDayKey()): Promise<n
              sim_count = excluded.sim_count,
              snapshotted_at = excluded.snapshotted_at`,
         )
-        .bind(customer, day, agg.ctd, allowance, agg.modems.size, agg.simCount, now),
+        .bind(customer, day, agg.ctd, agg.allowance, agg.simsWithModem, agg.simCount, now),
     );
   }
 

@@ -93,8 +93,8 @@ export function PoolsDashboard({
         <div>
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">
-            Per Jasper/CC customer: allowance = sum of manual modem_ID caps; usage = sum of CTD MB
-            (cycle-to-date), snapshotted once per Sydney day.
+            Per Jasper/CC customer, summed across SIMs: CTD MB per SIM, and manual modem_ID allowance
+            applied per SIM (cycle-to-date, snapshotted once per Sydney day).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -193,7 +193,7 @@ export function PoolsDashboard({
                   >
                     <p className="truncate font-medium">{row.customer}</p>
                     <p className="mt-1 text-xs text-quiet">
-                      {row.day} · {row.modemCount} modem_IDs · {row.simCount} SIMs
+                      {row.day} · {row.modemCount} SIMs w/ modem_ID · {row.simCount} SIMs
                     </p>
                     <p className={`mt-1 ${alert}`}>
                       {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} /{" "}
@@ -220,7 +220,7 @@ export function PoolsDashboard({
               <th className="px-4 py-3">CTD MB</th>
               <th className="px-4 py-3">Allowance MB</th>
               <th className="px-4 py-3">%</th>
-              <th className="px-4 py-3">modem_IDs</th>
+              <th className="px-4 py-3">SIMs w/ modem_ID</th>
               <th className="px-4 py-3">SIMs</th>
             </tr>
           </thead>
