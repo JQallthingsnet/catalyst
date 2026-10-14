@@ -34,6 +34,12 @@ export function sydneyYmd(at: Date = new Date()): { year: number; month: number;
   return { year, month, day, key: `${year}-${String(month).padStart(2, "0")}` };
 }
 
+/** Full Sydney calendar day as YYYY-MM-DD (pool daily snapshots, filters). */
+export function sydneyDayKey(at: Date = new Date()): string {
+  const { year, month, day } = sydneyYmd(at);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 /**
  * Activated rate-plan changes are allowed through end of the 24th (Sydney).
  * From 25th 00:00 Sydney onward, reject.

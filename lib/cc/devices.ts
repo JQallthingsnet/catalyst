@@ -580,7 +580,15 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   const state = await getCcSyncState();
   if (!state.autoPoll) return null;
   try {
-    return await syncCcDevices({ mode: "auto" });
+    const result = await syncCcDevices({ mode: "auto" });
+    // Refresh today's pool CTD snapshot after enrich (CTD is cycle-to-date, not a delta).
+    try {
+      const { snapshotPoolCustomerDaily } = await import("@/lib/portal/pools");
+      await snapshotPoolCustomerDaily();
+    } catch {
+      // Pool snapshot must not fail the CC poll.
+    }
+    return result;
   } catch (err) {
     if (err instanceof CcBusyError) return null;
     throw err;

@@ -1,5 +1,4 @@
 export const PLAN_TYPES = ["Telematics", "Fleet", "Metering", "Handheld"] as const;
-export const POOL_TYPES = ["Fleet data", "Shared roaming", "Site cap"] as const;
 
 export const LIFECYCLE_ACTIONS = ["Activate", "Suspend", "Resume", "Deactivate"] as const;
 

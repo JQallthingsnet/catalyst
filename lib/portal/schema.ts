@@ -110,6 +110,24 @@ const STATEMENTS = [
     ON sim_rate_plan_changes (tenant_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS sim_rate_plan_changes_push_status
     ON sim_rate_plan_changes (push_status, created_at)`,
+  `CREATE TABLE IF NOT EXISTS modem_allowances (
+    modem_id TEXT PRIMARY KEY,
+    allowance_mb REAL NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS pool_customer_daily (
+    customer TEXT NOT NULL,
+    day TEXT NOT NULL,
+    ctd_usage_mb REAL NOT NULL,
+    allowance_mb REAL NOT NULL,
+    modem_count INTEGER NOT NULL,
+    sim_count INTEGER NOT NULL,
+    snapshotted_at TEXT NOT NULL,
+    PRIMARY KEY (customer, day)
+  )`,
+  `CREATE INDEX IF NOT EXISTS pool_customer_daily_day ON pool_customer_daily (day)`,
+  `CREATE INDEX IF NOT EXISTS pool_customer_daily_customer ON pool_customer_daily (customer)`,
 ];
 
 const ALTERS = [
@@ -176,6 +194,12 @@ const ALTERS = [
   `CREATE INDEX IF NOT EXISTS cc_devices_details_polled_at ON cc_devices (details_polled_at)`,
   `CREATE INDEX IF NOT EXISTS cc_devices_customer ON cc_devices (customer)`,
   `CREATE INDEX IF NOT EXISTS cc_devices_status ON cc_devices (status)`,
+  `CREATE INDEX IF NOT EXISTS cc_devices_never_details_polled
+    ON cc_devices (polled_at) WHERE details_polled_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS cc_devices_session_queue
+    ON cc_devices (polled_at) WHERE details_polled_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS cc_devices_details_queue
+    ON cc_devices (details_polled_at) WHERE details_polled_at IS NOT NULL`,
 ];
 
 const BACKFILLS = [
