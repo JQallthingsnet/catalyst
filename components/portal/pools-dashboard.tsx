@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModemAllowancesDialog } from "@/components/portal/modem-allowances-dialog";
 
 export type PoolLatestRow = {
@@ -20,6 +20,388 @@ export type PoolSeriesPoint = {
   allowanceMb: number;
 };
 
+const PLOT_COLORS = [
+  "#2dd4bf",
+  "#60a5fa",
+  "#f472b6",
+  "#fbbf24",
+  "#a78bfa",
+  "#34d399",
+  "#fb7185",
+  "#38bdf8",
+  "#c084fc",
+  "#facc15",
+  "#4ade80",
+  "#e879f9",
+];
+
+function topCustomersByUsage(rows: PoolLatestRow[], n: number): string[] {
+  return [...rows]
+    .sort((a, b) => b.ctdUsageMb - a.ctdUsageMb)
+    .slice(0, n)
+    .map((row) => row.customer);
+}
+
+function colorFor(customer: string, plotted: string[]): string {
+  const idx = plotted.indexOf(customer);
+  return PLOT_COLORS[idx >= 0 ? idx % PLOT_COLORS.length : 0];
+}
+
+function CustomerPickerDialog({
+  open,
+  customers,
+  selected,
+  onClose,
+  onApply,
+}: {
+  open: boolean;
+  customers: PoolLatestRow[];
+  selected: string[];
+  onClose: () => void;
+  onApply: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState<Set<string>>(new Set(selected));
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setDraft(new Set(selected));
+      setQ("");
+    }
+  }, [open, selected]);
+
+  if (!open) return null;
+
+  const sorted = [...customers].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
+  const filtered = sorted.filter((row) => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return true;
+    return row.customer.toLowerCase().includes(needle);
+  });
+
+  function toggle(customer: string) {
+    setDraft((current) => {
+      const next = new Set(current);
+      if (next.has(customer)) next.delete(customer);
+      else next.add(customer);
+      return next;
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-card border border-line bg-panel shadow-xl">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold">Customers on chart</h2>
+            <p className="mt-1 text-sm text-quiet">
+              Default is top 10 by CTD usage. Tick more to add them to the plot.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="text-sm text-quiet hover:text-ink">
+            Close
+          </button>
+        </div>
+        <div className="border-b border-line px-5 py-3">
+          <input
+            value={q}
+            onChange={(event) => setQ(event.target.value)}
+            placeholder="Filter CC customer"
+            className="h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm outline-none focus:border-accent"
+          />
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
+          <ul className="space-y-1">
+            {filtered.map((row, index) => {
+              const checked = draft.has(row.customer);
+              return (
+                <li key={row.customer}>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line px-3 py-2 hover:border-accent">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(row.customer)}
+                      className="accent-[var(--accent,#2dd4bf)]"
+                    />
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{
+                        background: checked
+                          ? colorFor(row.customer, [...draft])
+                          : "transparent",
+                        outline: checked ? undefined : "1px solid var(--line, #334155)",
+                      }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm">{row.customer}</span>
+                    <span className="shrink-0 text-xs text-quiet">
+                      {index < 10 && !q ? "top 10 · " : ""}
+                      {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-4">
+          <button
+            type="button"
+            onClick={() => setDraft(new Set(topCustomersByUsage(customers, 10)))}
+            className="text-sm text-accent"
+          >
+            Reset to top 10
+          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const ordered = sorted
+                  .map((row) => row.customer)
+                  .filter((name) => draft.has(name));
+                onApply(ordered);
+                onClose();
+              }}
+              className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
+            >
+              Apply ({draft.size})
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MultiCustomerChart({
+  plotted,
+  seriesByCustomer,
+  latestByCustomer,
+  busy,
+  onRemove,
+  onOpenPicker,
+}: {
+  plotted: string[];
+  seriesByCustomer: Map<string, PoolSeriesPoint[]>;
+  latestByCustomer: Map<string, PoolLatestRow>;
+  busy: boolean;
+  onRemove: (customer: string) => void;
+  onOpenPicker: () => void;
+}) {
+  const days = useMemo(() => {
+    const set = new Set<string>();
+    for (const customer of plotted) {
+      for (const point of seriesByCustomer.get(customer) ?? []) set.add(point.day);
+    }
+    return [...set].sort();
+  }, [plotted, seriesByCustomer]);
+
+  const maxMb = useMemo(() => {
+    let max = 1;
+    for (const customer of plotted) {
+      for (const point of seriesByCustomer.get(customer) ?? []) {
+        max = Math.max(max, point.ctdUsageMb, point.allowanceMb);
+      }
+    }
+    return max;
+  }, [plotted, seriesByCustomer]);
+
+  const width = 640;
+  const height = 220;
+  const padL = 44;
+  const padR = 12;
+  const padT = 12;
+  const padB = 28;
+  const innerW = width - padL - padR;
+  const innerH = height - padT - padB;
+
+  function xAt(i: number) {
+    if (days.length <= 1) return padL + innerW / 2;
+    return padL + (i / (days.length - 1)) * innerW;
+  }
+
+  function yAt(mb: number) {
+    return padT + innerH - (mb / maxMb) * innerH;
+  }
+
+  return (
+    <article className="rounded-card border border-line bg-panel p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">CTD usage over time</h2>
+          <p className="mt-1 text-xs text-quiet">
+            Solid = CTD MB (cycle-to-date). Dashed = allowance. Top 10 by usage by default.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {busy ? <span className="text-xs text-quiet">Loading…</span> : null}
+          <button
+            type="button"
+            onClick={onOpenPicker}
+            className="rounded-card border border-line px-3 py-1.5 text-sm hover:border-accent"
+          >
+            Add customers
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        {plotted.length === 0 || days.length === 0 ? (
+          <p className="flex h-48 items-center text-sm text-quiet">
+            No series to plot. Snapshot today, then pick customers.
+          </p>
+        ) : (
+          <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full min-w-100" role="img">
+            {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+              const y = padT + innerH * (1 - t);
+              return (
+                <g key={t}>
+                  <line
+                    x1={padL}
+                    x2={width - padR}
+                    y1={y}
+                    y2={y}
+                    stroke="currentColor"
+                    className="text-line"
+                    strokeOpacity={0.35}
+                  />
+                  <text
+                    x={padL - 6}
+                    y={y + 3}
+                    textAnchor="end"
+                    className="fill-quiet text-[9px]"
+                  >
+                    {t === 0 ? "0" : `${Math.round((maxMb * t) / 1000)}k`}
+                  </text>
+                </g>
+              );
+            })}
+            {days.map((day, i) => (
+              <text
+                key={day}
+                x={xAt(i)}
+                y={height - 8}
+                textAnchor="middle"
+                className="fill-quiet text-[9px]"
+              >
+                {day.slice(5)}
+              </text>
+            ))}
+            {plotted.map((customer) => {
+              const points = seriesByCustomer.get(customer) ?? [];
+              const byDay = new Map(points.map((p) => [p.day, p]));
+              const color = colorFor(customer, plotted);
+              const buildPath = (value: (p: PoolSeriesPoint) => number) => {
+                let d = "";
+                let move = true;
+                days.forEach((day, i) => {
+                  const p = byDay.get(day);
+                  if (!p) {
+                    move = true;
+                    return;
+                  }
+                  d += `${move ? "M" : "L"}${xAt(i)},${yAt(value(p))} `;
+                  move = false;
+                });
+                return d.trim();
+              };
+              const ctdPath = buildPath((p) => p.ctdUsageMb);
+              const allowPath = buildPath((p) => p.allowanceMb);
+              return (
+                <g key={customer}>
+                  {allowPath ? (
+                    <path
+                      d={allowPath}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                      strokeOpacity={0.55}
+                    />
+                  ) : null}
+                  {ctdPath ? (
+                    <path d={ctdPath} fill="none" stroke={color} strokeWidth={2.25} strokeLinecap="round" />
+                  ) : null}
+                  {days.map((day, i) => {
+                    const p = byDay.get(day);
+                    if (!p) return null;
+                    return (
+                      <circle
+                        key={`${customer}-${day}`}
+                        cx={xAt(i)}
+                        cy={yAt(p.ctdUsageMb)}
+                        r={3}
+                        fill={color}
+                      >
+                        <title>
+                          {customer}: {p.ctdUsageMb.toFixed(0)} MB CTD / {p.allowanceMb.toFixed(0)} MB
+                          allowance ({day})
+                        </title>
+                      </circle>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </svg>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-line pt-4">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-quiet">Legend</p>
+          <p className="text-[11px] text-quiet">
+            <span className="mr-3 inline-flex items-center gap-1.5">
+              <span className="inline-block h-0.5 w-4 rounded bg-ink" /> CTD
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-px w-4 border-t border-dashed border-ink" /> Allowance
+            </span>
+          </p>
+        </div>
+        <ul className="flex flex-wrap gap-2">
+          {plotted.map((customer) => {
+            const latest = latestByCustomer.get(customer);
+            const color = colorFor(customer, plotted);
+            return (
+              <li
+                key={customer}
+                className="flex max-w-full items-center gap-2 rounded-full border border-line bg-canvas/60 py-1 pl-2.5 pr-1.5"
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
+                <span className="truncate text-xs font-medium">{customer}</span>
+                {latest ? (
+                  <span className="hidden shrink-0 text-[10px] text-quiet sm:inline">
+                    {latest.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB ·{" "}
+                    {latest.pct}%
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => onRemove(customer)}
+                  className="rounded-full px-1.5 text-xs text-quiet hover:bg-panel-2 hover:text-ink"
+                  aria-label={`Remove ${customer} from chart`}
+                >
+                  ×
+                </button>
+              </li>
+            );
+          })}
+          {plotted.length === 0 ? (
+            <li className="text-xs text-quiet">No customers selected.</li>
+          ) : null}
+        </ul>
+      </div>
+    </article>
+  );
+}
+
 export function PoolsDashboard({
   initialCustomers,
   canEdit,
@@ -28,32 +410,41 @@ export function PoolsDashboard({
   canEdit: boolean;
 }) {
   const [customerQ, setCustomerQ] = useState("");
-  const [selected, setSelected] = useState<string | null>(initialCustomers[0]?.customer ?? null);
+  const [plotted, setPlotted] = useState<string[]>(() => topCustomersByUsage(initialCustomers, 10));
   const [series, setSeries] = useState<PoolSeriesPoint[]>([]);
   const [seriesBusy, setSeriesBusy] = useState(false);
   const [allowancesOpen, setAllowancesOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [snapBusy, setSnapBusy] = useState(false);
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    if (initialCustomers[0]?.customer) {
-      void loadSeries(initialCustomers[0].customer);
+  const latestByCustomer = useMemo(() => {
+    const map = new Map<string, PoolLatestRow>();
+    for (const row of initialCustomers) map.set(row.customer, row);
+    return map;
+  }, [initialCustomers]);
+
+  const seriesByCustomer = useMemo(() => {
+    const map = new Map<string, PoolSeriesPoint[]>();
+    for (const point of series) {
+      const list = map.get(point.customer) ?? [];
+      list.push(point);
+      map.set(point.customer, list);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load only
-  }, []);
+    return map;
+  }, [series]);
 
-  const filtered = useMemo(() => {
-    const q = customerQ.trim().toLowerCase();
-    if (!q) return initialCustomers;
-    return initialCustomers.filter((row) => row.customer.toLowerCase().includes(q));
-  }, [customerQ, initialCustomers]);
-
-  async function loadSeries(customer: string) {
-    setSelected(customer);
+  const loadSeries = useCallback(async (customers: string[]) => {
+    if (customers.length === 0) {
+      setSeries([]);
+      return;
+    }
     setSeriesBusy(true);
     setMessage("");
     try {
-      const res = await fetch(`/api/portal/pools?view=series&customer=${encodeURIComponent(customer)}`);
+      const res = await fetch(
+        `/api/portal/pools?view=series&customers=${encodeURIComponent(customers.join(","))}`,
+      );
       const data = (await res.json()) as { series?: PoolSeriesPoint[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Could not load series.");
       setSeries(data.series ?? []);
@@ -63,7 +454,18 @@ export function PoolsDashboard({
     } finally {
       setSeriesBusy(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void loadSeries(plotted);
+  }, [plotted, loadSeries]);
+
+  const filtered = useMemo(() => {
+    const q = customerQ.trim().toLowerCase();
+    const rows = [...initialCustomers].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
+    if (!q) return rows;
+    return rows.filter((row) => row.customer.toLowerCase().includes(q));
+  }, [customerQ, initialCustomers]);
 
   async function snapshotNow() {
     setSnapBusy(true);
@@ -85,7 +487,9 @@ export function PoolsDashboard({
     }
   }
 
-  const maxMb = Math.max(...series.flatMap((p) => [p.ctdUsageMb, p.allowanceMb]), 1);
+  function addToPlot(customer: string) {
+    setPlotted((current) => (current.includes(customer) ? current : [...current, customer]));
+  }
 
   return (
     <div>
@@ -122,8 +526,19 @@ export function PoolsDashboard({
 
       {message ? <p className="mt-3 text-sm text-quiet">{message}</p> : null}
 
+      <div className="mt-6">
+        <MultiCustomerChart
+          plotted={plotted}
+          seriesByCustomer={seriesByCustomer}
+          latestByCustomer={latestByCustomer}
+          busy={seriesBusy}
+          onRemove={(customer) => setPlotted((current) => current.filter((c) => c !== customer))}
+          onOpenPicker={() => setPickerOpen(true)}
+        />
+      </div>
+
       <form
-        className="mt-5"
+        className="mt-6"
         onSubmit={(event) => {
           event.preventDefault();
         }}
@@ -136,82 +551,7 @@ export function PoolsDashboard({
         />
       </form>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-5">
-        <article className="rounded-card border border-line bg-panel p-5 lg:col-span-3">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="font-semibold">{selected ?? "Select a customer"}</h2>
-              <p className="mt-1 text-xs text-quiet">
-                CTD (solid) vs allowance (outline) — not daily deltas.
-              </p>
-            </div>
-            {seriesBusy ? <p className="text-xs text-quiet">Loading…</p> : null}
-          </div>
-          <div className="mt-4 flex h-48 items-end gap-1">
-            {series.length === 0 ? (
-              <p className="text-sm text-quiet">
-                {selected
-                  ? "No daily snapshots yet. Run Snapshot today after Sync."
-                  : "Pick a customer in the table."}
-              </p>
-            ) : (
-              series.map((point) => (
-                <div key={point.day} className="flex flex-1 flex-col items-center justify-end gap-1">
-                  <div className="relative flex w-full flex-1 items-end justify-center">
-                    <div
-                      className="absolute bottom-0 w-[40%] rounded-t border border-accent/50"
-                      style={{ height: `${Math.max(4, (point.allowanceMb / maxMb) * 100)}%` }}
-                      title={`Allowance ${point.allowanceMb.toFixed(0)} MB`}
-                    />
-                    <div
-                      className="relative z-10 w-[40%] rounded-t bg-accent/80"
-                      style={{ height: `${Math.max(4, (point.ctdUsageMb / maxMb) * 100)}%` }}
-                      title={`CTD ${point.ctdUsageMb.toFixed(0)} MB`}
-                    />
-                  </div>
-                  <span className="text-[9px] text-quiet">{point.day.slice(5)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </article>
-
-        <article className="rounded-card border border-line bg-panel p-5 lg:col-span-2">
-          <h2 className="font-semibold">As-of latest day</h2>
-          <ul className="mt-3 max-h-64 space-y-2 overflow-auto text-sm">
-            {filtered.map((row) => {
-              const alert = row.pct >= 100 ? "text-danger" : row.pct >= 80 ? "text-warn" : "text-ok";
-              const active = row.customer === selected;
-              return (
-                <li key={row.customer}>
-                  <button
-                    type="button"
-                    onClick={() => loadSeries(row.customer)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left ${
-                      active ? "border-accent bg-panel-2" : "border-line hover:border-accent"
-                    }`}
-                  >
-                    <p className="truncate font-medium">{row.customer}</p>
-                    <p className="mt-1 text-xs text-quiet">
-                      {row.day} · {row.modemCount} SIMs w/ modem_ID · {row.simCount} SIMs
-                    </p>
-                    <p className={`mt-1 ${alert}`}>
-                      {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} /{" "}
-                      {row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB ·{" "}
-                      {row.pct}%
-                    </p>
-                  </button>
-                </li>
-              );
-            })}
-            {filtered.length === 0 ? (
-              <li className="py-6 text-quiet">No snapshots yet. Set modem allowances, then Snapshot today.</li>
-            ) : null}
-          </ul>
-        </article>
-      </div>
-
-      <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
+      <div className="mt-4 overflow-x-auto rounded-card border border-line bg-panel">
         <table className="w-full min-w-180 text-left text-sm">
           <thead className="text-quiet">
             <tr>
@@ -222,39 +562,77 @@ export function PoolsDashboard({
               <th className="px-4 py-3">%</th>
               <th className="px-4 py-3">SIMs w/ modem_ID</th>
               <th className="px-4 py-3">SIMs</th>
+              <th className="px-4 py-3">Chart</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((row) => (
-              <tr
-                key={row.customer}
-                className="cursor-pointer border-t border-line hover:bg-panel-2"
-                onClick={() => loadSeries(row.customer)}
-              >
-                <td className="px-4 py-3">{row.customer}</td>
-                <td className="px-4 py-3 font-mono text-xs">{row.day}</td>
-                <td className="px-4 py-3">
-                  {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
-                </td>
-                <td className="px-4 py-3">
-                  {row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
-                </td>
-                <td
-                  className={`px-4 py-3 ${
-                    row.pct >= 100 ? "text-danger" : row.pct >= 80 ? "text-warn" : "text-ok"
-                  }`}
-                >
-                  {row.pct}%
-                </td>
-                <td className="px-4 py-3">{row.modemCount}</td>
-                <td className="px-4 py-3">{row.simCount}</td>
-              </tr>
-            ))}
+            {filtered.map((row) => {
+              const onChart = plotted.includes(row.customer);
+              return (
+                <tr key={row.customer} className="border-t border-line hover:bg-panel-2">
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-2">
+                      {onChart ? (
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: colorFor(row.customer, plotted) }}
+                        />
+                      ) : null}
+                      {row.customer}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">{row.day}</td>
+                  <td className="px-4 py-3">
+                    {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td
+                    className={`px-4 py-3 ${
+                      row.pct >= 100 ? "text-danger" : row.pct >= 80 ? "text-warn" : "text-ok"
+                    }`}
+                  >
+                    {row.pct}%
+                  </td>
+                  <td className="px-4 py-3">{row.modemCount}</td>
+                  <td className="px-4 py-3">{row.simCount}</td>
+                  <td className="px-4 py-3">
+                    {onChart ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPlotted((current) => current.filter((c) => c !== row.customer))
+                        }
+                        className="text-sm text-quiet hover:text-ink"
+                      >
+                        Remove
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => addToPlot(row.customer)}
+                        className="text-sm text-accent"
+                      >
+                        Add
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       <ModemAllowancesDialog open={allowancesOpen} onClose={() => setAllowancesOpen(false)} />
+      <CustomerPickerDialog
+        open={pickerOpen}
+        customers={initialCustomers}
+        selected={plotted}
+        onClose={() => setPickerOpen(false)}
+        onApply={setPlotted}
+      />
     </div>
   );
 }

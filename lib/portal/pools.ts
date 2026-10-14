@@ -225,25 +225,53 @@ export async function listPoolCustomerLatest(customerFilter = ""): Promise<PoolC
 
 export async function listPoolCustomerSeries(input: {
   customer?: string;
+  customers?: string[];
   fromDay?: string;
   toDay?: string;
   limit?: number;
 }): Promise<PoolCustomerDay[]> {
-  const customer = input.customer?.trim() ?? "";
+  const fromList = (input.customers ?? []).map((c) => c.trim()).filter(Boolean);
+  const single = input.customer?.trim() ?? "";
+  const customers = fromList.length > 0 ? fromList : single ? [single] : [];
   const fromDay = input.fromDay?.trim() ?? "";
   const toDay = input.toDay?.trim() ?? "";
-  const limit = Math.min(Math.max(input.limit ?? 90, 1), 366);
+  const limit = Math.min(Math.max(input.limit ?? 2000, 1), 5000);
+
+  if (customers.length === 0) {
+    const rows = await getDB()
+      .prepare(
+        `SELECT customer, day, ctd_usage_mb, allowance_mb, modem_count, sim_count, snapshotted_at
+         FROM pool_customer_daily
+         WHERE (? = '' OR day >= ?)
+           AND (? = '' OR day <= ?)
+         ORDER BY day ASC, customer COLLATE NOCASE
+         LIMIT ?`,
+      )
+      .bind(fromDay, fromDay, toDay, toDay, limit)
+      .all<{
+        customer: string;
+        day: string;
+        ctd_usage_mb: number;
+        allowance_mb: number;
+        modem_count: number;
+        sim_count: number;
+        snapshotted_at: string;
+      }>();
+    return (rows.results ?? []).map(mapSeriesRow);
+  }
+
+  const placeholders = customers.map(() => "?").join(", ");
   const rows = await getDB()
     .prepare(
       `SELECT customer, day, ctd_usage_mb, allowance_mb, modem_count, sim_count, snapshotted_at
        FROM pool_customer_daily
-       WHERE (? = '' OR customer = ?)
+       WHERE customer IN (${placeholders})
          AND (? = '' OR day >= ?)
          AND (? = '' OR day <= ?)
        ORDER BY day ASC, customer COLLATE NOCASE
        LIMIT ?`,
     )
-    .bind(customer, customer, fromDay, fromDay, toDay, toDay, limit)
+    .bind(...customers, fromDay, fromDay, toDay, toDay, limit)
     .all<{
       customer: string;
       day: string;
@@ -254,7 +282,19 @@ export async function listPoolCustomerSeries(input: {
       snapshotted_at: string;
     }>();
 
-  return (rows.results ?? []).map((row) => ({
+  return (rows.results ?? []).map(mapSeriesRow);
+}
+
+function mapSeriesRow(row: {
+  customer: string;
+  day: string;
+  ctd_usage_mb: number;
+  allowance_mb: number;
+  modem_count: number;
+  sim_count: number;
+  snapshotted_at: string;
+}): PoolCustomerDay {
+  return {
     customer: row.customer,
     day: row.day,
     ctdUsageMb: row.ctd_usage_mb,
@@ -262,5 +302,5 @@ export async function listPoolCustomerSeries(input: {
     modemCount: row.modem_count,
     simCount: row.sim_count,
     snapshottedAt: row.snapshotted_at,
-  }));
+  };
 }

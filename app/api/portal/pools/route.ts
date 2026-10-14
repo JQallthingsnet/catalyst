@@ -23,9 +23,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ modems: await listModemAllowances(customer) });
   }
   if (view === "series") {
+    const customersParam = url.searchParams.get("customers") ?? "";
+    const customers = customersParam
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
     return NextResponse.json({
       series: await listPoolCustomerSeries({
-        customer,
+        customer: customers.length ? undefined : customer,
+        customers: customers.length ? customers : undefined,
         fromDay: url.searchParams.get("from") ?? undefined,
         toDay: url.searchParams.get("to") ?? undefined,
       }),
