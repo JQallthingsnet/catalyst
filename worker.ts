@@ -17,7 +17,8 @@ export default {
   async scheduled() {
     await ensurePortalSchema();
     await runScheduledCcPoll();
-    // If auto poll is off / skipped, still take one Sydney-day snapshot from D1.
+    // Once per Sydney calendar day (first cron after local midnight): chart x-axis point.
+    // Auto-poll also refreshes today's row when it runs.
     await snapshotPoolCustomerDailyIfNeeded();
     try {
       await notifySimAllowanceAlerts();

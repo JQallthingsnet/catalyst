@@ -241,8 +241,10 @@ function MultiCustomerChart({
         <div>
           <h2 className="font-semibold">CTD usage over time</h2>
           <p className="mt-1 text-xs text-quiet">
-            Solid = CTD MB (cycle-to-date). Dashed = allowance
+            X-axis = Sydney calendar day. One point saved automatically each day (cron / first open).
+            Solid = CTD MB · Dashed = allowance
             {allowCustomerPick ? ". Top 10 by usage by default." : "."}
+            {days.length === 1 ? " Lines appear from day 2 onward." : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -263,8 +265,8 @@ function MultiCustomerChart({
         {plotted.length === 0 || days.length === 0 ? (
           <p className="flex h-48 items-center text-sm text-quiet">
             {allowCustomerPick
-              ? "No series to plot. Snapshot today, then pick customers."
-              : "No series to plot. Run Snapshot today after Sync."}
+              ? "No daily points yet. Today is saved on first open or cron after Sydney midnight — then pick customers."
+              : "No daily points yet. Today is saved automatically after Sydney midnight / first open."}
           </p>
         ) : (
           <svg viewBox={`0 0 ${width} ${height}`} className="h-56 w-full min-w-100" role="img">
@@ -292,17 +294,23 @@ function MultiCustomerChart({
                 </g>
               );
             })}
-            {days.map((day, i) => (
-              <text
-                key={day}
-                x={xAt(i)}
-                y={height - 8}
-                textAnchor="middle"
-                className="fill-quiet text-[9px]"
-              >
-                {day.slice(5)}
-              </text>
-            ))}
+            {days.map((day, i) => {
+              // Thin labels when many calendar days are plotted.
+              const step = days.length > 14 ? Math.ceil(days.length / 10) : 1;
+              const show = i === 0 || i === days.length - 1 || i % step === 0;
+              if (!show) return null;
+              return (
+                <text
+                  key={day}
+                  x={xAt(i)}
+                  y={height - 8}
+                  textAnchor="middle"
+                  className="fill-quiet text-[9px]"
+                >
+                  {day.slice(5)}
+                </text>
+              );
+            })}
             {plotted.map((customer) => {
               const points = seriesByCustomer.get(customer) ?? [];
               const byDay = new Map(points.map((p) => [p.day, p]));
@@ -436,7 +444,6 @@ export function PoolsDashboard({
   const [modemAllowancesOpen, setModemAllowancesOpen] = useState(false);
   const [ratePlanAllowancesOpen, setRatePlanAllowancesOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [snapBusy, setSnapBusy] = useState(false);
   const [message, setMessage] = useState("");
   const allowanceLabel = basis === "rate_plan" ? "Rate plan allowance MB" : "Modem allowance MB";
 
@@ -489,26 +496,6 @@ export function PoolsDashboard({
     return rows.filter((row) => row.customer.toLowerCase().includes(q));
   }, [customerQ, initialCustomers]);
 
-  async function snapshotNow() {
-    setSnapBusy(true);
-    setMessage("");
-    try {
-      const res = await fetch("/api/portal/pools", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      const data = (await res.json()) as { customers?: number; error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Snapshot failed.");
-      setMessage(`Snapshot saved for ${data.customers ?? 0} CC customers. Refresh to see the table.`);
-      window.location.reload();
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Snapshot failed.");
-    } finally {
-      setSnapBusy(false);
-    }
-  }
-
   function addToPlot(customer: string) {
     setPlotted((current) => (current.includes(customer) ? current : [...current, customer]));
   }
@@ -520,42 +507,30 @@ export function PoolsDashboard({
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">
             {platformView
-              ? "Per Jasper/CC customer, summed across SIMs: CTD MB ÷ rate plan allowance (cycle-to-date, snapshotted once per Sydney day). Modem_ID allowances are for reseller view only; both mappings are set here."
+              ? "Per Jasper/CC customer: daily CTD MB (one point per Sydney calendar day, auto-saved) and live rate plan allowance. Chart lines grow as days accumulate. Modem_ID mapping is for reseller view only."
               : scopedCustomer
-                ? `Your organisation’s Control Center customer “${scopedCustomer}”: CTD MB and modem_ID allowance summed across your SIMs (cycle-to-date, snapshotted once per Sydney day).`
+                ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and modem_ID allowance (one point per Sydney calendar day, auto-saved).`
                 : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {canEdit && platformView ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setRatePlanAllowancesOpen(true)}
-                className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
-              >
-                Rate plan allowances
-              </button>
-              <button
-                type="button"
-                onClick={() => setModemAllowancesOpen(true)}
-                className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
-              >
-                Modem allowances
-              </button>
-            </>
-          ) : null}
-          {canEdit ? (
+        {canEdit && platformView ? (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={snapBusy}
-              onClick={() => snapshotNow()}
-              className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
+              onClick={() => setRatePlanAllowancesOpen(true)}
+              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
             >
-              {snapBusy ? "Snapshot…" : "Snapshot today"}
+              Rate plan allowances
             </button>
-          ) : null}
-        </div>
+            <button
+              type="button"
+              onClick={() => setModemAllowancesOpen(true)}
+              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
+            >
+              Modem allowances
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {message ? <p className="mt-3 text-sm text-quiet">{message}</p> : null}

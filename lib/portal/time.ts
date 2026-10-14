@@ -40,6 +40,14 @@ export function sydneyDayKey(at: Date = new Date()): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/** Sydney calendar day `daysAgo` before `at` (0 = today). */
+export function sydneyDayKeyDaysAgo(daysAgo: number, at: Date = new Date()): string {
+  const n = Math.max(0, Math.floor(daysAgo));
+  // Step in UTC days, then re-read Sydney YMD — good enough for chart windows.
+  const probe = new Date(at.getTime() - n * 24 * 60 * 60 * 1000);
+  return sydneyDayKey(probe);
+}
+
 /**
  * Activated rate-plan changes are allowed through end of the 24th (Sydney).
  * From 25th 00:00 Sydney onward, reject.

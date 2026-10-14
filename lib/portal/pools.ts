@@ -1,6 +1,9 @@
 import { getDB } from "@/lib/env";
 import type { UsageAllowanceBasis } from "@/lib/portal/sim-usage";
-import { sydneyDayKey } from "@/lib/portal/time";
+import { sydneyDayKey, sydneyDayKeyDaysAgo } from "@/lib/portal/time";
+
+/** Default chart window: daily points accumulate on the date axis. */
+export const POOL_SERIES_DEFAULT_DAYS = 90;
 
 export type ModemAllowanceRow = {
   modemId: string;
@@ -316,6 +319,30 @@ function pickPoolAllowanceMb(
   return basis === "rate_plan" ? ratePlanAllowanceMb ?? 0 : modemAllowanceMb ?? 0;
 }
 
+/**
+ * Live Σ allowance per CC customer from current devices + mappings
+ * (same tables Usage uses). Prefer this over stale snapshot columns when displaying.
+ */
+export async function sumLivePoolAllowancesByCustomer(
+  basis: UsageAllowanceBasis,
+): Promise<Map<string, number>> {
+  const join =
+    basis === "rate_plan"
+      ? "LEFT JOIN rate_plan_allowances a ON a.rate_plan = d.rate_plan"
+      : "LEFT JOIN modem_allowances a ON a.modem_id = d.modem_id";
+  const rows = await getDB()
+    .prepare(
+      `SELECT d.customer AS customer,
+              IFNULL(SUM(IFNULL(a.allowance_mb, 0)), 0) AS allowance_mb
+       FROM cc_devices d
+       ${join}
+       WHERE d.customer IS NOT NULL AND TRIM(d.customer) != ''
+       GROUP BY d.customer`,
+    )
+    .all<{ customer: string; allowance_mb: number }>();
+  return new Map((rows.results ?? []).map((row) => [row.customer, row.allowance_mb ?? 0]));
+}
+
 export async function listPoolCustomerLatest(input?: {
   q?: string;
   /** Exact Jasper/CC customer (reseller scope). */
@@ -329,33 +356,37 @@ export async function listPoolCustomerLatest(input?: {
   if (input?.exactCustomer !== undefined && !input.exactCustomer.trim()) return [];
   const exact = input?.exactCustomer?.trim() ?? "";
 
-  const rows = await getDB()
-    .prepare(
-      `SELECT p.customer, p.day, p.ctd_usage_mb, p.allowance_mb, p.rate_plan_allowance_mb,
-              p.modem_count, p.sim_count, p.snapshotted_at
-       FROM pool_customer_daily p
-       INNER JOIN (
-         SELECT customer, MAX(day) AS day FROM pool_customer_daily GROUP BY customer
-       ) latest ON latest.customer = p.customer AND latest.day = p.day
-       WHERE (? = '' OR p.customer = ?)
-         AND (? = '' OR p.customer LIKE ?)
-       ORDER BY p.customer COLLATE NOCASE
-       LIMIT 500`,
-    )
-    .bind(exact, exact, q, `%${q}%`)
-    .all<{
-      customer: string;
-      day: string;
-      ctd_usage_mb: number;
-      allowance_mb: number;
-      rate_plan_allowance_mb: number | null;
-      modem_count: number;
-      sim_count: number;
-      snapshotted_at: string;
-    }>();
+  const [rows, liveAllowances] = await Promise.all([
+    getDB()
+      .prepare(
+        `SELECT p.customer, p.day, p.ctd_usage_mb, p.allowance_mb, p.rate_plan_allowance_mb,
+                p.modem_count, p.sim_count, p.snapshotted_at
+         FROM pool_customer_daily p
+         INNER JOIN (
+           SELECT customer, MAX(day) AS day FROM pool_customer_daily GROUP BY customer
+         ) latest ON latest.customer = p.customer AND latest.day = p.day
+         WHERE (? = '' OR p.customer = ?)
+           AND (? = '' OR p.customer LIKE ?)
+         ORDER BY p.customer COLLATE NOCASE
+         LIMIT 500`,
+      )
+      .bind(exact, exact, q, `%${q}%`)
+      .all<{
+        customer: string;
+        day: string;
+        ctd_usage_mb: number;
+        allowance_mb: number;
+        rate_plan_allowance_mb: number | null;
+        modem_count: number;
+        sim_count: number;
+        snapshotted_at: string;
+      }>(),
+    sumLivePoolAllowancesByCustomer(basis),
+  ]);
 
   return (rows.results ?? []).map((row) => {
-    const allowanceMb = pickPoolAllowanceMb(basis, row.allowance_mb, row.rate_plan_allowance_mb);
+    const snapAllowance = pickPoolAllowanceMb(basis, row.allowance_mb, row.rate_plan_allowance_mb);
+    const allowanceMb = liveAllowances.get(row.customer) ?? snapAllowance;
     const ctdUsageMb = row.ctd_usage_mb ?? 0;
     return {
       customer: row.customer,
@@ -395,9 +426,10 @@ export async function listPoolCustomerSeries(input: {
         : allowed;
     if (customers.length === 0) return [];
   }
-  const fromDay = input.fromDay?.trim() ?? "";
-  const toDay = input.toDay?.trim() ?? "";
+  const fromDay = input.fromDay?.trim() || sydneyDayKeyDaysAgo(POOL_SERIES_DEFAULT_DAYS - 1);
+  const toDay = input.toDay?.trim() || sydneyDayKey();
   const limit = Math.min(Math.max(input.limit ?? 2000, 1), 5000);
+  const liveAllowances = await sumLivePoolAllowancesByCustomer(basis);
 
   if (customers.length === 0) {
     const rows = await getDB()
@@ -421,7 +453,7 @@ export async function listPoolCustomerSeries(input: {
         sim_count: number;
         snapshotted_at: string;
       }>();
-    return (rows.results ?? []).map((row) => mapSeriesRow(row, basis));
+    return (rows.results ?? []).map((row) => mapSeriesRow(row, basis, liveAllowances));
   }
 
   const placeholders = customers.map(() => "?").join(", ");
@@ -448,7 +480,7 @@ export async function listPoolCustomerSeries(input: {
       snapshotted_at: string;
     }>();
 
-  return (rows.results ?? []).map((row) => mapSeriesRow(row, basis));
+  return (rows.results ?? []).map((row) => mapSeriesRow(row, basis, liveAllowances));
 }
 
 function mapSeriesRow(
@@ -463,12 +495,15 @@ function mapSeriesRow(
     snapshotted_at: string;
   },
   basis: UsageAllowanceBasis,
+  liveAllowances: Map<string, number>,
 ): PoolCustomerDay {
+  const snapAllowance = pickPoolAllowanceMb(basis, row.allowance_mb, row.rate_plan_allowance_mb);
   return {
     customer: row.customer,
     day: row.day,
     ctdUsageMb: row.ctd_usage_mb,
-    allowanceMb: pickPoolAllowanceMb(basis, row.allowance_mb, row.rate_plan_allowance_mb),
+    // Prefer live mapping so chart/table match Rate plan allowances without a re-snapshot.
+    allowanceMb: liveAllowances.get(row.customer) ?? snapAllowance,
     modemCount: row.modem_count,
     simCount: row.sim_count,
     snapshottedAt: row.snapshotted_at,

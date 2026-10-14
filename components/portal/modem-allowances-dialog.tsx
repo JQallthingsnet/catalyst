@@ -71,6 +71,13 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
         const data = (await res.json()) as { error?: string };
         if (!res.ok) throw new Error(data.error ?? `Could not save ${change.modemId}.`);
       }
+      const snap = await fetch("/api/portal/pools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const snapData = (await snap.json()) as { error?: string };
+      if (!snap.ok) throw new Error(snapData.error ?? "Saved allowances but pool snapshot failed.");
       setBaseline({ ...current });
       setRows((existing) =>
         existing.map((row) => {

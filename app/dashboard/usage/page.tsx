@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { UsageAllowanceActions } from "@/components/portal/usage-allowance-actions";
 import { requirePortal } from "@/lib/portal/guard";
 import { listAudit } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
@@ -49,7 +48,7 @@ export default async function UsagePage({
           <h1 className="text-3xl font-semibold">Usage & alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
-              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance. Alerts email at ≥"
+              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Alerts email at ≥"
               : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Highlight at ≥"}
             {SIM_ALLOWANCE_ALERT_PCT}%
             {basis === "rate_plan" ? " (once per Sydney day)." : "."}
@@ -58,10 +57,9 @@ export default async function UsagePage({
         <div className="flex flex-wrap items-center gap-3">
           {can(ctx.role, "pool.view") ? (
             <Link href="/dashboard/pools" className="text-sm text-accent">
-              Customer pools
+              {basis === "rate_plan" ? "Pools · rate plan allowances" : "Customer pools"}
             </Link>
           ) : null}
-          <UsageAllowanceActions basis={basis} canEdit={can(ctx.role, "pool.create")} />
         </div>
       </div>
 

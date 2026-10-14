@@ -71,6 +71,14 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
         const data = (await res.json()) as { error?: string };
         if (!res.ok) throw new Error(data.error ?? `Could not save ${change.ratePlan}.`);
       }
+      // One pool snapshot so Σ rate plan allowance MB updates on the table.
+      const snap = await fetch("/api/portal/pools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const snapData = (await snap.json()) as { error?: string };
+      if (!snap.ok) throw new Error(snapData.error ?? "Saved allowances but pool snapshot failed.");
       setBaseline({ ...current });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
