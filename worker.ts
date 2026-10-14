@@ -21,6 +21,7 @@ export default {
     // Auto-poll also refreshes today's row when it runs.
     await snapshotPoolCustomerDailyIfNeeded();
     try {
+      // Once per Sydney day: digest of SIMs ≥80% rate-plan allowance → jerry.qiu@allthingsnet.io
       await notifySimAllowanceAlerts();
     } catch (err) {
       console.error("[cron] sim allowance alerts failed", err);
