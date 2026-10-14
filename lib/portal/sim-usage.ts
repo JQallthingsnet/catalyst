@@ -4,8 +4,11 @@ import { sydneyDayKey } from "@/lib/portal/time";
 
 export const SIM_ALLOWANCE_ALERT_PCT = 80;
 
-/** Temporary: alert only this inbox (not every super admin). */
+/** Daily ≥80% rate-plan allowance digest (platform). */
 const SIM_ALLOWANCE_ALERT_TO = ["jerry.qiu@allthingsnet.io"];
+
+/** Sentinel ICCID: one digest email per Sydney day. */
+const DAILY_DIGEST_MARKER = "__daily_digest__";
 
 /** Super admin → Jasper rate plan; reseller → modem_ID. */
 export type UsageAllowanceBasis = "rate_plan" | "modem";
@@ -144,9 +147,9 @@ function buildSimAllowanceAlertEmail(input: {
     })
     .join("");
 
-  const subject = `Catalyst: ${sims.length} SIM${sims.length === 1 ? "" : "s"} at ≥${threshold}% ${
+  const subject = `Catalyst daily: ${sims.length} SIM${sims.length === 1 ? "" : "s"} ≥${threshold}% ${
     basis === "rate_plan" ? "rate plan" : "modem"
-  } allowance`;
+  } allowance (${day})`;
 
   const html = `
   <div style="background:#f3f4f6;padding:24px 12px;">
@@ -157,9 +160,9 @@ function buildSimAllowanceAlertEmail(input: {
       </div>
       <div style="padding:24px;">
         <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.5;">
-          ${sims.length} SIM${sims.length === 1 ? " has" : "s have"} reached <strong>≥${threshold}%</strong> of their
-          ${basis === "rate_plan" ? "Jasper rate plan" : "modem_ID"} allowance
-          (CTD MB ÷ allowance MB) as of Sydney day <strong>${day}</strong>.
+          Daily digest for Sydney day <strong>${day}</strong>:
+          ${sims.length} SIM${sims.length === 1 ? " is" : "s are"} at <strong>≥${threshold}%</strong> of
+          ${basis === "rate_plan" ? "Jasper rate plan" : "modem_ID"} allowance (CTD MB ÷ allowance MB).
         </p>
         <table style="width:100%;border-collapse:collapse;margin:8px 0 20px;font-size:13px;">
           <thead>
@@ -176,7 +179,8 @@ function buildSimAllowanceAlertEmail(input: {
           <tbody>${rowsHtml || `<tr><td colspan="7" style="padding:16px;color:#6b7280;">No SIMs with an allowance.</td></tr>`}</tbody>
         </table>
         <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.5;">
-          Open Catalyst → Usage for the full list. Each ICCID is emailed at most once per Sydney day at this threshold.
+          Sent once per Sydney day to jerry.qiu@allthingsnet.io. Open Catalyst → Usage for the live list
+          ${sims.length > 50 ? ` (email shows top 50 of ${sims.length}).` : "."}
         </p>
       </div>
     </div>
@@ -199,7 +203,8 @@ async function sendAlertHtml(subject: string, html: string): Promise<boolean> {
 }
 
 /**
- * Platform alerts: Jasper rate-plan allowance (super-admin view).
+ * Daily platform digest: all SIMs at ≥threshold% of Jasper rate-plan allowance.
+ * Emails jerry.qiu@allthingsnet.io once per Sydney calendar day (cron).
  */
 export async function notifySimAllowanceAlerts(threshold = SIM_ALLOWANCE_ALERT_PCT): Promise<{
   checked: number;
@@ -208,32 +213,30 @@ export async function notifySimAllowanceAlerts(threshold = SIM_ALLOWANCE_ALERT_P
 }> {
   const basis: UsageAllowanceBasis = "rate_plan";
   const day = sydneyDayKey();
+  const db = getDB();
+
+  const alreadySent = await db
+    .prepare(
+      `SELECT 1 AS ok FROM sim_allowance_alerts
+       WHERE iccid = ? AND day = ? AND threshold = ?`,
+    )
+    .bind(DAILY_DIGEST_MARKER, day, threshold)
+    .first<{ ok: number }>();
+  if (alreadySent) {
+    return { checked: 0, newlyAlerted: 0, emailed: false };
+  }
+
   const sims = await listSimModemUsage({ basis, limit: 2000 });
-  const candidates = withAllowance(sims).filter((sim) => sim.pct >= threshold);
+  const candidates = withAllowance(sims)
+    .filter((sim) => sim.pct >= threshold)
+    .sort((a, b) => b.pct - a.pct);
 
   if (candidates.length === 0) {
     return { checked: sims.length, newlyAlerted: 0, emailed: false };
   }
 
-  const db = getDB();
-  const fresh: AlertCandidate[] = [];
-  for (const sim of candidates) {
-    const existing = await db
-      .prepare(
-        `SELECT 1 AS ok FROM sim_allowance_alerts
-         WHERE iccid = ? AND day = ? AND threshold = ?`,
-      )
-      .bind(sim.iccid, day, threshold)
-      .first<{ ok: number }>();
-    if (!existing) fresh.push(sim);
-  }
-
-  if (fresh.length === 0) {
-    return { checked: sims.length, newlyAlerted: 0, emailed: false };
-  }
-
   const { subject, html } = buildSimAllowanceAlertEmail({
-    sims: fresh.slice(0, 50),
+    sims: candidates.slice(0, 50),
     day,
     threshold,
     basis,
@@ -242,7 +245,7 @@ export async function notifySimAllowanceAlerts(threshold = SIM_ALLOWANCE_ALERT_P
 
   if (emailed) {
     const now = new Date().toISOString();
-    const stmts = fresh.map((sim) =>
+    const stmts = [
       db
         .prepare(
           `INSERT INTO sim_allowance_alerts
@@ -250,26 +253,36 @@ export async function notifySimAllowanceAlerts(threshold = SIM_ALLOWANCE_ALERT_P
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(iccid, day, threshold) DO NOTHING`,
         )
-        .bind(
-          sim.iccid,
-          day,
-          threshold,
-          sim.pct,
-          sim.ctdUsageMb,
-          sim.allowanceMb,
-          sim.modemId,
-          sim.customer,
-          now,
-          sim.ratePlan,
-          basis,
-        ),
-    );
+        .bind(DAILY_DIGEST_MARKER, day, threshold, 0, 0, 0, null, null, now, null, basis),
+      ...candidates.map((sim) =>
+        db
+          .prepare(
+            `INSERT INTO sim_allowance_alerts
+               (iccid, day, threshold, pct, ctd_usage_mb, allowance_mb, modem_id, customer, emailed_at, rate_plan, basis)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(iccid, day, threshold) DO NOTHING`,
+          )
+          .bind(
+            sim.iccid,
+            day,
+            threshold,
+            sim.pct,
+            sim.ctdUsageMb,
+            sim.allowanceMb,
+            sim.modemId,
+            sim.customer,
+            now,
+            sim.ratePlan,
+            basis,
+          ),
+      ),
+    ];
     for (let i = 0; i < stmts.length; i += 40) {
       await db.batch(stmts.slice(i, i + 40));
     }
   }
 
-  return { checked: sims.length, newlyAlerted: fresh.length, emailed };
+  return { checked: sims.length, newlyAlerted: candidates.length, emailed };
 }
 
 function escapeHtml(value: string): string {

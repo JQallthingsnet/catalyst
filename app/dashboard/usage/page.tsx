@@ -48,7 +48,7 @@ export default async function UsagePage({
           <h1 className="text-3xl font-semibold">Usage & alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
-              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Alerts email at ≥"
+              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily email to Jerry Qiu for SIMs ≥"
               : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Highlight at ≥"}
             {SIM_ALLOWANCE_ALERT_PCT}%
             {basis === "rate_plan" ? " (once per Sydney day)." : "."}
