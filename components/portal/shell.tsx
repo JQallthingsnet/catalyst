@@ -40,10 +40,17 @@ export function PortalShell({
       <div className="md:pl-60">
         <header className="sticky top-0 z-10 border-b border-line bg-canvas/90 backdrop-blur">
           <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6">
-            <form action="/dashboard/sims" className="min-w-0 flex-1">
+            <form
+              action={ctx.role === "super_admin" ? "/dashboard/estate" : "/dashboard/sims"}
+              className="min-w-0 flex-1"
+            >
               <input
                 name="q"
-                placeholder="Search ICCID / customer"
+                placeholder={
+                  ctx.role === "super_admin"
+                    ? "Search organisation, customer, plan, ICCID…"
+                    : "Search ICCID / customer"
+                }
                 className="w-full rounded-card border border-line bg-panel px-4 py-2.5 text-sm text-ink outline-none placeholder:text-quiet focus:border-accent"
               />
             </form>

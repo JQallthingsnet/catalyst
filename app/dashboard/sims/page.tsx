@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ChangeRatePlanButton } from "@/components/portal/change-rate-plan-button";
 import { LifecycleButtons } from "@/components/portal/lifecycle-buttons";
 import { requirePortal } from "@/lib/portal/guard";
@@ -19,6 +20,11 @@ export default async function SimsPage({
 }) {
   const ctx = await requirePortal();
   const params = await Promise.resolve(searchParams ?? {});
+  // Super admin commercial inventory is Estate / CC snapshot — not a third empty list.
+  if (ctx.role === "super_admin") {
+    const q = params.q?.trim();
+    redirect(q ? `/dashboard/estate?q=${encodeURIComponent(q)}` : "/dashboard/estate");
+  }
   const [sims, contracted] = await Promise.all([
     listSims(ctx.tenantId, params.q ?? ""),
     can(ctx.role, "rate_plan.change")
