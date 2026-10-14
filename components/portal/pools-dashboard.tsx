@@ -405,9 +405,14 @@ function MultiCustomerChart({
 export function PoolsDashboard({
   initialCustomers,
   canEdit,
+  scopedCustomer = null,
+  platformView = true,
 }: {
   initialCustomers: PoolLatestRow[];
   canEdit: boolean;
+  /** When set, reseller is limited to this Jasper/CC customer. */
+  scopedCustomer?: string | null;
+  platformView?: boolean;
 }) {
   const [customerQ, setCustomerQ] = useState("");
   const [plotted, setPlotted] = useState<string[]>(() => topCustomersByUsage(initialCustomers, 10));
@@ -497,8 +502,11 @@ export function PoolsDashboard({
         <div>
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">
-            Per Jasper/CC customer, summed across SIMs: CTD MB per SIM, and manual modem_ID allowance
-            applied per SIM (cycle-to-date, snapshotted once per Sydney day).
+            {platformView
+              ? "Per Jasper/CC customer, summed across SIMs: CTD MB per SIM, and manual modem_ID allowance applied per SIM (cycle-to-date, snapshotted once per Sydney day)."
+              : scopedCustomer
+                ? `Your organisation’s Control Center customer “${scopedCustomer}”: CTD MB and modem_ID allowance summed across your SIMs (cycle-to-date, snapshotted once per Sydney day).`
+                : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

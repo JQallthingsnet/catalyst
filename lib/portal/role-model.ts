@@ -78,16 +78,17 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/orders", label: "Orders" },
     { href: "/dashboard/admin", label: "Admin" },
   ],
+  // Same shape as super admin: day-to-day → commercial → Settings last.
   reseller_admin: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/sims", label: "SIMs" },
+    { href: "/dashboard/customers", label: "Customers" },
+    { href: "/dashboard/pools", label: "Pools" },
+    { href: "/dashboard/usage", label: "Usage" },
     { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
     { href: "/dashboard/contracts", label: "Contract" },
     { href: "/dashboard/plans", label: "Plans" },
-    { href: "/dashboard/pools", label: "Pools" },
-    { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/orders", label: "Orders" },
-    { href: "/dashboard/usage", label: "Usage" },
     { href: "/dashboard/settings", label: "Settings" },
   ],
   reseller_operator: [

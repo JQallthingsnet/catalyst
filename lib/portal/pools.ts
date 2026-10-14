@@ -26,8 +26,16 @@ export type PoolCustomerLatest = PoolCustomerDay & {
 };
 
 /** Distinct modem_IDs from CC snapshot with optional manual allowance. */
-export async function listModemAllowances(customerFilter = ""): Promise<ModemAllowanceRow[]> {
-  const q = customerFilter.trim();
+export async function listModemAllowances(input?: {
+  q?: string;
+  /** Exact Jasper/CC customer (reseller scope). */
+  exactCustomer?: string;
+}): Promise<ModemAllowanceRow[]> {
+  const q = input?.q?.trim() ?? "";
+  const exact = input?.exactCustomer?.trim() ?? "";
+  // Unbound reseller: no CC customer → no modems.
+  if (input && "exactCustomer" in input && !exact) return [];
+
   const rows = await getDB()
     .prepare(
       `SELECT d.modem_id AS modem_id,
@@ -40,12 +48,13 @@ export async function listModemAllowances(customerFilter = ""): Promise<ModemAll
        FROM cc_devices d
        LEFT JOIN modem_allowances a ON a.modem_id = d.modem_id
        WHERE d.modem_id IS NOT NULL AND TRIM(d.modem_id) != ''
-         AND (? = '' OR IFNULL(d.customer, '') LIKE ?)
+         AND (? = '' OR IFNULL(d.customer, '') = ?)
+         AND (? = '' OR d.modem_id LIKE ? OR IFNULL(d.customer, '') LIKE ?)
        GROUP BY d.modem_id
        ORDER BY modem_id COLLATE NOCASE
        LIMIT 2000`,
     )
-    .bind(q, `%${q}%`)
+    .bind(exact, exact, q, `%${q}%`, `%${q}%`)
     .all<{
       modem_id: string;
       customer: string | null;
@@ -179,7 +188,14 @@ export async function clearRatePlanAllowance(ratePlan: string): Promise<void> {
  * - allowance_mb = Σ manual allowance(modem_ID) for each SIM (same modem_ID on N SIMs counts N times)
  * - modem_count = SIMs that have a non-empty modem_ID
  */
-export async function snapshotPoolCustomerDaily(day = sydneyDayKey()): Promise<number> {
+export async function snapshotPoolCustomerDaily(
+  day = sydneyDayKey(),
+  opts?: { customers?: string[] },
+): Promise<number> {
+  const only =
+    opts?.customers?.map((c) => c.trim()).filter(Boolean).map((c) => c.toLowerCase()) ?? null;
+  if (only && only.length === 0) return 0;
+
   const db = getDB();
   const deviceRows = await db
     .prepare(
@@ -207,6 +223,7 @@ export async function snapshotPoolCustomerDaily(day = sydneyDayKey()): Promise<n
   for (const row of deviceRows.results ?? []) {
     const customer = row.customer.trim();
     if (!customer) continue;
+    if (only && !only.includes(customer.toLowerCase())) continue;
     let agg = byCustomer.get(customer);
     if (!agg) {
       agg = { ctd: 0, allowance: 0, simCount: 0, simsWithModem: 0 };
@@ -258,8 +275,15 @@ export async function snapshotPoolCustomerDailyIfNeeded(): Promise<number | null
   return snapshotPoolCustomerDaily(day);
 }
 
-export async function listPoolCustomerLatest(customerFilter = ""): Promise<PoolCustomerLatest[]> {
-  const q = customerFilter.trim();
+export async function listPoolCustomerLatest(input?: {
+  q?: string;
+  /** Exact Jasper/CC customer (reseller scope). */
+  exactCustomer?: string;
+}): Promise<PoolCustomerLatest[]> {
+  const q = input?.q?.trim() ?? "";
+  const exact = input?.exactCustomer?.trim() ?? "";
+  if (input && "exactCustomer" in input && !exact) return [];
+
   const rows = await getDB()
     .prepare(
       `SELECT p.customer, p.day, p.ctd_usage_mb, p.allowance_mb, p.modem_count, p.sim_count, p.snapshotted_at
@@ -267,11 +291,12 @@ export async function listPoolCustomerLatest(customerFilter = ""): Promise<PoolC
        INNER JOIN (
          SELECT customer, MAX(day) AS day FROM pool_customer_daily GROUP BY customer
        ) latest ON latest.customer = p.customer AND latest.day = p.day
-       WHERE (? = '' OR p.customer LIKE ?)
+       WHERE (? = '' OR p.customer = ?)
+         AND (? = '' OR p.customer LIKE ?)
        ORDER BY p.customer COLLATE NOCASE
        LIMIT 500`,
     )
-    .bind(q, `%${q}%`)
+    .bind(exact, exact, q, `%${q}%`)
     .all<{
       customer: string;
       day: string;
@@ -301,13 +326,26 @@ export async function listPoolCustomerLatest(customerFilter = ""): Promise<PoolC
 export async function listPoolCustomerSeries(input: {
   customer?: string;
   customers?: string[];
+  /** When set (reseller), only these CC customers may be returned. */
+  allowedCustomers?: string[];
   fromDay?: string;
   toDay?: string;
   limit?: number;
 }): Promise<PoolCustomerDay[]> {
+  const allowed = (input.allowedCustomers ?? []).map((c) => c.trim()).filter(Boolean);
+  if (input.allowedCustomers && allowed.length === 0) return [];
+
   const fromList = (input.customers ?? []).map((c) => c.trim()).filter(Boolean);
   const single = input.customer?.trim() ?? "";
-  const customers = fromList.length > 0 ? fromList : single ? [single] : [];
+  let customers = fromList.length > 0 ? fromList : single ? [single] : [];
+  if (allowed.length > 0) {
+    const allowSet = new Set(allowed.map((c) => c.toLowerCase()));
+    customers =
+      customers.length > 0
+        ? customers.filter((c) => allowSet.has(c.toLowerCase()))
+        : allowed;
+    if (customers.length === 0) return [];
+  }
   const fromDay = input.fromDay?.trim() ?? "";
   const toDay = input.toDay?.trim() ?? "";
   const limit = Math.min(Math.max(input.limit ?? 2000, 1), 5000);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
+import { resolvePoolCustomerScope } from "@/lib/portal/pool-scope";
 import {
   clearModemAllowance,
   clearRatePlanAllowance,
@@ -18,14 +19,23 @@ export async function GET(request: Request) {
   const denied = denyUnless(ctx, "pool.view");
   if (denied) return denied;
 
+  const scope = await resolvePoolCustomerScope(ctx);
   const url = new URL(request.url);
   const view = url.searchParams.get("view") ?? "latest";
   const customer = url.searchParams.get("customer") ?? "";
 
   if (view === "modems") {
-    return NextResponse.json({ modems: await listModemAllowances(customer) });
+    return NextResponse.json({
+      modems: await listModemAllowances({
+        q: customer,
+        exactCustomer: scope.unrestricted ? undefined : scope.exactCustomer,
+      }),
+    });
   }
   if (view === "rate_plans") {
+    if (ctx.role !== "super_admin") {
+      return NextResponse.json({ error: "Only super admin can view rate plan allowances." }, { status: 403 });
+    }
     return NextResponse.json({ ratePlans: await listRatePlanAllowances() });
   }
   if (view === "series") {
@@ -38,12 +48,18 @@ export async function GET(request: Request) {
       series: await listPoolCustomerSeries({
         customer: customers.length ? undefined : customer,
         customers: customers.length ? customers : undefined,
+        allowedCustomers: scope.unrestricted ? undefined : [scope.exactCustomer],
         fromDay: url.searchParams.get("from") ?? undefined,
         toDay: url.searchParams.get("to") ?? undefined,
       }),
     });
   }
-  return NextResponse.json({ customers: await listPoolCustomerLatest(customer) });
+  return NextResponse.json({
+    customers: await listPoolCustomerLatest({
+      q: customer,
+      exactCustomer: scope.unrestricted ? undefined : scope.exactCustomer,
+    }),
+  });
 }
 
 export async function PUT(request: Request) {
@@ -95,7 +111,11 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json().catch(() => ({}))) as { day?: string };
-    const n = await snapshotPoolCustomerDaily(body.day?.trim() || undefined);
+    const scope = await resolvePoolCustomerScope(ctx);
+    const n = await snapshotPoolCustomerDaily(
+      body.day?.trim() || undefined,
+      scope.unrestricted ? undefined : { customers: [scope.exactCustomer] },
+    );
     return NextResponse.json({ success: true, customers: n });
   } catch (err) {
     return NextResponse.json(
