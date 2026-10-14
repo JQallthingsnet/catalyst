@@ -64,18 +64,18 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
 };
 
 const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
-  // Ops first (estate / radio / orders), then commercial setup, Admin last.
+  // Day-to-day oversight → commercial setup → org management.
   super_admin: [
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/estate", label: "Estate" },
     { href: "/dashboard/estate/cc", label: "CC snapshot" },
-    { href: "/dashboard/orders", label: "Orders" },
-    { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
-    { href: "/dashboard/catalogue", label: "Catalogue" },
-    { href: "/dashboard/plans", label: "Plans" },
-    { href: "/dashboard/contracts", label: "Contract" },
     { href: "/dashboard/pools", label: "Pools" },
     { href: "/dashboard/usage", label: "Usage" },
+    { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
+    { href: "/dashboard/contracts", label: "Contract" },
+    { href: "/dashboard/catalogue", label: "Catalogue" },
+    { href: "/dashboard/plans", label: "Plans" },
+    { href: "/dashboard/orders", label: "Orders" },
     { href: "/dashboard/admin", label: "Admin" },
   ],
   reseller_admin: [
