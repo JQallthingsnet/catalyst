@@ -28,8 +28,8 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — must stay under the 10-minute cron so ticks do not overlap.
- * Stay under the Worker subrequest cap (~1000).
+ * Auto poll wall budget — cron is every 6h; stay under the 10-minute Worker cron cap
+ * so ticks do not overlap. Stay under the Worker subrequest cap (~1000).
  */
 const AUTO_BUDGET_MS = 8 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
@@ -1448,6 +1448,12 @@ async function enrichSessionOnlyBatch(
   return enriched;
 }
 
+/**
+ * Enrich queue SELECTs must stay index-friendly:
+ * - no COALESCE(col) / "col IS NULL DESC" in ORDER BY (those force full scans)
+ * - split NULL vs stale into separate queries (matches partial indexes in 0021)
+ * polled_at is NOT NULL on cc_devices, so session queue is simply polled_at < ?.
+ */
 async function enrichStaleDevices(input: { unlimited: boolean; deadline: number }): Promise<number> {
   const detailsStaleMs = input.unlimited ? AUTO_DETAILS_STALE_MS : DETAILS_STALE_MS;
   const detailsStaleBefore = new Date(Date.now() - detailsStaleMs).toISOString();
@@ -1457,29 +1463,38 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
 
   if (!input.unlimited) {
     const batch = Math.min(MANUAL_DETAILS_PER_RUN, JASPER_BULK_DEVICE_LIMIT);
-    const rows = await getDB()
+    const neverRows = await getDB()
       .prepare(
         `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NULL OR details_polled_at < ?
-         ORDER BY details_polled_at IS NULL DESC, details_polled_at ASC
+         WHERE details_polled_at IS NULL
+         ORDER BY polled_at ASC
          LIMIT ?`,
       )
-      .bind(detailsStaleBefore, batch)
+      .bind(batch)
       .all<{ iccid: string }>();
-    return enrichFullDetailsBatch(
-      (rows.results ?? []).map((row) => row.iccid),
-      { deadline: input.deadline, done },
-    );
+    let iccids = (neverRows.results ?? []).map((row) => row.iccid);
+    if (iccids.length < batch) {
+      const staleRows = await getDB()
+        .prepare(
+          `SELECT iccid FROM cc_devices
+           WHERE details_polled_at IS NOT NULL AND details_polled_at < ?
+           ORDER BY details_polled_at ASC
+           LIMIT ?`,
+        )
+        .bind(detailsStaleBefore, batch - iccids.length)
+        .all<{ iccid: string }>();
+      iccids = iccids.concat((staleRows.results ?? []).map((row) => row.iccid));
+    }
+    return enrichFullDetailsBatch(iccids, { deadline: input.deadline, done });
   }
 
   // Auto: never-enriched first, then oldest session/usage, then a capped details wave.
-  // (Previously details-stale always ranked above session-only and starved >48h session ages.)
   while (Date.now() < input.deadline && jasperHasBudget(2)) {
     const neverRows = await getDB()
       .prepare(
         `SELECT iccid FROM cc_devices
          WHERE details_polled_at IS NULL
-         ORDER BY COALESCE(polled_at, '') ASC
+         ORDER BY polled_at ASC
          LIMIT ?`,
       )
       .bind(JASPER_BULK_DEVICE_LIMIT)
@@ -1497,9 +1512,8 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     const sessionRows = await getDB()
       .prepare(
         `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NOT NULL
-           AND (polled_at IS NULL OR polled_at < ?)
-         ORDER BY COALESCE(polled_at, '') ASC
+         WHERE details_polled_at IS NOT NULL AND polled_at < ?
+         ORDER BY polled_at ASC
          LIMIT ?`,
       )
       .bind(sessionStaleBefore, JASPER_BULK_DEVICE_LIMIT)
@@ -1517,8 +1531,8 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     const detailRows = await getDB()
       .prepare(
         `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NULL OR details_polled_at < ?
-         ORDER BY details_polled_at IS NULL DESC, COALESCE(details_polled_at, '') ASC
+         WHERE details_polled_at IS NOT NULL AND details_polled_at < ?
+         ORDER BY details_polled_at ASC
          LIMIT ?`,
       )
       .bind(detailsStaleBefore, take)

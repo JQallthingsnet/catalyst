@@ -7,8 +7,9 @@
   ],
   "main": "worker.ts",
   "triggers": {
-    // Was */10 — enrich queue SELECTs without indexes burned free-tier D1 rows_read.
-    "crons": ["*/30 * * * *"]
+    // Free tier: 5M rows_read/day. Session/usage target is once/day — do not tick every 30m.
+    // Six-hourly leaves headroom to drain a large estate across ticks without full-scan spam.
+    "crons": ["0 */6 * * *"]
   },
   "assets": {
     "directory": "dist/client",
