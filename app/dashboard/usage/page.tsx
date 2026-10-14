@@ -1,14 +1,12 @@
+import Link from "next/link";
 import { requirePortal } from "@/lib/portal/guard";
-import { listAudit, listPools, listUsage } from "@/lib/portal/repo";
+import { listAudit, listUsage } from "@/lib/portal/repo";
+import { can } from "@/lib/portal/role-model";
 import { formatAuDateTime } from "@/lib/portal/time";
 
 export default async function UsagePage() {
   const ctx = await requirePortal();
-  const [usage, pools, audit] = await Promise.all([
-    listUsage(ctx.tenantId),
-    listPools(ctx.tenantId),
-    listAudit(ctx.tenantId),
-  ]);
+  const [usage, audit] = await Promise.all([listUsage(ctx.tenantId), listAudit(ctx.tenantId)]);
   const maxMb = Math.max(...usage.map((row) => row.mb), 1);
   const asOf = usage.at(-1)?.day ?? "—";
 
@@ -26,20 +24,15 @@ export default async function UsagePage() {
           ))}
         </div>
       </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {pools.map((pool) => {
-          const pct = pool.capMb ? Math.round((pool.usedMb / pool.capMb) * 100) : 0;
-          return (
-            <article key={pool.id} className="rounded-card border border-line bg-panel p-5">
-              <p className="font-semibold">{pool.name}</p>
-              <p className={`mt-2 text-2xl ${pct >= 100 ? "text-danger" : pct >= 80 ? "text-warn" : "text-ok"}`}>{pct}%</p>
-              <p className="text-sm text-quiet">
-                {pool.usedMb} / {pool.capMb} MB
-              </p>
-            </article>
-          );
-        })}
-      </div>
+      {can(ctx.role, "pool.view") ? (
+        <p className="mt-4 text-sm text-quiet">
+          CC customer modem pools and daily CTD snapshots live on{" "}
+          <Link href="/dashboard/pools" className="text-accent">
+            Pools
+          </Link>
+          .
+        </p>
+      ) : null}
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
         <p className="mt-1 text-xs text-quiet">Portal audit log for this organisation (not the Plan changes book).</p>

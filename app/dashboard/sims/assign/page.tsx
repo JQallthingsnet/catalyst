@@ -1,14 +1,13 @@
 import { AssignWizard } from "@/components/portal/assign-wizard";
 import { requirePrivilege } from "@/lib/portal/guard";
-import { listCustomers, listPlans, listPools, listSims } from "@/lib/portal/repo";
+import { listCustomers, listPlans, listSims } from "@/lib/portal/repo";
 import Link from "next/link";
 
 export default async function AssignPage() {
   const ctx = await requirePrivilege("assign");
-  const [customers, plans, pools, sims] = await Promise.all([
+  const [customers, plans, sims] = await Promise.all([
     listCustomers(ctx.tenantId),
     listPlans(ctx.tenantId),
-    listPools(ctx.tenantId),
     listSims(ctx.tenantId),
   ]);
 
@@ -23,7 +22,6 @@ export default async function AssignPage() {
           plans={plans
             .filter((item) => item.platformPlanId)
             .map((item) => ({ id: item.id, name: item.name }))}
-          pools={pools.map((item) => ({ id: item.id, name: item.name }))}
           sims={sims.map((item) => ({ iccid: item.iccid, state: item.state, planName: item.planName }))}
         />
       </div>

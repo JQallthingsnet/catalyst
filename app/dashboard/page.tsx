@@ -84,12 +84,12 @@ export default async function DashboardPage() {
               Create retail plan
             </Link>
           ) : null}
-          {can(ctx.role, "pool.create") && !onPlatform ? (
+          {can(ctx.role, "pool.view") ? (
             <Link
-              href="/dashboard/pools/new"
+              href="/dashboard/pools"
               className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
             >
-              Create pool
+              Pools
             </Link>
           ) : null}
           {can(ctx.role, "assign") && !onPlatform ? (
