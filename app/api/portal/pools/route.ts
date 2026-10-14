@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import {
   clearModemAllowance,
+  clearRatePlanAllowance,
   listModemAllowances,
   listPoolCustomerLatest,
   listPoolCustomerSeries,
+  listRatePlanAllowances,
   setModemAllowance,
+  setRatePlanAllowance,
   snapshotPoolCustomerDaily,
 } from "@/lib/portal/pools";
 
@@ -21,6 +24,9 @@ export async function GET(request: Request) {
 
   if (view === "modems") {
     return NextResponse.json({ modems: await listModemAllowances(customer) });
+  }
+  if (view === "rate_plans") {
+    return NextResponse.json({ ratePlans: await listRatePlanAllowances() });
   }
   if (view === "series") {
     const customersParam = url.searchParams.get("customers") ?? "";
@@ -49,11 +55,23 @@ export async function PUT(request: Request) {
   try {
     const body = (await request.json()) as {
       modemId?: string;
+      ratePlan?: string;
       allowanceMb?: number | null;
       clear?: boolean;
     };
+    if (body.ratePlan?.trim()) {
+      if (ctx.role !== "super_admin") {
+        return NextResponse.json({ error: "Only super admin can edit rate plan allowances." }, { status: 403 });
+      }
+      if (body.clear || body.allowanceMb == null) {
+        await clearRatePlanAllowance(body.ratePlan);
+      } else {
+        await setRatePlanAllowance(body.ratePlan, Number(body.allowanceMb), ctx.email);
+      }
+      return NextResponse.json({ success: true });
+    }
     if (!body.modemId?.trim()) {
-      return NextResponse.json({ error: "modem_ID is required." }, { status: 400 });
+      return NextResponse.json({ error: "modem_ID or rate plan is required." }, { status: 400 });
     }
     if (body.clear || body.allowanceMb == null) {
       await clearModemAllowance(body.modemId);

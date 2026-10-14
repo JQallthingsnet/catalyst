@@ -1,8 +1,14 @@
 import Link from "next/link";
+import { UsageAllowanceActions } from "@/components/portal/usage-allowance-actions";
 import { requirePortal } from "@/lib/portal/guard";
 import { listAudit } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
-import { SIM_ALLOWANCE_ALERT_PCT, listSimModemUsage } from "@/lib/portal/sim-usage";
+import {
+  SIM_ALLOWANCE_ALERT_PCT,
+  listSimModemUsage,
+  type UsageAllowanceBasis,
+} from "@/lib/portal/sim-usage";
+import { loadTenant } from "@/lib/portal/tenant";
 import { formatAuDateTime } from "@/lib/portal/time";
 
 export default async function UsagePage({
@@ -15,9 +21,15 @@ export default async function UsagePage({
   const q = params.q ?? "";
   const alertsOnly = params.alert === "1" || params.alert === "80";
 
+  const basis: UsageAllowanceBasis = ctx.role === "super_admin" ? "rate_plan" : "modem";
+  const tenant = basis === "modem" ? await loadTenant(ctx.tenantId) : null;
+  const customerScope = tenant?.ccCustomer ?? "";
+
   const [sims, audit] = await Promise.all([
     can(ctx.role, "pool.view")
       ? listSimModemUsage({
+          basis,
+          customer: customerScope,
           q,
           minPct: alertsOnly ? SIM_ALLOWANCE_ALERT_PCT : undefined,
           limit: 500,
@@ -36,24 +48,41 @@ export default async function UsagePage({
         <div>
           <h1 className="text-3xl font-semibold">Usage & alerts</h1>
           <p className="mt-1 text-sm text-quiet">
-            Per SIM: CTD MB ÷ modem_ID allowance. Super admins are emailed when a SIM reaches ≥
-            {SIM_ALLOWANCE_ALERT_PCT}% (once per Sydney day).
+            {basis === "rate_plan"
+              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance. Alerts email at ≥"
+              : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Highlight at ≥"}
+            {SIM_ALLOWANCE_ALERT_PCT}%
+            {basis === "rate_plan" ? " (once per Sydney day)." : "."}
           </p>
         </div>
-        {can(ctx.role, "pool.view") ? (
-          <Link href="/dashboard/pools" className="text-sm text-accent">
-            Customer pools
-          </Link>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {can(ctx.role, "pool.view") ? (
+            <Link href="/dashboard/pools" className="text-sm text-accent">
+              Customer pools
+            </Link>
+          ) : null}
+          <UsageAllowanceActions basis={basis} canEdit={can(ctx.role, "pool.create")} />
+        </div>
       </div>
 
       {can(ctx.role, "pool.view") ? (
         <>
+          {basis === "modem" && !customerScope ? (
+            <p className="mt-4 rounded-card border border-line bg-panel px-4 py-3 text-sm text-quiet">
+              This organisation is not bound to a Control Center customer yet. Sell stock / bind first to
+              scope Usage to your SIMs.
+            </p>
+          ) : null}
+
           <form action="/dashboard/usage" className="mt-5 flex flex-wrap items-center gap-3">
             <input
               name="q"
               defaultValue={q}
-              placeholder="Filter ICCID, modem_ID, or CC customer"
+              placeholder={
+                basis === "rate_plan"
+                  ? "Filter ICCID, rate plan, or CC customer"
+                  : "Filter ICCID, modem_ID, or CC customer"
+              }
               className="h-10 min-w-0 flex-1 rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent sm:max-w-md"
             />
             <label className="flex items-center gap-2 text-sm text-quiet">
@@ -78,7 +107,8 @@ export default async function UsagePage({
               <span>No SIMs at ≥{SIM_ALLOWANCE_ALERT_PCT}% in this view.</span>
             )}
             {" · "}
-            Showing {sims.length.toLocaleString("en-AU")} row{sims.length === 1 ? "" : "s"}.
+            Showing {sims.length.toLocaleString("en-AU")} row{sims.length === 1 ? "" : "s"}
+            {customerScope ? ` · CC customer ${customerScope}` : ""}.
           </p>
 
           <div className="mt-4 overflow-x-auto rounded-card border border-line bg-panel">
@@ -88,8 +118,11 @@ export default async function UsagePage({
                   <th className="px-4 py-3">ICCID</th>
                   <th className="px-4 py-3">CC customer</th>
                   <th className="px-4 py-3">modem_ID</th>
+                  <th className="px-4 py-3">Rate plan</th>
                   <th className="px-4 py-3">CTD MB</th>
-                  <th className="px-4 py-3">Allowance MB</th>
+                  <th className="px-4 py-3">
+                    {basis === "rate_plan" ? "Rate plan allowance MB" : "Modem allowance MB"}
+                  </th>
                   <th className="px-4 py-3">%</th>
                   <th className="px-4 py-3">CC status</th>
                 </tr>
@@ -103,6 +136,7 @@ export default async function UsagePage({
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{sim.iccid}</td>
                       <td className="px-4 py-3">{sim.customer ?? "—"}</td>
                       <td className="px-4 py-3 font-mono text-xs">{sim.modemId ?? "—"}</td>
+                      <td className="px-4 py-3">{sim.ratePlan ?? "—"}</td>
                       <td className="px-4 py-3">
                         {sim.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
                       </td>
@@ -124,8 +158,10 @@ export default async function UsagePage({
                 })}
                 {sims.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-quiet">
-                      No SIMs match. Set modem allowances on Pools, then Sync / enrich CTD.
+                    <td colSpan={8} className="px-4 py-8 text-quiet">
+                      {basis === "rate_plan"
+                        ? "No SIMs match. Set rate plan allowances, then Sync / enrich CTD."
+                        : "No SIMs match. Set modem allowances on Pools (or here), Sync / enrich CTD."}
                     </td>
                   </tr>
                 ) : null}
@@ -135,7 +171,7 @@ export default async function UsagePage({
         </>
       ) : (
         <p className="mt-6 rounded-card border border-line bg-panel px-4 py-5 text-sm text-quiet">
-          Per-SIM modem allowance usage is available to platform and reseller admins.
+          Per-SIM allowance usage is available to platform and reseller admins.
         </p>
       )}
 
