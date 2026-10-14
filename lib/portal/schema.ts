@@ -138,9 +138,17 @@ const STATEMENTS = [
     modem_id TEXT,
     customer TEXT,
     emailed_at TEXT NOT NULL,
+    rate_plan TEXT,
+    basis TEXT,
     PRIMARY KEY (iccid, day, threshold)
   )`,
   `CREATE INDEX IF NOT EXISTS sim_allowance_alerts_day ON sim_allowance_alerts (day)`,
+  `CREATE TABLE IF NOT EXISTS rate_plan_allowances (
+    rate_plan TEXT PRIMARY KEY,
+    allowance_mb REAL NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL
+  )`,
 ];
 
 const ALTERS = [
@@ -213,6 +221,8 @@ const ALTERS = [
     ON cc_devices (polled_at) WHERE details_polled_at IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS cc_devices_details_queue
     ON cc_devices (details_polled_at) WHERE details_polled_at IS NOT NULL`,
+  `ALTER TABLE sim_allowance_alerts ADD COLUMN rate_plan TEXT`,
+  `ALTER TABLE sim_allowance_alerts ADD COLUMN basis TEXT`,
 ];
 
 const BACKFILLS = [

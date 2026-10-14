@@ -97,6 +97,81 @@ export async function clearModemAllowance(modemId: string): Promise<void> {
   await getDB().prepare("DELETE FROM modem_allowances WHERE modem_id = ?").bind(id).run();
 }
 
+export type RatePlanAllowanceRow = {
+  ratePlan: string;
+  allowanceMb: number | null;
+  simCount: number;
+  ctdUsageMb: number;
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
+/** Distinct Jasper/CC rate plans with optional manual allowance (super-admin Usage). */
+export async function listRatePlanAllowances(): Promise<RatePlanAllowanceRow[]> {
+  const rows = await getDB()
+    .prepare(
+      `SELECT d.rate_plan AS rate_plan,
+              COUNT(*) AS sim_count,
+              IFNULL(SUM(d.ctd_usage_mb), 0) AS ctd_usage_mb,
+              a.allowance_mb AS allowance_mb,
+              a.updated_at AS updated_at,
+              a.updated_by AS updated_by
+       FROM cc_devices d
+       LEFT JOIN rate_plan_allowances a ON a.rate_plan = d.rate_plan
+       WHERE d.rate_plan IS NOT NULL AND TRIM(d.rate_plan) != ''
+       GROUP BY d.rate_plan
+       ORDER BY rate_plan COLLATE NOCASE
+       LIMIT 2000`,
+    )
+    .all<{
+      rate_plan: string;
+      sim_count: number;
+      ctd_usage_mb: number;
+      allowance_mb: number | null;
+      updated_at: string | null;
+      updated_by: string | null;
+    }>();
+
+  return (rows.results ?? []).map((row) => ({
+    ratePlan: row.rate_plan,
+    allowanceMb: row.allowance_mb,
+    simCount: row.sim_count,
+    ctdUsageMb: row.ctd_usage_mb,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
+  }));
+}
+
+export async function setRatePlanAllowance(
+  ratePlan: string,
+  allowanceMb: number,
+  actorEmail: string,
+): Promise<void> {
+  const id = ratePlan.trim();
+  if (!id) throw new Error("Rate plan is required.");
+  if (!Number.isFinite(allowanceMb) || allowanceMb < 0) {
+    throw new Error("Allowance must be a non-negative number of MB.");
+  }
+  const now = new Date().toISOString();
+  await getDB()
+    .prepare(
+      `INSERT INTO rate_plan_allowances (rate_plan, allowance_mb, updated_at, updated_by)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(rate_plan) DO UPDATE SET
+         allowance_mb = excluded.allowance_mb,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by`,
+    )
+    .bind(id, allowanceMb, now, actorEmail)
+    .run();
+}
+
+export async function clearRatePlanAllowance(ratePlan: string): Promise<void> {
+  const id = ratePlan.trim();
+  if (!id) throw new Error("Rate plan is required.");
+  await getDB().prepare("DELETE FROM rate_plan_allowances WHERE rate_plan = ?").bind(id).run();
+}
+
 /**
  * Snapshot per Jasper/CC customer for the Sydney day (upsert).
  * modem_ID and CTD are per SIM — sum across every device row for that customer:
