@@ -81,8 +81,134 @@ export async function listSimModemUsage(input?: {
 
 type AlertCandidate = SimModemUsage & { modemId: string; allowanceMb: number; pct: number };
 
+function withAllowance(sims: SimModemUsage[]): AlertCandidate[] {
+  const out: AlertCandidate[] = [];
+  for (const sim of sims) {
+    if (!sim.modemId || sim.allowanceMb == null || sim.allowanceMb <= 0 || sim.pct == null) continue;
+    out.push({
+      ...sim,
+      modemId: sim.modemId,
+      allowanceMb: sim.allowanceMb,
+      pct: sim.pct,
+    });
+  }
+  return out;
+}
+
+/** Shared HTML for production alerts and demo sends — tune this one place. */
+export function buildSimAllowanceAlertEmail(input: {
+  sims: AlertCandidate[];
+  day: string;
+  threshold: number;
+  demo?: boolean;
+}): { subject: string; html: string } {
+  const { sims, day, threshold, demo } = input;
+  const rowsHtml = sims
+    .map((sim, index) => {
+      const pctColor = sim.pct >= 100 ? "#b91c1c" : sim.pct >= threshold ? "#b45309" : "#047857";
+      return `
+      <tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:12px;">${index + 1}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#111827;">${escapeHtml(sim.iccid)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#111827;">${escapeHtml(sim.customer ?? "—")}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#111827;">${escapeHtml(sim.modemId)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;">${sim.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;">${sim.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:${pctColor};">${sim.pct}%</td>
+      </tr>`;
+    })
+    .join("");
+
+  const subject = demo
+    ? `[DEMO] Catalyst modem allowance — top ${sims.length} SIMs by %`
+    : `Catalyst: ${sims.length} SIM${sims.length === 1 ? "" : "s"} at ≥${threshold}% modem allowance`;
+
+  const html = `
+  <div style="background:#f3f4f6;padding:24px 12px;">
+    <div style="font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
+      <div style="background:#070B14;padding:20px 24px;">
+        <p style="margin:0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#2EE6D6;font-weight:700;">ATN Catalyst</p>
+        <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:600;">
+          ${demo ? "Modem allowance demo" : "Modem allowance alert"}
+        </h1>
+      </div>
+      <div style="padding:24px;">
+        ${
+          demo
+            ? `<p style="margin:0 0 12px;padding:10px 12px;background:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;color:#0e7490;font-size:13px;">
+                <strong>Demo send</strong> — top ${sims.length} SIMs by CTD ÷ modem_ID allowance (not gated at ${threshold}%). Sydney day <strong>${day}</strong>.
+              </p>`
+            : `<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.5;">
+                ${sims.length} SIM${sims.length === 1 ? " has" : "s have"} reached <strong>≥${threshold}%</strong> of their modem_ID allowance
+                (CTD MB ÷ allowance MB) as of Sydney day <strong>${day}</strong>.
+              </p>`
+        }
+        <table style="width:100%;border-collapse:collapse;margin:8px 0 20px;font-size:13px;">
+          <thead>
+            <tr style="text-align:left;background:#f9fafb;color:#6b7280;">
+              <th style="padding:10px 12px;font-weight:600;">#</th>
+              <th style="padding:10px 12px;font-weight:600;">ICCID</th>
+              <th style="padding:10px 12px;font-weight:600;">CC customer</th>
+              <th style="padding:10px 12px;font-weight:600;">modem_ID</th>
+              <th style="padding:10px 12px;font-weight:600;text-align:right;">CTD MB</th>
+              <th style="padding:10px 12px;font-weight:600;text-align:right;">Allowance</th>
+              <th style="padding:10px 12px;font-weight:600;text-align:right;">%</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml || `<tr><td colspan="7" style="padding:16px;color:#6b7280;">No SIMs with a modem allowance.</td></tr>`}</tbody>
+        </table>
+        <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.5;">
+          ${
+            demo
+              ? "This is a format test only — it does not mark SIMs as alerted."
+              : "Open Catalyst → Usage for the full list. Each ICCID is emailed at most once per Sydney day at this threshold."
+          }
+        </p>
+      </div>
+    </div>
+  </div>`;
+
+  return { subject, html };
+}
+
+async function sendAlertHtml(subject: string, html: string): Promise<boolean> {
+  let emailed = false;
+  for (const to of SIM_ALLOWANCE_ALERT_TO) {
+    try {
+      await sendSystemEmail(to, subject, html);
+      emailed = true;
+    } catch (err) {
+      console.error("[sim-usage] alert email failed", to, err);
+    }
+  }
+  return emailed;
+}
+
 /**
- * Find SIMs at/above threshold that have not been emailed today; notify all super admins once.
+ * Demo: email top N SIMs by allowance % (no alert ledger write).
+ */
+export async function sendDemoTopSimAllowanceEmail(limit = 10): Promise<{
+  sent: boolean;
+  count: number;
+  to: string[];
+}> {
+  const day = sydneyDayKey();
+  const sims = withAllowance(await listSimModemUsage({ limit: 2000 }))
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, Math.min(Math.max(limit, 1), 50));
+
+  const { subject, html } = buildSimAllowanceAlertEmail({
+    sims,
+    day,
+    threshold: SIM_ALLOWANCE_ALERT_PCT,
+    demo: true,
+  });
+  const sent = await sendAlertHtml(subject, html);
+  return { sent, count: sims.length, to: SIM_ALLOWANCE_ALERT_TO };
+}
+
+/**
+ * Find SIMs at/above threshold that have not been emailed today; notify once.
  */
 export async function notifySimAllowanceAlerts(threshold = SIM_ALLOWANCE_ALERT_PCT): Promise<{
   checked: number;
@@ -91,17 +217,7 @@ export async function notifySimAllowanceAlerts(threshold = SIM_ALLOWANCE_ALERT_P
 }> {
   const day = sydneyDayKey();
   const sims = await listSimModemUsage({ limit: 2000 });
-  const candidates: AlertCandidate[] = [];
-  for (const sim of sims) {
-    if (!sim.modemId || sim.allowanceMb == null || sim.allowanceMb <= 0 || sim.pct == null) continue;
-    if (sim.pct < threshold) continue;
-    candidates.push({
-      ...sim,
-      modemId: sim.modemId,
-      allowanceMb: sim.allowanceMb,
-      pct: sim.pct,
-    });
-  }
+  const candidates = withAllowance(sims).filter((sim) => sim.pct >= threshold);
 
   if (candidates.length === 0) {
     return { checked: sims.length, newlyAlerted: 0, emailed: false };
@@ -124,58 +240,12 @@ export async function notifySimAllowanceAlerts(threshold = SIM_ALLOWANCE_ALERT_P
     return { checked: sims.length, newlyAlerted: 0, emailed: false };
   }
 
-  const emails = SIM_ALLOWANCE_ALERT_TO;
-  if (emails.length === 0) {
-    return { checked: sims.length, newlyAlerted: fresh.length, emailed: false };
-  }
-
-  const rowsHtml = fresh
-    .slice(0, 50)
-    .map(
-      (sim) => `
-      <tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:12px;">${escapeHtml(sim.iccid)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${escapeHtml(sim.customer ?? "—")}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${escapeHtml(sim.modemId)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right;">${sim.ctdUsageMb.toFixed(1)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right;">${sim.allowanceMb.toFixed(1)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;color:#b45309;">${sim.pct}%</td>
-      </tr>`,
-    )
-    .join("");
-
-  const subject = `Catalyst: ${fresh.length} SIM${fresh.length === 1 ? "" : "s"} at ≥${threshold}% modem allowance`;
-  const html = `
-    <div style="font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;">
-      <h2 style="color:#111827;">Modem allowance alert</h2>
-      <p>${fresh.length} SIM${fresh.length === 1 ? " has" : "s have"} reached <strong>≥${threshold}%</strong> of their modem_ID allowance (CTD MB ÷ allowance MB) as of Sydney day <strong>${day}</strong>.</p>
-      <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:13px;">
-        <thead>
-          <tr style="text-align:left;color:#6b7280;">
-            <th style="padding:6px 10px;">ICCID</th>
-            <th style="padding:6px 10px;">CC customer</th>
-            <th style="padding:6px 10px;">modem_ID</th>
-            <th style="padding:6px 10px;text-align:right;">CTD MB</th>
-            <th style="padding:6px 10px;text-align:right;">Allowance</th>
-            <th style="padding:6px 10px;text-align:right;">%</th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-      ${fresh.length > 50 ? `<p style="color:#6b7280;font-size:13px;">Showing first 50 of ${fresh.length}.</p>` : ""}
-      <p style="color:#6b7280;font-size:13px;">Open Catalyst → Usage for the full list. Each ICCID is emailed at most once per Sydney day at this threshold.</p>
-    </div>
-  `;
-
-  let emailed = false;
-  for (const to of emails) {
-    try {
-      await sendSystemEmail(to, subject, html);
-      emailed = true;
-    } catch (err) {
-      console.error("[sim-usage] alert email failed", to, err);
-    }
-  }
+  const { subject, html } = buildSimAllowanceAlertEmail({
+    sims: fresh.slice(0, 50),
+    day,
+    threshold,
+  });
+  const emailed = await sendAlertHtml(subject, html);
 
   if (emailed) {
     const now = new Date().toISOString();

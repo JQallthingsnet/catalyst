@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UsageDemoEmailButton } from "@/components/portal/usage-demo-email-button";
 import { requirePortal } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import { listAudit } from "@/lib/portal/repo";
@@ -41,11 +42,14 @@ export default async function UsagePage({
             {SIM_ALLOWANCE_ALERT_PCT}% (once per Sydney day).
           </p>
         </div>
-        {can(ctx.role, "pool.view") ? (
-          <Link href="/dashboard/pools" className="text-sm text-accent">
-            Customer pools
-          </Link>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {can(ctx.role, "pool.view") ? (
+            <Link href="/dashboard/pools" className="text-sm text-accent">
+              Customer pools
+            </Link>
+          ) : null}
+          {can(ctx.role, "pool.create") ? <UsageDemoEmailButton /> : null}
+        </div>
       </div>
 
       {can(ctx.role, "pool.view") ? (
