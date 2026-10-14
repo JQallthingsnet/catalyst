@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { OpenTenantButton } from "@/components/portal/tenant-switcher";
 import { requirePrivilege } from "@/lib/portal/guard";
-import { formatIccid } from "@/lib/portal/ids";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
 import { listPlatformEstate } from "@/lib/portal/tenant";
 
@@ -158,7 +157,7 @@ export default async function EstatePage({
                     <tbody>
                       {tenant.sims.map((sim) => (
                         <tr key={sim.id} className="border-t border-line">
-                          <td className="px-3 py-2 font-mono">{formatIccid(sim.iccid)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 font-mono">{sim.iccid}</td>
                           <td className="px-3 py-2">{sim.customerName ?? "Warehouse"}</td>
                           <td className="px-3 py-2">{sim.planName ?? "—"}</td>
                           <td className="px-3 py-2">{sim.platformPlanName ?? "—"}</td>

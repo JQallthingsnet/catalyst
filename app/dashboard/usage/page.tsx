@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { UsageDemoEmailButton } from "@/components/portal/usage-demo-email-button";
 import { requirePortal } from "@/lib/portal/guard";
-import { formatIccid } from "@/lib/portal/ids";
 import { listAudit } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
 import { SIM_ALLOWANCE_ALERT_PCT, listSimModemUsage } from "@/lib/portal/sim-usage";
@@ -105,7 +104,7 @@ export default async function UsagePage({
                   const over = sim.pct != null && sim.pct >= 100;
                   return (
                     <tr key={sim.iccid} className="border-t border-line">
-                      <td className="px-4 py-3 font-mono text-xs">{formatIccid(sim.iccid)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{sim.iccid}</td>
                       <td className="px-4 py-3">{sim.customer ?? "—"}</td>
                       <td className="px-4 py-3 font-mono text-xs">{sim.modemId ?? "—"}</td>
                       <td className="px-4 py-3">
