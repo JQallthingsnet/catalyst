@@ -12,7 +12,6 @@ const vinext = handler as unknown as VinextHandler;
 
 /** Near Sydney midnight (UTC). Digest is once-per-Sydney-day so both AEDT/AEST slots are safe. */
 const USAGE_DIGEST_CRONS = new Set(["0 13 * * *", "0 14 * * *"]);
-const CC_POLL_CRON = "0 * * * *";
 
 export default {
   fetch(request: Request, env: unknown, ctx: ExecutionContext) {
@@ -23,6 +22,7 @@ export default {
     await ensurePortalSchema();
     const cron = controller.cron;
 
+    // Dedicated digest triggers — do not run the long CC poll here.
     if (USAGE_DIGEST_CRONS.has(cron)) {
       try {
         const alert = await notifySimAllowanceAlerts();
@@ -44,20 +44,30 @@ export default {
       return;
     }
 
-    if (cron === CC_POLL_CRON) {
-      try {
-        await snapshotPoolCustomerDailyIfNeeded();
-      } catch (err) {
-        console.error("[cron:cc-poll] pool snapshot failed", err);
-      }
-      try {
-        await runScheduledCcPoll();
-      } catch (err) {
-        console.error("[cron:cc-poll] failed", err);
-      }
-      return;
+    // Everything else is CC poll (hourly `0 * * * *`, legacy `0 */6 * * *`, etc.).
+    // Exact-match-only used to no-op when Wrangler triggers lagged the Worker deploy.
+    console.log("[cron:cc-poll] start", cron);
+    try {
+      await snapshotPoolCustomerDailyIfNeeded();
+    } catch (err) {
+      console.error("[cron:cc-poll] pool snapshot failed", err);
     }
-
-    console.warn("[cron] unknown schedule", cron);
+    try {
+      const result = await runScheduledCcPoll();
+      console.log(
+        "[cron:cc-poll] done",
+        cron,
+        result
+          ? JSON.stringify({
+              pages: result.pages,
+              upserted: result.upserted,
+              details: result.details,
+              lastPage: result.lastPage,
+            })
+          : "skipped (auto poll off / busy / not configured)",
+      );
+    } catch (err) {
+      console.error("[cron:cc-poll] failed", cron, err);
+    }
   },
 };
