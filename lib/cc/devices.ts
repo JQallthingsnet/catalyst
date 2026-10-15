@@ -1516,12 +1516,14 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
   }
 
   // Auto: never-enriched first, then oldest session/usage, then a capped details wave.
+  // Keyset pagination (polled_at, iccid) — do NOT break when a page is entirely in `done`,
+  // or the same first ICCIDs get re-selected every cycle and the rest of the estate starves.
   while (Date.now() < input.deadline && jasperHasBudget(2)) {
     const neverRows = await getDB()
       .prepare(
         `SELECT iccid FROM cc_devices
          WHERE details_polled_at IS NULL
-         ORDER BY polled_at ASC
+         ORDER BY polled_at ASC, iccid ASC
          LIMIT ?`,
       )
       .bind(JASPER_BULK_DEVICE_LIMIT)
@@ -1530,42 +1532,90 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     if (neverList.length === 0) break;
     enriched += await enrichFullDetailsBatch(neverList, { deadline: input.deadline, done });
     if (Date.now() >= input.deadline || !jasperHasBudget(2)) return enriched;
-    if (neverList.length < JASPER_BULK_DEVICE_LIMIT) break;
+    if ((neverRows.results?.length ?? 0) < JASPER_BULK_DEVICE_LIMIT) break;
   }
 
-  // Keep enough calls for the capped details wave (bulk + usage + session ≈ 3/SIM).
+  // Session is per-ICCID (2 Jasper calls) — page larger than bulk Get Device limit.
+  const sessionPage = 200;
+  let sessionAfterAt = "";
+  let sessionAfterIccid = "";
   const detailsReserveCalls = AUTO_DETAILS_PER_TICK * 3;
   while (Date.now() < input.deadline && jasperHasBudget(2 + detailsReserveCalls)) {
-    const sessionRows = await getDB()
-      .prepare(
-        `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NOT NULL AND polled_at < ?
-         ORDER BY polled_at ASC
-         LIMIT ?`,
-      )
-      .bind(sessionStaleBefore, JASPER_BULK_DEVICE_LIMIT)
-      .all<{ iccid: string }>();
-    const sessionList = (sessionRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
-    if (sessionList.length === 0) break;
-    enriched += await enrichSessionOnlyBatch(sessionList, { deadline: input.deadline, done });
+    const sessionRows =
+      sessionAfterAt === ""
+        ? await getDB()
+            .prepare(
+              `SELECT iccid, polled_at FROM cc_devices
+               WHERE details_polled_at IS NOT NULL AND polled_at < ?
+               ORDER BY polled_at ASC, iccid ASC
+               LIMIT ?`,
+            )
+            .bind(sessionStaleBefore, sessionPage)
+            .all<{ iccid: string; polled_at: string }>()
+        : await getDB()
+            .prepare(
+              `SELECT iccid, polled_at FROM cc_devices
+               WHERE details_polled_at IS NOT NULL AND polled_at < ?
+                 AND (polled_at > ? OR (polled_at = ? AND iccid > ?))
+               ORDER BY polled_at ASC, iccid ASC
+               LIMIT ?`,
+            )
+            .bind(sessionStaleBefore, sessionAfterAt, sessionAfterAt, sessionAfterIccid, sessionPage)
+            .all<{ iccid: string; polled_at: string }>();
+
+    const page = sessionRows.results ?? [];
+    if (page.length === 0) break;
+
+    // Advance past this page even if every row was already in `done` this tick.
+    const tail = page[page.length - 1]!;
+    sessionAfterAt = tail.polled_at;
+    sessionAfterIccid = tail.iccid;
+
+    const sessionList = page.map((row) => row.iccid).filter((id) => !done.has(id));
+    if (sessionList.length === 0) continue;
+
+    const got = await enrichSessionOnlyBatch(sessionList, { deadline: input.deadline, done });
+    enriched += got;
+    if (got === 0) break;
     if (Date.now() >= input.deadline || !jasperHasBudget(2 + detailsReserveCalls)) break;
-    if (sessionList.length < JASPER_BULK_DEVICE_LIMIT) break;
   }
 
   let detailsLeft = AUTO_DETAILS_PER_TICK;
+  let detailsAfterAt = "";
+  let detailsAfterIccid = "";
   while (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(2)) {
     const take = Math.min(detailsLeft, JASPER_BULK_DEVICE_LIMIT);
-    const detailRows = await getDB()
-      .prepare(
-        `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NOT NULL AND details_polled_at < ?
-         ORDER BY details_polled_at ASC
-         LIMIT ?`,
-      )
-      .bind(detailsStaleBefore, take)
-      .all<{ iccid: string }>();
-    const detailList = (detailRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
-    if (detailList.length === 0) break;
+    const detailRows =
+      detailsAfterAt === ""
+        ? await getDB()
+            .prepare(
+              `SELECT iccid, details_polled_at FROM cc_devices
+               WHERE details_polled_at IS NOT NULL AND details_polled_at < ?
+               ORDER BY details_polled_at ASC, iccid ASC
+               LIMIT ?`,
+            )
+            .bind(detailsStaleBefore, take)
+            .all<{ iccid: string; details_polled_at: string }>()
+        : await getDB()
+            .prepare(
+              `SELECT iccid, details_polled_at FROM cc_devices
+               WHERE details_polled_at IS NOT NULL AND details_polled_at < ?
+                 AND (details_polled_at > ? OR (details_polled_at = ? AND iccid > ?))
+               ORDER BY details_polled_at ASC, iccid ASC
+               LIMIT ?`,
+            )
+            .bind(detailsStaleBefore, detailsAfterAt, detailsAfterAt, detailsAfterIccid, take)
+            .all<{ iccid: string; details_polled_at: string }>();
+
+    const page = detailRows.results ?? [];
+    if (page.length === 0) break;
+    const tail = page[page.length - 1]!;
+    detailsAfterAt = tail.details_polled_at;
+    detailsAfterIccid = tail.iccid;
+
+    const detailList = page.map((row) => row.iccid).filter((id) => !done.has(id));
+    if (detailList.length === 0) continue;
+
     const got = await enrichFullDetailsBatch(detailList, { deadline: input.deadline, done });
     enriched += got;
     detailsLeft -= got;
