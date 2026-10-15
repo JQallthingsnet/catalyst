@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SendUsageDigestButton } from "@/components/portal/send-usage-digest-button";
 import { requirePortal } from "@/lib/portal/guard";
 import { listAudit } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
@@ -48,10 +49,12 @@ export default async function UsagePage({
           <h1 className="text-3xl font-semibold">Usage & alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
-              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily email to Jerry Qiu for SIMs ≥"
+              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily email to Jerry Qiu when any SIM is ≥"
               : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Highlight at ≥"}
             {SIM_ALLOWANCE_ALERT_PCT}%
-            {basis === "rate_plan" ? " (once per Sydney day)." : "."}
+            {basis === "rate_plan"
+              ? " (separate daily cron near Sydney midnight — not tied to the 6-hourly CC poll)."
+              : "."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -60,6 +63,7 @@ export default async function UsagePage({
               {basis === "rate_plan" ? "Pools · rate plan allowances" : "Customer pools"}
             </Link>
           ) : null}
+          {basis === "rate_plan" && can(ctx.role, "pool.create") ? <SendUsageDigestButton /> : null}
         </div>
       </div>
 

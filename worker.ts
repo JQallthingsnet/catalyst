@@ -10,21 +10,54 @@ type VinextHandler = {
 
 const vinext = handler as unknown as VinextHandler;
 
+/** Near Sydney midnight (UTC). Digest is once-per-Sydney-day so both AEDT/AEST slots are safe. */
+const USAGE_DIGEST_CRONS = new Set(["0 13 * * *", "0 14 * * *"]);
+const CC_POLL_CRON = "0 */6 * * *";
+
 export default {
   fetch(request: Request, env: unknown, ctx: ExecutionContext) {
     return vinext.fetch(request, env, ctx);
   },
-  async scheduled() {
+
+  async scheduled(controller: ScheduledController) {
     await ensurePortalSchema();
-    await runScheduledCcPoll();
-    // Once per Sydney calendar day (first cron after local midnight): chart x-axis point.
-    // Auto-poll also refreshes today's row when it runs.
-    await snapshotPoolCustomerDailyIfNeeded();
-    try {
-      // Once per Sydney day: digest of SIMs ≥80% rate-plan allowance → jerry.qiu@allthingsnet.io
-      await notifySimAllowanceAlerts();
-    } catch (err) {
-      console.error("[cron] sim allowance alerts failed", err);
+    const cron = controller.cron;
+
+    if (USAGE_DIGEST_CRONS.has(cron)) {
+      try {
+        const alert = await notifySimAllowanceAlerts();
+        console.log(
+          "[cron:usage-digest]",
+          cron,
+          JSON.stringify({
+            checked: alert.checked,
+            newlyAlerted: alert.newlyAlerted,
+            emailed: alert.emailed,
+            day: alert.day,
+            skipReason: alert.skipReason,
+            error: alert.error,
+          }),
+        );
+      } catch (err) {
+        console.error("[cron:usage-digest] failed", cron, err);
+      }
+      return;
     }
+
+    if (cron === CC_POLL_CRON) {
+      try {
+        await snapshotPoolCustomerDailyIfNeeded();
+      } catch (err) {
+        console.error("[cron:cc-poll] pool snapshot failed", err);
+      }
+      try {
+        await runScheduledCcPoll();
+      } catch (err) {
+        console.error("[cron:cc-poll] failed", err);
+      }
+      return;
+    }
+
+    console.warn("[cron] unknown schedule", cron);
   },
 };

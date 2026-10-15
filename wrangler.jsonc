@@ -7,9 +7,10 @@
   ],
   "main": "worker.ts",
   "triggers": {
-    // Free tier: 5M rows_read/day. Session/usage target is once/day — do not tick every 30m.
-    // Six-hourly leaves headroom to drain a large estate across ticks without full-scan spam.
-    "crons": ["0 */6 * * *"]
+    // Separate schedules (same Worker, branched in worker.ts via controller.cron):
+    // 1) CC poll + pool daily point — every 6h UTC
+    // 2) ≥80% usage digest email — near Sydney midnight (13:00 UTC = AEDT midnight, 14:00 = AEST)
+    "crons": ["0 */6 * * *", "0 13 * * *", "0 14 * * *"]
   },
   "assets": {
     "directory": "dist/client",
