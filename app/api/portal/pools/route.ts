@@ -5,12 +5,16 @@ import {
   clearModemAllowance,
   clearRatePlanAllowance,
   listModemAllowances,
-  listPoolCustomerLatest,
-  listPoolCustomerSeries,
+  listPoolModemLatest,
+  listPoolModemSeries,
+  listPoolRatePlanLatest,
+  listPoolRatePlanSeries,
   listRatePlanAllowances,
   setModemAllowance,
   setRatePlanAllowance,
   snapshotPoolCustomerDaily,
+  toPoolEntityFromModem,
+  toPoolEntityFromRatePlan,
 } from "@/lib/portal/pools";
 
 export async function GET(request: Request) {
@@ -20,10 +24,10 @@ export async function GET(request: Request) {
   if (denied) return denied;
 
   const scope = await resolvePoolCustomerScope(ctx);
-  const basis = scope.unrestricted ? ("rate_plan" as const) : ("modem" as const);
+  const platformView = scope.unrestricted;
   const url = new URL(request.url);
   const view = url.searchParams.get("view") ?? "latest";
-  const customer = url.searchParams.get("customer") ?? "";
+  const q = url.searchParams.get("customer") ?? url.searchParams.get("q") ?? "";
 
   if (view === "modems") {
     if (ctx.role !== "super_admin") {
@@ -33,7 +37,7 @@ export async function GET(request: Request) {
       );
     }
     return NextResponse.json({
-      modems: await listModemAllowances({ q: customer }),
+      modems: await listModemAllowances({ q }),
     });
   }
   if (view === "rate_plans") {
@@ -43,30 +47,54 @@ export async function GET(request: Request) {
     return NextResponse.json({ ratePlans: await listRatePlanAllowances() });
   }
   if (view === "series") {
-    const customersParam = url.searchParams.get("customers") ?? "";
-    const customers = customersParam
+    const keysParam = url.searchParams.get("keys") ?? url.searchParams.get("customers") ?? "";
+    const keys = keysParam
       .split(",")
       .map((c) => c.trim())
       .filter(Boolean);
-    return NextResponse.json({
-      series: await listPoolCustomerSeries({
-        customer: customers.length ? undefined : customer,
-        customers: customers.length ? customers : undefined,
-        allowedCustomers: scope.unrestricted ? undefined : [scope.exactCustomer],
-        basis,
+    if (platformView) {
+      const series = await listPoolRatePlanSeries({
+        ratePlans: keys.length ? keys : undefined,
         fromDay: url.searchParams.get("from") ?? undefined,
         toDay: url.searchParams.get("to") ?? undefined,
-      }),
+      });
+      return NextResponse.json({
+        series: series.map((point) => ({
+          name: point.ratePlan,
+          day: point.day,
+          ctdUsageMb: point.ctdUsageMb,
+          allowanceMb: point.allowanceMb,
+        })),
+      });
+    }
+    const series = await listPoolModemSeries({
+      modemIds: keys.length ? keys : undefined,
+      exactCustomer: scope.exactCustomer,
+      fromDay: url.searchParams.get("from") ?? undefined,
+      toDay: url.searchParams.get("to") ?? undefined,
+    });
+    return NextResponse.json({
+      series: series.map((point) => ({
+        name: point.modemId,
+        day: point.day,
+        ctdUsageMb: point.ctdUsageMb,
+        allowanceMb: point.allowanceMb,
+      })),
+    });
+  }
+
+  if (platformView) {
+    return NextResponse.json({
+      rows: (await listPoolRatePlanLatest({ q })).map(toPoolEntityFromRatePlan),
     });
   }
   return NextResponse.json({
-    customers: scope.unrestricted
-      ? await listPoolCustomerLatest({ q: customer, basis })
-      : await listPoolCustomerLatest({
-          q: customer,
-          exactCustomer: scope.exactCustomer,
-          basis,
-        }),
+    rows: (
+      await listPoolModemLatest({
+        q,
+        exactCustomer: scope.exactCustomer,
+      })
+    ).map(toPoolEntityFromModem),
   });
 }
 

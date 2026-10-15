@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModemAllowancesDialog } from "@/components/portal/modem-allowances-dialog";
 import { RatePlanAllowancesDialog } from "@/components/portal/rate-plan-allowances-dialog";
 
-type PoolAllowanceBasis = "rate_plan" | "modem";
+export type PoolGroupBy = "rate_plan" | "modem" | "customer";
 
 export type PoolLatestRow = {
-  customer: string;
+  name: string;
   day: string;
   ctdUsageMb: number;
   allowanceMb: number;
@@ -17,7 +17,7 @@ export type PoolLatestRow = {
 };
 
 export type PoolSeriesPoint = {
-  customer: string;
+  name: string;
   day: string;
   ctdUsageMb: number;
   allowanceMb: number;
@@ -38,28 +38,30 @@ const PLOT_COLORS = [
   "#e879f9",
 ];
 
-function topCustomersByUsage(rows: PoolLatestRow[], n: number): string[] {
+function topByUsage(rows: PoolLatestRow[], n: number): string[] {
   return [...rows]
     .sort((a, b) => b.ctdUsageMb - a.ctdUsageMb)
     .slice(0, n)
-    .map((row) => row.customer);
+    .map((row) => row.name);
 }
 
-function colorFor(customer: string, plotted: string[]): string {
-  const idx = plotted.indexOf(customer);
+function colorFor(name: string, plotted: string[]): string {
+  const idx = plotted.indexOf(name);
   return PLOT_COLORS[idx >= 0 ? idx % PLOT_COLORS.length : 0];
 }
 
-function CustomerPickerDialog({
+function EntityPickerDialog({
   open,
-  customers,
+  rows,
   selected,
+  entityLabel,
   onClose,
   onApply,
 }: {
   open: boolean;
-  customers: PoolLatestRow[];
+  rows: PoolLatestRow[];
   selected: string[];
+  entityLabel: string;
   onClose: () => void;
   onApply: (next: string[]) => void;
 }) {
@@ -75,18 +77,18 @@ function CustomerPickerDialog({
 
   if (!open) return null;
 
-  const sorted = [...customers].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
+  const sorted = [...rows].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
   const filtered = sorted.filter((row) => {
     const needle = q.trim().toLowerCase();
     if (!needle) return true;
-    return row.customer.toLowerCase().includes(needle);
+    return row.name.toLowerCase().includes(needle);
   });
 
-  function toggle(customer: string) {
+  function toggle(name: string) {
     setDraft((current) => {
       const next = new Set(current);
-      if (next.has(customer)) next.delete(customer);
-      else next.add(customer);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   }
@@ -96,7 +98,7 @@ function CustomerPickerDialog({
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-card border border-line bg-panel shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold">Customers on chart</h2>
+            <h2 className="text-lg font-semibold">{entityLabel}s on chart</h2>
             <p className="mt-1 text-sm text-quiet">
               Default is top 10 by CTD usage. Tick more to add them to the plot.
             </p>
@@ -109,33 +111,31 @@ function CustomerPickerDialog({
           <input
             value={q}
             onChange={(event) => setQ(event.target.value)}
-            placeholder="Filter CC customer"
+            placeholder={`Filter ${entityLabel.toLowerCase()}`}
             className="h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm outline-none focus:border-accent"
           />
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
           <ul className="space-y-1">
             {filtered.map((row, index) => {
-              const checked = draft.has(row.customer);
+              const checked = draft.has(row.name);
               return (
-                <li key={row.customer}>
+                <li key={row.name}>
                   <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line px-3 py-2 hover:border-accent">
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggle(row.customer)}
+                      onChange={() => toggle(row.name)}
                       className="accent-(--accent,#2dd4bf)"
                     />
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{
-                        background: checked
-                          ? colorFor(row.customer, [...draft])
-                          : "transparent",
+                        background: checked ? colorFor(row.name, [...draft]) : "transparent",
                         outline: checked ? undefined : "1px solid var(--line, #334155)",
                       }}
                     />
-                    <span className="min-w-0 flex-1 truncate text-sm">{row.customer}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{row.name}</span>
                     <span className="shrink-0 text-xs text-quiet">
                       {index < 10 && !q ? "top 10 · " : ""}
                       {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB
@@ -149,7 +149,7 @@ function CustomerPickerDialog({
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-4">
           <button
             type="button"
-            onClick={() => setDraft(new Set(topCustomersByUsage(customers, 10)))}
+            onClick={() => setDraft(new Set(topByUsage(rows, 10)))}
             className="text-sm text-accent"
           >
             Reset to top 10
@@ -165,9 +165,7 @@ function CustomerPickerDialog({
             <button
               type="button"
               onClick={() => {
-                const ordered = sorted
-                  .map((row) => row.customer)
-                  .filter((name) => draft.has(name));
+                const ordered = sorted.map((row) => row.name).filter((name) => draft.has(name));
                 onApply(ordered);
                 onClose();
               }}
@@ -182,40 +180,42 @@ function CustomerPickerDialog({
   );
 }
 
-function MultiCustomerChart({
+function MultiEntityChart({
   plotted,
-  seriesByCustomer,
-  latestByCustomer,
+  seriesByName,
+  latestByName,
   busy,
-  allowCustomerPick,
+  allowPick,
+  entityLabel,
   onRemove,
   onOpenPicker,
 }: {
   plotted: string[];
-  seriesByCustomer: Map<string, PoolSeriesPoint[]>;
-  latestByCustomer: Map<string, PoolLatestRow>;
+  seriesByName: Map<string, PoolSeriesPoint[]>;
+  latestByName: Map<string, PoolLatestRow>;
   busy: boolean;
-  allowCustomerPick: boolean;
-  onRemove: (customer: string) => void;
+  allowPick: boolean;
+  entityLabel: string;
+  onRemove: (name: string) => void;
   onOpenPicker: () => void;
 }) {
   const days = useMemo(() => {
     const set = new Set<string>();
-    for (const customer of plotted) {
-      for (const point of seriesByCustomer.get(customer) ?? []) set.add(point.day);
+    for (const name of plotted) {
+      for (const point of seriesByName.get(name) ?? []) set.add(point.day);
     }
     return [...set].sort();
-  }, [plotted, seriesByCustomer]);
+  }, [plotted, seriesByName]);
 
   const maxMb = useMemo(() => {
     let max = 1;
-    for (const customer of plotted) {
-      for (const point of seriesByCustomer.get(customer) ?? []) {
+    for (const name of plotted) {
+      for (const point of seriesByName.get(name) ?? []) {
         max = Math.max(max, point.ctdUsageMb, point.allowanceMb);
       }
     }
     return max;
-  }, [plotted, seriesByCustomer]);
+  }, [plotted, seriesByName]);
 
   const width = 640;
   const height = 220;
@@ -243,19 +243,19 @@ function MultiCustomerChart({
           <p className="mt-1 text-xs text-quiet">
             X-axis = Sydney calendar day. One point saved automatically each day (cron / first open).
             Solid = CTD MB · Dashed = allowance
-            {allowCustomerPick ? ". Top 10 by usage by default." : "."}
+            {allowPick ? `. Top 10 ${entityLabel.toLowerCase()}s by usage by default.` : "."}
             {days.length === 1 ? " Lines appear from day 2 onward." : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {busy ? <span className="text-xs text-quiet">Loading…</span> : null}
-          {allowCustomerPick ? (
+          {allowPick ? (
             <button
               type="button"
               onClick={onOpenPicker}
               className="rounded-card border border-line px-3 py-1.5 text-sm hover:border-accent"
             >
-              Add customers
+              Add {entityLabel.toLowerCase()}s
             </button>
           ) : null}
         </div>
@@ -264,8 +264,8 @@ function MultiCustomerChart({
       <div className="mt-4 overflow-x-auto">
         {plotted.length === 0 || days.length === 0 ? (
           <p className="flex h-48 items-center text-sm text-quiet">
-            {allowCustomerPick
-              ? "No daily points yet. Today is saved on first open or cron after Sydney midnight — then pick customers."
+            {allowPick
+              ? `No daily points yet. Today is saved on first open or cron after Sydney midnight — then pick ${entityLabel.toLowerCase()}s.`
               : "No daily points yet. Today is saved automatically after Sydney midnight / first open."}
           </p>
         ) : (
@@ -283,19 +283,13 @@ function MultiCustomerChart({
                     className="text-line"
                     strokeOpacity={0.35}
                   />
-                  <text
-                    x={padL - 6}
-                    y={y + 3}
-                    textAnchor="end"
-                    className="fill-quiet text-[9px]"
-                  >
+                  <text x={padL - 6} y={y + 3} textAnchor="end" className="fill-quiet text-[9px]">
                     {t === 0 ? "0" : `${Math.round((maxMb * t) / 1000)}k`}
                   </text>
                 </g>
               );
             })}
             {days.map((day, i) => {
-              // Thin labels when many calendar days are plotted.
               const step = days.length > 14 ? Math.ceil(days.length / 10) : 1;
               const show = i === 0 || i === days.length - 1 || i % step === 0;
               if (!show) return null;
@@ -311,10 +305,10 @@ function MultiCustomerChart({
                 </text>
               );
             })}
-            {plotted.map((customer) => {
-              const points = seriesByCustomer.get(customer) ?? [];
+            {plotted.map((name) => {
+              const points = seriesByName.get(name) ?? [];
               const byDay = new Map(points.map((p) => [p.day, p]));
-              const color = colorFor(customer, plotted);
+              const color = colorFor(name, plotted);
               const buildPath = (value: (p: PoolSeriesPoint) => number) => {
                 let d = "";
                 let move = true;
@@ -332,7 +326,7 @@ function MultiCustomerChart({
               const ctdPath = buildPath((p) => p.ctdUsageMb);
               const allowPath = buildPath((p) => p.allowanceMb);
               return (
-                <g key={customer}>
+                <g key={name}>
                   {allowPath ? (
                     <path
                       d={allowPath}
@@ -344,21 +338,27 @@ function MultiCustomerChart({
                     />
                   ) : null}
                   {ctdPath ? (
-                    <path d={ctdPath} fill="none" stroke={color} strokeWidth={2.25} strokeLinecap="round" />
+                    <path
+                      d={ctdPath}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={2.25}
+                      strokeLinecap="round"
+                    />
                   ) : null}
                   {days.map((day, i) => {
                     const p = byDay.get(day);
                     if (!p) return null;
                     return (
                       <circle
-                        key={`${customer}-${day}`}
+                        key={`${name}-${day}`}
                         cx={xAt(i)}
                         cy={yAt(p.ctdUsageMb)}
                         r={3}
                         fill={color}
                       >
                         <title>
-                          {customer}: {p.ctdUsageMb.toFixed(0)} MB CTD / {p.allowanceMb.toFixed(0)} MB
+                          {name}: {p.ctdUsageMb.toFixed(0)} MB CTD / {p.allowanceMb.toFixed(0)} MB
                           allowance ({day})
                         </title>
                       </circle>
@@ -384,28 +384,28 @@ function MultiCustomerChart({
           </p>
         </div>
         <ul className="flex flex-wrap gap-2">
-          {plotted.map((customer) => {
-            const latest = latestByCustomer.get(customer);
-            const color = colorFor(customer, plotted);
+          {plotted.map((name) => {
+            const latest = latestByName.get(name);
+            const color = colorFor(name, plotted);
             return (
               <li
-                key={customer}
+                key={name}
                 className="flex max-w-full items-center gap-2 rounded-full border border-line bg-canvas/60 py-1 pl-2.5 pr-1.5"
               >
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
-                <span className="truncate text-xs font-medium">{customer}</span>
+                <span className="truncate text-xs font-medium">{name}</span>
                 {latest ? (
                   <span className="hidden shrink-0 text-[10px] text-quiet sm:inline">
                     {latest.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB ·{" "}
                     {latest.pct}%
                   </span>
                 ) : null}
-                {allowCustomerPick ? (
+                {allowPick ? (
                   <button
                     type="button"
-                    onClick={() => onRemove(customer)}
+                    onClick={() => onRemove(name)}
                     className="rounded-full px-1.5 text-xs text-quiet hover:bg-panel-2 hover:text-ink"
-                    aria-label={`Remove ${customer} from chart`}
+                    aria-label={`Remove ${name} from chart`}
                   >
                     ×
                   </button>
@@ -414,7 +414,7 @@ function MultiCustomerChart({
             );
           })}
           {plotted.length === 0 ? (
-            <li className="text-xs text-quiet">No customers selected.</li>
+            <li className="text-xs text-quiet">No {entityLabel.toLowerCase()}s selected.</li>
           ) : null}
         </ul>
       </div>
@@ -423,48 +423,50 @@ function MultiCustomerChart({
 }
 
 export function PoolsDashboard({
-  initialCustomers,
+  initialRows,
   canEdit,
   scopedCustomer = null,
   platformView = true,
-  basis = "modem",
+  groupBy = "customer",
 }: {
-  initialCustomers: PoolLatestRow[];
+  initialRows: PoolLatestRow[];
   canEdit: boolean;
-  /** When set, reseller is limited to this Jasper/CC customer. */
   scopedCustomer?: string | null;
   platformView?: boolean;
-  /** Super admin → rate_plan; reseller → modem. Mapping UI is super-admin only. */
-  basis?: PoolAllowanceBasis;
+  /** Super admin → rate_plan; reseller → modem. */
+  groupBy?: PoolGroupBy;
 }) {
-  const [customerQ, setCustomerQ] = useState("");
-  const [plotted, setPlotted] = useState<string[]>(() => topCustomersByUsage(initialCustomers, 10));
+  const entityLabel =
+    groupBy === "rate_plan" ? "Rate plan" : groupBy === "modem" ? "modem_ID" : "CC customer";
+  const allowanceLabel =
+    groupBy === "rate_plan" ? "Rate plan allowance MB" : "Modem allowance MB";
+  const [filterQ, setFilterQ] = useState("");
+  const [plotted, setPlotted] = useState<string[]>(() => topByUsage(initialRows, 10));
   const [series, setSeries] = useState<PoolSeriesPoint[]>([]);
   const [seriesBusy, setSeriesBusy] = useState(false);
   const [modemAllowancesOpen, setModemAllowancesOpen] = useState(false);
   const [ratePlanAllowancesOpen, setRatePlanAllowancesOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [message, setMessage] = useState("");
-  const allowanceLabel = basis === "rate_plan" ? "Rate plan allowance MB" : "Modem allowance MB";
 
-  const latestByCustomer = useMemo(() => {
+  const latestByName = useMemo(() => {
     const map = new Map<string, PoolLatestRow>();
-    for (const row of initialCustomers) map.set(row.customer, row);
+    for (const row of initialRows) map.set(row.name, row);
     return map;
-  }, [initialCustomers]);
+  }, [initialRows]);
 
-  const seriesByCustomer = useMemo(() => {
+  const seriesByName = useMemo(() => {
     const map = new Map<string, PoolSeriesPoint[]>();
     for (const point of series) {
-      const list = map.get(point.customer) ?? [];
+      const list = map.get(point.name) ?? [];
       list.push(point);
-      map.set(point.customer, list);
+      map.set(point.name, list);
     }
     return map;
   }, [series]);
 
-  const loadSeries = useCallback(async (customers: string[]) => {
-    if (customers.length === 0) {
+  const loadSeries = useCallback(async (names: string[]) => {
+    if (names.length === 0) {
       setSeries([]);
       return;
     }
@@ -472,7 +474,7 @@ export function PoolsDashboard({
     setMessage("");
     try {
       const res = await fetch(
-        `/api/portal/pools?view=series&customers=${encodeURIComponent(customers.join(","))}`,
+        `/api/portal/pools?view=series&keys=${encodeURIComponent(names.join(","))}`,
       );
       const data = (await res.json()) as { series?: PoolSeriesPoint[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Could not load series.");
@@ -490,14 +492,14 @@ export function PoolsDashboard({
   }, [plotted, loadSeries]);
 
   const filtered = useMemo(() => {
-    const q = customerQ.trim().toLowerCase();
-    const rows = [...initialCustomers].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
+    const q = filterQ.trim().toLowerCase();
+    const rows = [...initialRows].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
     if (!q) return rows;
-    return rows.filter((row) => row.customer.toLowerCase().includes(q));
-  }, [customerQ, initialCustomers]);
+    return rows.filter((row) => row.name.toLowerCase().includes(q));
+  }, [filterQ, initialRows]);
 
-  function addToPlot(customer: string) {
-    setPlotted((current) => (current.includes(customer) ? current : [...current, customer]));
+  function addToPlot(name: string) {
+    setPlotted((current) => (current.includes(name) ? current : [...current, name]));
   }
 
   return (
@@ -506,11 +508,15 @@ export function PoolsDashboard({
         <div>
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">
-            {platformView
-              ? "Per Jasper/CC customer: daily CTD MB (one point per Sydney calendar day, auto-saved) and live rate plan allowance. Chart lines grow as days accumulate. Modem_ID mapping is for reseller view only."
-              : scopedCustomer
-                ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and modem_ID allowance (one point per Sydney calendar day, auto-saved).`
-                : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
+            {groupBy === "rate_plan"
+              ? "Grouped by Jasper/CC rate plan: daily Σ CTD MB and Σ rate plan allowance across SIMs on that plan (one point per Sydney calendar day)."
+              : groupBy === "modem" && scopedCustomer
+                ? `Grouped by modem_ID for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ modem_ID allowance across SIMs with that ID (one point per Sydney calendar day).`
+                : groupBy === "modem"
+                  ? "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see modem_ID pools."
+                  : scopedCustomer
+                    ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and modem_ID allowance (one point per Sydney calendar day, auto-saved).`
+                    : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
           </p>
         </div>
         {canEdit && platformView ? (
@@ -536,61 +542,59 @@ export function PoolsDashboard({
       {message ? <p className="mt-3 text-sm text-quiet">{message}</p> : null}
 
       <div className="mt-6">
-        <MultiCustomerChart
+        <MultiEntityChart
           plotted={plotted}
-          seriesByCustomer={seriesByCustomer}
-          latestByCustomer={latestByCustomer}
+          seriesByName={seriesByName}
+          latestByName={latestByName}
           busy={seriesBusy}
-          allowCustomerPick={platformView}
-          onRemove={(customer) => setPlotted((current) => current.filter((c) => c !== customer))}
+          allowPick
+          entityLabel={entityLabel}
+          onRemove={(name) => setPlotted((current) => current.filter((c) => c !== name))}
           onOpenPicker={() => setPickerOpen(true)}
         />
       </div>
 
-      {platformView ? (
-        <form
-          className="mt-6"
-          onSubmit={(event) => {
-            event.preventDefault();
-          }}
-        >
-          <input
-            value={customerQ}
-            onChange={(event) => setCustomerQ(event.target.value)}
-            placeholder="Filter CC customer"
-            className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent"
-          />
-        </form>
-      ) : null}
+      <form
+        className="mt-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+        }}
+      >
+        <input
+          value={filterQ}
+          onChange={(event) => setFilterQ(event.target.value)}
+          placeholder={`Filter ${entityLabel.toLowerCase()}`}
+          className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent"
+        />
+      </form>
 
-      <div className={`overflow-x-auto rounded-card border border-line bg-panel ${platformView ? "mt-4" : "mt-6"}`}>
+      <div className="mt-4 overflow-x-auto rounded-card border border-line bg-panel">
         <table className="w-full min-w-180 text-left text-sm">
           <thead className="text-quiet">
             <tr>
-              <th className="px-4 py-3">CC customer</th>
+              <th className="px-4 py-3">{entityLabel}</th>
               <th className="px-4 py-3">Day</th>
               <th className="px-4 py-3">CTD MB</th>
               <th className="px-4 py-3">{allowanceLabel}</th>
               <th className="px-4 py-3">%</th>
-              <th className="px-4 py-3">SIMs w/ modem_ID</th>
               <th className="px-4 py-3">SIMs</th>
-              {platformView ? <th className="px-4 py-3">Chart</th> : null}
+              <th className="px-4 py-3">Chart</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((row) => {
-              const onChart = plotted.includes(row.customer);
+              const onChart = plotted.includes(row.name);
               return (
-                <tr key={row.customer} className="border-t border-line hover:bg-panel-2">
+                <tr key={row.name} className="border-t border-line hover:bg-panel-2">
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-2">
                       {onChart ? (
                         <span
                           className="h-2 w-2 rounded-full"
-                          style={{ background: colorFor(row.customer, plotted) }}
+                          style={{ background: colorFor(row.name, plotted) }}
                         />
                       ) : null}
-                      {row.customer}
+                      {row.name}
                     </span>
                   </td>
                   <td className="px-4 py-3 font-mono text-xs">{row.day}</td>
@@ -607,31 +611,28 @@ export function PoolsDashboard({
                   >
                     {row.pct}%
                   </td>
-                  <td className="px-4 py-3">{row.modemCount}</td>
                   <td className="px-4 py-3">{row.simCount}</td>
-                  {platformView ? (
-                    <td className="px-4 py-3">
-                      {onChart ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setPlotted((current) => current.filter((c) => c !== row.customer))
-                          }
-                          className="text-sm text-quiet hover:text-ink"
-                        >
-                          Remove
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => addToPlot(row.customer)}
-                          className="text-sm text-accent"
-                        >
-                          Add
-                        </button>
-                      )}
-                    </td>
-                  ) : null}
+                  <td className="px-4 py-3">
+                    {onChart ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPlotted((current) => current.filter((c) => c !== row.name))
+                        }
+                        className="text-sm text-quiet hover:text-ink"
+                      >
+                        Remove
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => addToPlot(row.name)}
+                        className="text-sm text-accent"
+                      >
+                        Add
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -639,6 +640,14 @@ export function PoolsDashboard({
         </table>
       </div>
 
+      <EntityPickerDialog
+        open={pickerOpen}
+        rows={initialRows}
+        selected={plotted}
+        entityLabel={entityLabel}
+        onClose={() => setPickerOpen(false)}
+        onApply={setPlotted}
+      />
       {platformView ? (
         <>
           <RatePlanAllowancesDialog
@@ -648,13 +657,6 @@ export function PoolsDashboard({
           <ModemAllowancesDialog
             open={modemAllowancesOpen}
             onClose={() => setModemAllowancesOpen(false)}
-          />
-          <CustomerPickerDialog
-            open={pickerOpen}
-            customers={initialCustomers}
-            selected={plotted}
-            onClose={() => setPickerOpen(false)}
-            onApply={setPlotted}
           />
         </>
       ) : null}

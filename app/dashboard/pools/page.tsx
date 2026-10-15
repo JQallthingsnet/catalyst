@@ -1,9 +1,14 @@
 import { PoolsDashboard } from "@/components/portal/pools-dashboard";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { resolvePoolCustomerScope } from "@/lib/portal/pool-scope";
-import { listPoolCustomerLatest, snapshotPoolCustomerDailyIfNeeded } from "@/lib/portal/pools";
+import {
+  listPoolModemLatest,
+  listPoolRatePlanLatest,
+  snapshotPoolCustomerDailyIfNeeded,
+  toPoolEntityFromModem,
+  toPoolEntityFromRatePlan,
+} from "@/lib/portal/pools";
 import { can } from "@/lib/portal/role-model";
-import type { UsageAllowanceBasis } from "@/lib/portal/sim-usage";
 
 export default async function PoolsPage({
   searchParams,
@@ -13,24 +18,26 @@ export default async function PoolsPage({
   const ctx = await requirePrivilege("pool.view");
   const params = await Promise.resolve(searchParams ?? {});
   const scope = await resolvePoolCustomerScope(ctx);
-  const basis: UsageAllowanceBasis = scope.unrestricted ? "rate_plan" : "modem";
+  const platformView = scope.unrestricted;
   // One point per Sydney calendar day; first visit/cron after midnight creates today's row.
   await snapshotPoolCustomerDailyIfNeeded();
-  const customers = scope.unrestricted
-    ? await listPoolCustomerLatest({ q: params.q ?? "", basis })
-    : await listPoolCustomerLatest({
-        q: params.q ?? "",
-        exactCustomer: scope.exactCustomer,
-        basis,
-      });
+
+  const rows = platformView
+    ? (await listPoolRatePlanLatest({ q: params.q ?? "" })).map(toPoolEntityFromRatePlan)
+    : (
+        await listPoolModemLatest({
+          q: params.q ?? "",
+          exactCustomer: scope.exactCustomer,
+        })
+      ).map(toPoolEntityFromModem);
 
   return (
     <PoolsDashboard
-      initialCustomers={customers}
+      initialRows={rows}
       canEdit={can(ctx.role, "pool.create")}
-      scopedCustomer={scope.unrestricted ? null : scope.exactCustomer || null}
-      platformView={scope.unrestricted}
-      basis={basis}
+      scopedCustomer={platformView ? null : scope.exactCustomer || null}
+      platformView={platformView}
+      groupBy={platformView ? "rate_plan" : "modem"}
     />
   );
 }

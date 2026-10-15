@@ -129,6 +129,30 @@ const STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS pool_customer_daily_day ON pool_customer_daily (day)`,
   `CREATE INDEX IF NOT EXISTS pool_customer_daily_customer ON pool_customer_daily (customer)`,
+  `CREATE TABLE IF NOT EXISTS pool_rate_plan_daily (
+    rate_plan TEXT NOT NULL,
+    day TEXT NOT NULL,
+    ctd_usage_mb REAL NOT NULL,
+    allowance_mb REAL NOT NULL,
+    sim_count INTEGER NOT NULL,
+    snapshotted_at TEXT NOT NULL,
+    PRIMARY KEY (rate_plan, day)
+  )`,
+  `CREATE INDEX IF NOT EXISTS pool_rate_plan_daily_day ON pool_rate_plan_daily (day)`,
+  `CREATE INDEX IF NOT EXISTS pool_rate_plan_daily_plan ON pool_rate_plan_daily (rate_plan)`,
+  `CREATE TABLE IF NOT EXISTS pool_modem_daily (
+    modem_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    customer TEXT,
+    ctd_usage_mb REAL NOT NULL,
+    allowance_mb REAL NOT NULL,
+    sim_count INTEGER NOT NULL,
+    snapshotted_at TEXT NOT NULL,
+    PRIMARY KEY (modem_id, day)
+  )`,
+  `CREATE INDEX IF NOT EXISTS pool_modem_daily_day ON pool_modem_daily (day)`,
+  `CREATE INDEX IF NOT EXISTS pool_modem_daily_customer ON pool_modem_daily (customer)`,
+  `CREATE INDEX IF NOT EXISTS pool_modem_daily_modem ON pool_modem_daily (modem_id)`,
   `CREATE TABLE IF NOT EXISTS sim_allowance_alerts (
     iccid TEXT NOT NULL,
     day TEXT NOT NULL,
