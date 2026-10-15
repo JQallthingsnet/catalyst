@@ -251,14 +251,19 @@ export default async function CcSnapshotPage({
             Full Jasper device profile (IMEI, customer, custom fields, …)
           </p>
           <p className="mt-3 text-xs text-quiet">
+            Profile refresh age (~2 weeks for full estate at current pace)
+          </p>
+          <p className="mt-1 text-xs text-quiet">
             <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
               {summary.neverEnriched.toLocaleString("en-AU")} still list-only
             </span>
             {" · "}
-            &lt;24h {summary.detailsFresh24h.toLocaleString("en-AU")}
+            &lt;7d {summary.detailsFresh7d.toLocaleString("en-AU")}
             {" · "}
-            <span className={summary.detailsOlder48h > 0 ? "text-danger" : ""}>
-              &gt;48h {summary.detailsOlder48h.toLocaleString("en-AU")}
+            7–14d {summary.detailsStale7to14d.toLocaleString("en-AU")}
+            {" · "}
+            <span className={summary.detailsOlder14d > 0 ? "text-danger" : ""}>
+              &gt;14d {summary.detailsOlder14d.toLocaleString("en-AU")}
             </span>
           </p>
         </article>

@@ -55,8 +55,10 @@ const AUTO_LIST_PAGES_WHEN_COMPLETE = 2;
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
  * Auto poll: full Get Device / bulk details this often. Never-enriched stay first.
+ * ~480 details/day ⇒ ~2 weeks for a 6.5k estate — 14d is the realistic refresh bar
+ * (In session stays on a 24h bar).
  */
-const AUTO_DETAILS_STALE_MS = 24 * 60 * 60 * 1000;
+const AUTO_DETAILS_STALE_MS = 14 * 24 * 60 * 60 * 1000;
 /**
  * Per auto tick, cap full details so session/CTD can finish a daily pass.
  * Details still drain (~20×24 ≈ 480/day) but In session is the 24h product bar.
@@ -963,8 +965,10 @@ type CcInventorySummary = {
   sessionFresh24h: number;
   sessionStale24to48h: number;
   sessionOlder48h: number;
-  detailsFresh24h: number;
-  detailsOlder48h: number;
+  /** Details age bands match ~2-week full-estate refresh capacity. */
+  detailsFresh7d: number;
+  detailsStale7to14d: number;
+  detailsOlder14d: number;
   usageMb: number;
 };
 
@@ -977,6 +981,8 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
   }
   const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const cutoff14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const row = await getDB()
     .prepare(
       `SELECT COUNT(*) as total,
@@ -989,12 +995,22 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
               SUM(CASE WHEN in_session IS NOT NULL AND polled_at >= ? THEN 1 ELSE 0 END) as session_fresh_24h,
               SUM(CASE WHEN in_session IS NOT NULL AND polled_at < ? AND polled_at >= ? THEN 1 ELSE 0 END) as session_stale_24_48h,
               SUM(CASE WHEN in_session IS NOT NULL AND (polled_at IS NULL OR polled_at < ?) THEN 1 ELSE 0 END) as session_older_48h,
-              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_fresh_24h,
-              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? THEN 1 ELSE 0 END) as details_older_48h,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_fresh_7d,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_stale_7_14d,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? THEN 1 ELSE 0 END) as details_older_14d,
               IFNULL(SUM(ctd_usage_mb), 0) as usage_mb
        FROM cc_devices`,
     )
-    .bind(cutoff24h, cutoff24h, cutoff48h, cutoff48h, cutoff24h, cutoff48h)
+    .bind(
+      cutoff24h,
+      cutoff24h,
+      cutoff48h,
+      cutoff48h,
+      cutoff7d,
+      cutoff7d,
+      cutoff14d,
+      cutoff14d,
+    )
     .first<{
       total: number;
       activated: number;
@@ -1006,8 +1022,9 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
       session_fresh_24h: number;
       session_stale_24_48h: number;
       session_older_48h: number;
-      details_fresh_24h: number;
-      details_older_48h: number;
+      details_fresh_7d: number;
+      details_stale_7_14d: number;
+      details_older_14d: number;
       usage_mb: number;
     }>();
   const value: CcInventorySummary = {
@@ -1021,8 +1038,9 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
     sessionFresh24h: row?.session_fresh_24h ?? 0,
     sessionStale24to48h: row?.session_stale_24_48h ?? 0,
     sessionOlder48h: row?.session_older_48h ?? 0,
-    detailsFresh24h: row?.details_fresh_24h ?? 0,
-    detailsOlder48h: row?.details_older_48h ?? 0,
+    detailsFresh7d: row?.details_fresh_7d ?? 0,
+    detailsStale7to14d: row?.details_stale_7_14d ?? 0,
+    detailsOlder14d: row?.details_older_14d ?? 0,
     usageMb: row?.usage_mb ?? 0,
   };
   inventorySummaryCache = { at: Date.now(), value };

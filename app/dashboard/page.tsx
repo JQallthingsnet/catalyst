@@ -36,8 +36,9 @@ export default async function DashboardPage() {
           sessionFresh24h: 0,
           sessionStale24to48h: 0,
           sessionOlder48h: 0,
-          detailsFresh24h: 0,
-          detailsOlder48h: 0,
+          detailsFresh7d: 0,
+          detailsStale7to14d: 0,
+          detailsOlder14d: 0,
           usageMb: 0,
         }),
   ]);
@@ -135,8 +136,8 @@ export default async function DashboardPage() {
               value={ccSummary.detailsEnriched.toLocaleString("en-AU")}
               hint={
                 ccSummary.neverEnriched > 0
-                  ? `${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >48h ${ccSummary.detailsOlder48h.toLocaleString("en-AU")}`
-                  : `<24h ${ccSummary.detailsFresh24h.toLocaleString("en-AU")} · >48h ${ccSummary.detailsOlder48h.toLocaleString("en-AU")}`
+                  ? `${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >14d ${ccSummary.detailsOlder14d.toLocaleString("en-AU")}`
+                  : `<7d ${ccSummary.detailsFresh7d.toLocaleString("en-AU")} · 7–14d ${ccSummary.detailsStale7to14d.toLocaleString("en-AU")} · >14d ${ccSummary.detailsOlder14d.toLocaleString("en-AU")}`
               }
             />
           </>
