@@ -12,7 +12,7 @@ const vinext = handler as unknown as VinextHandler;
 
 /** Near Sydney midnight (UTC). Digest is once-per-Sydney-day so both AEDT/AEST slots are safe. */
 const USAGE_DIGEST_CRONS = new Set(["0 13 * * *", "0 14 * * *"]);
-const CC_POLL_CRON = "0 */6 * * *";
+const CC_POLL_CRON = "0 * * * *";
 
 export default {
   fetch(request: Request, env: unknown, ctx: ExecutionContext) {

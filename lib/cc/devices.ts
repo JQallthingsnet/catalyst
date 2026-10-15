@@ -28,16 +28,17 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — cron is every 6h; stay under the 10-minute Worker cron cap
+ * Auto poll wall budget — cron is hourly; stay under the 10-minute Worker cron cap
  * so ticks do not overlap. Stay under the Worker subrequest cap (~1000).
  */
 const AUTO_BUDGET_MS = 8 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
- * Auto tick Jasper call cap. Usage+session = 2 calls/SIM when details already known
- * (~250–280 session refreshes/tick after list + capped details).
+ * Auto tick Jasper call cap. Usage+session = 2 calls/SIM when details already known.
+ * With hourly cron + details cap below: ~(750−60)/2 ≈ 340 session SIMs/tick ≈ 8k/day
+ * — enough to keep a ~6.5k estate’s In session / CTD under 24h.
  */
-const JASPER_CALLS_AUTO = 600;
+const JASPER_CALLS_AUTO = 750;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
  * List-only — do not burn budget on session/usage until the window is complete.
@@ -57,13 +58,13 @@ const DETAILS_STALE_MS = 15 * 60 * 1000;
  */
 const AUTO_DETAILS_STALE_MS = 24 * 60 * 60 * 1000;
 /**
- * Per auto tick, cap full details refreshes so a daily details wave cannot starve
- * the oldest session/usage queue (which is what keeps In session honest).
+ * Per auto tick, cap full details so session/CTD can finish a daily pass.
+ * Details still drain (~20×24 ≈ 480/day) but In session is the 24h product bar.
  */
-const AUTO_DETAILS_PER_TICK = 40;
+const AUTO_DETAILS_PER_TICK = 20;
 /**
  * Auto poll: refresh usage (Cycle to date MB) + In session at least this often.
- * Once/day is the product bar; work oldest `polled_at` first so >48h drains first.
+ * Work oldest `polled_at` first so >24h / >48h drain first.
  */
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
 /** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */

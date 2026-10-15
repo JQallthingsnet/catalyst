@@ -8,9 +8,9 @@
   "main": "worker.ts",
   "triggers": {
     // Separate schedules (same Worker, branched in worker.ts via controller.cron):
-    // 1) CC poll + pool daily point — every 6h UTC
+    // 1) CC poll + pool daily point — hourly (needed to keep In session / CTD <24h on ~6.5k SIMs)
     // 2) ≥80% usage digest email — near Sydney midnight (13:00 UTC = AEDT midnight, 14:00 = AEST)
-    "crons": ["0 */6 * * *", "0 13 * * *", "0 14 * * *"]
+    "crons": ["0 * * * *", "0 13 * * *", "0 14 * * *"]
   },
   "assets": {
     "directory": "dist/client",
