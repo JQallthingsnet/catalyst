@@ -36,9 +36,9 @@ const AUTO_BUDGET_MS = 8 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
  * Auto tick Jasper call cap. Usage+session = 2 calls/SIM when details already known.
- * With :00/:20/:40 crons + details cap: ~(750−60)/2 ≈ 340 session SIMs/tick × 3/hour
- * ≈ 24k/day — enough to keep a ~6.5k estate’s In session / CTD under 24h even when
- * some ticks stop early (429 / subrequest).
+ * With :00/:15/:30/:45 crons + details cap: ~(750−60)/2 ≈ 340 session SIMs/tick × 4/hour
+ * on Paid — enough for a ~6.5k estate under 24h. Free (50 subrequests/tick) still
+ * only moves tens of SIMs per tick; 4×/hour is the main lever there.
  */
 const JASPER_CALLS_AUTO = 750;
 /**

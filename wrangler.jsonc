@@ -8,10 +8,18 @@
   "main": "worker.ts",
   "triggers": {
     // Separate schedules (same Worker, branched in worker.ts via controller.cron):
-    // 1) CC poll + pool daily point — three ≥1h-spaced slots/hour (each gets 15 min CPU;
-    //    needed to keep In session / CTD <24h on ~6.5k SIMs when ticks stop early)
+    // 1) CC poll + pool daily point — four ≥1h-spaced slots/hour at :00/:15/:30/:45
+    //    (each expression fires once per hour → 15 min CPU; do NOT use */15 — that is a
+    //    <1h interval and Cloudflare caps those invocations at 30s CPU).
     // 2) ≥80% usage digest email — near Sydney midnight (13:00 UTC = AEDT midnight, 14:00 = AEST)
-    "crons": ["0 * * * *", "20 * * * *", "40 * * * *", "0 13 * * *", "0 14 * * *"]
+    "crons": [
+      "0 * * * *",
+      "15 * * * *",
+      "30 * * * *",
+      "45 * * * *",
+      "0 13 * * *",
+      "0 14 * * *"
+    ]
   },
   "assets": {
     "directory": "dist/client",
