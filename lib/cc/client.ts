@@ -7,7 +7,10 @@ const MIN_INTERVAL_MS = 300;
 const MAX_429_RETRIES = 4;
 
 let lastCallAt = 0;
-let inFlight = false;
+/** Serialize throttle spacing; allow a small concurrent burst (CTD + session per SIM). */
+let inFlight = 0;
+const MAX_IN_FLIGHT = 2;
+let throttleChain: Promise<void> = Promise.resolve();
 let jasperCalls = 0;
 let jasperCallLimit = 0;
 
@@ -143,9 +146,14 @@ function apiBase(): string {
 }
 
 async function throttle(): Promise<void> {
-  const wait = MIN_INTERVAL_MS - (Date.now() - lastCallAt);
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-  lastCallAt = Date.now();
+  // Chain so concurrent jasperGet callers still respect MIN_INTERVAL_MS spacing.
+  const run = throttleChain.then(async () => {
+    const wait = MIN_INTERVAL_MS - (Date.now() - lastCallAt);
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastCallAt = Date.now();
+  });
+  throttleChain = run.catch(() => {});
+  await run;
 }
 
 async function jasperErrorMessage(res: Response): Promise<string> {
@@ -168,9 +176,9 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
   if (!jasperConfigured()) {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
   }
-  if (inFlight) throw new CcBusyError();
+  if (inFlight >= MAX_IN_FLIGHT) throw new CcBusyError();
   if (!jasperHasBudget()) throw new CcBudgetError();
-  inFlight = true;
+  inFlight += 1;
   jasperCalls += 1;
   try {
     let attempt = 0;
@@ -197,7 +205,7 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
       return (await res.json()) as T;
     }
   } finally {
-    inFlight = false;
+    inFlight = Math.max(0, inFlight - 1);
   }
 }
 

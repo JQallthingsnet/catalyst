@@ -28,15 +28,17 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — cron is hourly; stay under the 10-minute Worker cron cap
- * so ticks do not overlap. Stay under the Worker subrequest cap (~1000).
+ * Auto poll wall budget — cron slots are ≥1h apart (15 min CPU each); stay under the
+ * 15-minute cron wall so ticks do not overlap. Cap Jasper calls below typical
+ * fetch+D1 subrequest headroom after schema/list overhead.
  */
 const AUTO_BUDGET_MS = 8 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
  * Auto tick Jasper call cap. Usage+session = 2 calls/SIM when details already known.
- * With hourly cron + details cap below: ~(750−60)/2 ≈ 340 session SIMs/tick ≈ 8k/day
- * — enough to keep a ~6.5k estate’s In session / CTD under 24h.
+ * With :00/:20/:40 crons + details cap: ~(750−60)/2 ≈ 340 session SIMs/tick × 3/hour
+ * ≈ 24k/day — enough to keep a ~6.5k estate’s In session / CTD under 24h even when
+ * some ticks stop early (429 / subrequest).
  */
 const JASPER_CALLS_AUTO = 750;
 /**
@@ -583,15 +585,9 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   const state = await getCcSyncState();
   if (!state.autoPoll) return null;
   try {
-    const result = await syncCcDevices({ mode: "auto" });
-    // Refresh today's pool CTD snapshot after enrich (CTD is cycle-to-date, not a delta).
-    try {
-      const { snapshotPoolCustomerDaily } = await import("@/lib/portal/pools");
-      await snapshotPoolCustomerDaily();
-    } catch {
-      // Pool snapshot must not fail the CC poll.
-    }
-    return result;
+    // Pool daily snapshot runs once/day in worker.ts (IfNeeded). Do not re-scan all
+    // devices after every tick — that burns D1 headroom and hides enrich throughput.
+    return await syncCcDevices({ mode: "auto" });
   } catch (err) {
     if (err instanceof CcBusyError) return null;
     throw err;
@@ -1396,12 +1392,12 @@ async function persistDeviceEnrichment(
 }
 
 /** Usage + In session only — does not advance details_polled_at. */
-async function persistSessionRefresh(
+function sessionRefreshStatement(
   iccid: string,
   usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
   session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
-): Promise<void> {
-  const now = isoNow();
+  polledAt: string,
+) {
   const status = usage?.status ?? "";
   const ratePlan = usage?.ratePlan ?? null;
   const communicationPlan = usage?.communicationPlan ?? null;
@@ -1414,7 +1410,9 @@ async function persistSessionRefresh(
       : 0
     : 0;
 
-  await getDB()
+  // Session ticks skip sims overlay — saves a D1 write per SIM. CC snapshot / pools
+  // read cc_devices; full-details enrich still overlays warehouse sims.
+  return getDB()
     .prepare(
       `UPDATE cc_devices
        SET status = CASE WHEN ? != '' THEN ? ELSE status END,
@@ -1427,12 +1425,15 @@ async function persistSessionRefresh(
            polled_at = ?
        WHERE iccid = ?`,
     )
-    .bind(status, status, ratePlan, communicationPlan, imsi, msisdn, usageMb, inSession, now, iccid)
-    .run();
+    .bind(status, status, ratePlan, communicationPlan, imsi, msisdn, usageMb, inSession, polledAt, iccid);
+}
 
-  if (status) {
-    await overlaySim(iccid, { status, ratePlan, polledAt: now, imsi, msisdn, usageMb });
-  }
+async function persistSessionRefresh(
+  iccid: string,
+  usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
+  session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
+): Promise<void> {
+  await sessionRefreshStatement(iccid, usage, session, isoNow()).run();
 }
 
 async function enrichFullDetailsBatch(
@@ -1461,17 +1462,36 @@ async function enrichSessionOnlyBatch(
   input: { deadline: number; done: Set<string> },
 ): Promise<number> {
   let enriched = 0;
+  const pendingWrites: D1PreparedStatement[] = [];
+  const flushWrites = async () => {
+    if (pendingWrites.length === 0) return;
+    const chunk = pendingWrites.splice(0, pendingWrites.length);
+    // batch() is one round-trip; each statement still counts toward D1 query limits.
+    await getDB().batch(chunk);
+  };
+
   for (const iccid of iccids) {
     if (input.done.has(iccid)) continue;
-    if (Date.now() >= input.deadline) return enriched;
-    if (!jasperHasBudget(2)) return enriched;
-    const usage = await fetchJasperCtdUsage(iccid);
-    const session = await fetchJasperSessionInfo(iccid);
-    await persistSessionRefresh(iccid, usage, session);
+    if (Date.now() >= input.deadline) {
+      await flushWrites();
+      return enriched;
+    }
+    if (!jasperHasBudget(2)) {
+      await flushWrites();
+      return enriched;
+    }
+    // Parallel CTD + session — same 2 Jasper calls, ~half the wall time vs sequential.
+    const [usage, session] = await Promise.all([
+      fetchJasperCtdUsage(iccid),
+      fetchJasperSessionInfo(iccid),
+    ]);
+    pendingWrites.push(sessionRefreshStatement(iccid, usage, session, isoNow()));
     input.done.add(iccid);
     enriched += 1;
-    if (enriched % 10 === 0) await heartbeatLock();
+    if (pendingWrites.length >= 25) await flushWrites();
+    if (enriched % 50 === 0) await heartbeatLock();
   }
+  await flushWrites();
   return enriched;
 }
 
@@ -1683,6 +1703,13 @@ export async function syncCcDevices(input?: {
   let totalCount = rememberSearchTotal(searchMatchCount);
 
   try {
+    // Auto + full list in D1: session/CTD first. List Search is cheap when quiet, but
+    // must not consume Jasper/D1 headroom before the In-session age queue.
+    const enrichFirst = unlimited && state.lastPageComplete && !catchup;
+    if (enrichFirst) {
+      details = await enrichStaleDevices({ unlimited, deadline });
+    }
+
     // Catch-up / first crawl: page forward only. Auto after complete: few incremental pages.
     const maxPages = catchup
       ? CATCHUP_PAGES_PER_RUN
@@ -1723,8 +1750,13 @@ export async function syncCcDevices(input?: {
       });
     }
 
-    // Catch-up: list only until lastPage. Auto/manual: enrich after window complete (or last page this run).
-    if (!catchup && (lastPage || state.lastPageComplete)) {
+    // Catch-up: list only until lastPage. Incomplete crawl / manual: enrich after list.
+    // enrichFirst path already spent the tick on session/usage (leftover budget optional).
+    if (enrichFirst) {
+      if (Date.now() < deadline && jasperHasBudget(2 + AUTO_DETAILS_PER_TICK * 3)) {
+        details += await enrichStaleDevices({ unlimited, deadline });
+      }
+    } else if (!catchup && (lastPage || state.lastPageComplete)) {
       details = await enrichStaleDevices({ unlimited, deadline });
     } else if (catchup && lastPage) {
       // One light enrich pass after the estate is listed (optional small spend of leftover budget).
@@ -1754,13 +1786,16 @@ export async function syncCcDevices(input?: {
     }
     if (isSubrequestLimit(err) || err instanceof CcBudgetError || err instanceof CcRateLimitError) {
       const rateLimited = err instanceof CcRateLimitError;
+      const subLimited = isSubrequestLimit(err);
       await releaseLock({
         modifiedSince: lastPage ? listCycleStartedAt : undefined,
         nextPage: page,
         lastPolledAt: isoNow(),
         lastError: rateLimited
           ? "Rate limited by Control Center. Progress saved — wait ~1 minute, then Sync again (do not mash Sync)."
-          : null,
+          : subLimited
+            ? "Worker subrequest/D1 budget hit mid-tick. Session progress saved — next cron continues oldest polled_at."
+            : null,
         lastTotal: totalCount,
         lastPage: fetchedPage,
         lastPageComplete: lastPage || (state.lastPageComplete && !catchup),
