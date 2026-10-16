@@ -28,19 +28,18 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — cron slots are ≥1h apart (15 min CPU each); stay under the
- * 15-minute cron wall so ticks do not overlap. Cap Jasper calls below typical
- * fetch+D1 subrequest headroom after schema/list overhead.
+ * Auto poll wall budget — must finish before the next every-5-min cron so ticks
+ * do not overlap (overlap leads to CcBusy skip). Keep well under 5 min.
  */
-const AUTO_BUDGET_MS = 8 * 60 * 1000;
+const AUTO_BUDGET_MS = 2 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
- * Auto tick Jasper call cap. Usage+session = 2 calls/SIM when details already known.
- * With :00/:15/:30/:45 crons + details cap: ~(750−60)/2 ≈ 340 session SIMs/tick × 4/hour
- * on Paid — enough for a ~6.5k estate under 24h. Free (50 subrequests/tick) still
- * only moves tens of SIMs per tick; 4×/hour is the main lever there.
+ * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1).
+ * Usage+session = 2 calls/SIM. Stay under ~24 Jasper so lock/list/D1 still fit
+ * and we stop via CcBudgetError instead of hard "Too many subrequests".
+ * With every-5-min cron: ~10 SIMs/tick × 12/hour ≈ 3k session refreshes/day.
  */
-const JASPER_CALLS_AUTO = 750;
+const JASPER_CALLS_AUTO = 24;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
  * List-only — do not burn budget on session/usage until the window is complete.
@@ -49,29 +48,28 @@ const CATCHUP_PAGES_PER_RUN = 40;
 const CATCHUP_JASPER_CALLS = 45;
 const CATCHUP_BUDGET_MS = 55_000;
 /**
- * After one full list cycle, only spend a few Search pages on incremental changes
- * so most of the budget refreshes In session / usage.
+ * After one full list cycle, at most one incremental Search page so almost all
+ * of the tiny Free-tier budget goes to session/usage.
  */
-const AUTO_LIST_PAGES_WHEN_COMPLETE = 2;
+const AUTO_LIST_PAGES_WHEN_COMPLETE = 1;
 /** Manual Sync: refresh details if older than this. */
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
  * Auto poll: full Get Device / bulk details this often. Never-enriched stay first.
- * ~480 details/day ⇒ ~2 weeks for a 6.5k estate — 14d is the realistic refresh bar
- * (In session stays on a 24h bar).
+ * Free-tier details drip (~1×12×24 ≈ 288/day) ⇒ multi-week full-estate refresh;
+ * 14d remains the product age band (In session stays on a 24h bar).
  */
 const AUTO_DETAILS_STALE_MS = 14 * 24 * 60 * 60 * 1000;
 /**
- * Per auto tick, cap full details so session/CTD can finish a daily pass.
- * Details still drain (~20×24 ≈ 480/day) but In session is the 24h product bar.
+ * Per auto tick, at most one full-details refresh so session/CTD keeps the budget.
  */
-const AUTO_DETAILS_PER_TICK = 20;
+const AUTO_DETAILS_PER_TICK = 1;
 /**
  * Auto poll: refresh usage (Cycle to date MB) + In session at least this often.
  * Work oldest `polled_at` first so >24h / >48h drain first.
  */
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
-/** Hold the D1 lock for the whole auto-poll budget so Sync/cron cannot steal it mid-run. */
+/** Hold the D1 lock for the tick budget + small buffer; must stay < 5 min cron gap. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 
 /** null = not tried this sync run; false = fall back to per-ICCID details. */
