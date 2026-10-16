@@ -13,11 +13,6 @@
     // 2) ≥80% usage digest email — near Sydney midnight (13:00 UTC = AEDT midnight, 14:00 = AEST)
     "crons": ["0 * * * *", "20 * * * *", "40 * * * *", "0 13 * * *", "0 14 * * *"]
   },
-  // Paid Workers default is 10k; set explicitly so a lower dashboard cap cannot
-  // silently clamp auto-poll enrich to a handful of SIMs per tick.
-  "limits": {
-    "subrequests": 10000
-  },
   "assets": {
     "directory": "dist/client",
     "not_found_handling": "none",
