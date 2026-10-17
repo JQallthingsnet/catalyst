@@ -8,11 +8,10 @@
   "main": "worker.ts",
   "triggers": {
     // Separate schedules (same Worker, branched in worker.ts via controller.cron):
-    // 1) CC poll — every 5 min. Free Workers = 50 subrequests/invocation; we use many
-    //    tiny ticks (soft Jasper cap in devices.ts) instead of one long tick that hits
-    //    "Too many subrequests". */5 is <1h so Paid CPU is 30s — OK for short ticks.
+    // 1) CC poll — every 10 min. Free Workers = 50 subrequests/tick; Optus also rate-limits
+    //    (~30000001 / 429). */10 is gentler than */5 while still ~6 ticks/hour.
     // 2) ≥80% usage digest email — near Sydney midnight (13:00 UTC = AEDT midnight, 14:00 = AEST)
-    "crons": ["*/5 * * * *", "0 13 * * *", "0 14 * * *"]
+    "crons": ["*/10 * * * *", "0 13 * * *", "0 14 * * *"]
   },
   "assets": {
     "directory": "dist/client",

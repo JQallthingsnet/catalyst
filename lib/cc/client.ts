@@ -5,15 +5,15 @@ const PAGE_SIZE = 50;
 /**
  * Stay under Jasper's published ~5 req/s. Optus Control Center often returns
  * HTTP 500 / 30000001 ("Unknown server error") under burst instead of 429 — keep
- * spacing conservative, especially with every-5-min auto-poll.
+ * spacing conservative with frequent auto-poll.
  */
-const MIN_INTERVAL_MS = 450;
-const MAX_429_RETRIES = 4;
+const MIN_INTERVAL_MS = 600;
+const MAX_429_RETRIES = 3;
 
 let lastCallAt = 0;
-/** Serialize throttle spacing; allow a small concurrent burst (CTD + session per SIM). */
+/** One Jasper call at a time — Optus trips on concurrent CTD+session. */
 let inFlight = 0;
-const MAX_IN_FLIGHT = 2;
+const MAX_IN_FLIGHT = 1;
 let throttleChain: Promise<void> = Promise.resolve();
 let jasperCalls = 0;
 let jasperCallLimit = 0;

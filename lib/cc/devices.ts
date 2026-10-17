@@ -28,18 +28,17 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — must finish before the next every-5-min cron so ticks
- * do not overlap (overlap leads to CcBusy skip). Keep well under 5 min.
+ * Auto poll wall budget — must finish before the next every-10-min cron so ticks
+ * do not overlap (overlap leads to CcBusy skip). Keep well under 10 min.
  */
-const AUTO_BUDGET_MS = 2 * 60 * 1000;
+const AUTO_BUDGET_MS = 3 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
- * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1).
- * Usage+session = 2 calls/SIM. Stay under ~24 Jasper so lock/list/D1 still fit
- * and we stop via CcBudgetError instead of hard "Too many subrequests".
- * With every-5-min cron: ~10 SIMs/tick × 12/hour ≈ 3k session refreshes/day.
+ * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1)
+ * and Optus Control Center rate limits. Usage+session = 2 calls/SIM.
+ * With every-10-min cron: ~10 SIMs/tick × 6/hour ≈ 1.4k session refreshes/day.
  */
-const JASPER_CALLS_AUTO = 24;
+const JASPER_CALLS_AUTO = 20;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
  * List-only — do not burn budget on session/usage until the window is complete.
@@ -56,7 +55,7 @@ const AUTO_LIST_PAGES_WHEN_COMPLETE = 1;
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
  * Auto poll: full Get Device / bulk details this often. Never-enriched stay first.
- * Free-tier details drip (~1×12×24 ≈ 288/day) ⇒ multi-week full-estate refresh;
+ * Free-tier details drip (~1×6×24 ≈ 144/day) ⇒ multi-week full-estate refresh;
  * 14d remains the product age band (In session stays on a 24h bar).
  */
 const AUTO_DETAILS_STALE_MS = 14 * 24 * 60 * 60 * 1000;
@@ -69,7 +68,7 @@ const AUTO_DETAILS_PER_TICK = 1;
  * Work oldest `polled_at` first so >24h / >48h drain first.
  */
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
-/** Hold the D1 lock for the tick budget + small buffer; must stay < 5 min cron gap. */
+/** Hold the D1 lock for the tick budget + small buffer; must stay < 10 min cron gap. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 
 /** null = not tried this sync run; false = fall back to per-ICCID details. */
@@ -1783,15 +1782,21 @@ export async function syncCcDevices(input?: {
     if (isSubrequestLimit(err) || err instanceof CcBudgetError || err instanceof CcRateLimitError) {
       const rateLimited = err instanceof CcRateLimitError;
       const subLimited = isSubrequestLimit(err);
+      // Auto/cron: quiet — next tick continues. Manual Sync: tell the operator to wait.
+      const lastError = rateLimited
+        ? unlimited
+          ? null
+          : "Rate limited by Control Center. Progress saved — wait ~1 minute, then Sync again (do not mash Sync)."
+        : subLimited
+          ? unlimited
+            ? null
+            : "Worker subrequest/D1 budget hit mid-tick. Progress saved — run Sync again in a minute."
+          : null;
       await releaseLock({
         modifiedSince: lastPage ? listCycleStartedAt : undefined,
         nextPage: page,
         lastPolledAt: isoNow(),
-        lastError: rateLimited
-          ? "Rate limited by Control Center. Progress saved — wait ~1 minute, then Sync again (do not mash Sync)."
-          : subLimited
-            ? "Worker subrequest/D1 budget hit mid-tick. Session progress saved — next cron continues oldest polled_at."
-            : null,
+        lastError,
         lastTotal: totalCount,
         lastPage: fetchedPage,
         lastPageComplete: lastPage || (state.lastPageComplete && !catchup),
