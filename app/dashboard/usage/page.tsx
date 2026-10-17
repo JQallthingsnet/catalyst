@@ -49,12 +49,12 @@ export default async function UsagePage({
           <h1 className="text-3xl font-semibold">Usage & alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
-              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily email to Jerry Qiu when any SIM is ≥"
-              : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Highlight at ≥"}
+              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily email is the Pools digest (rate plans ≥"
+              : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Daily email covers Pools (modem_ID) and this Usage list when any row is ≥"}
             {SIM_ALLOWANCE_ALERT_PCT}%
             {basis === "rate_plan"
-              ? " (separate daily cron near Sydney midnight — not tied to the 6-hourly CC poll)."
-              : "."}
+              ? ") to Jerry Qiu near Sydney midnight — not the per-SIM Usage list."
+              : " (reseller admins)."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

@@ -1,14 +1,20 @@
 import { sendSystemEmail } from "@/lib/auth/email";
 import { getDB } from "@/lib/env";
+import { listPoolModemLatest, listPoolRatePlanLatest } from "@/lib/portal/pools";
+import { listCcCustomerBindings } from "@/lib/portal/tenant";
 import { sydneyDayKey } from "@/lib/portal/time";
 
 export const SIM_ALLOWANCE_ALERT_PCT = 80;
 
-/** Daily ≥80% rate-plan allowance digest (platform). */
-const SIM_ALLOWANCE_ALERT_TO = ["jerry.qiu@allthingsnet.io"];
+/** Platform (super admin) daily pools digest. */
+const SUPER_ADMIN_ALERT_TO = ["jerry.qiu@allthingsnet.io"];
 
-/** Sentinel ICCID: one digest email per Sydney day. */
-const DAILY_DIGEST_MARKER = "__daily_digest__";
+/** Sentinel ICCID prefixes: one row per digest kind × scope × Sydney day. */
+const DIGEST_POOLS_RATE_PLAN = "__digest_pools_rp__";
+const DIGEST_POOLS_MODEM_PREFIX = "__digest_pools_modem__:";
+const DIGEST_USAGE_MODEM_PREFIX = "__digest_usage_modem__:";
+/** Legacy marker from the old single Usage digest. */
+const LEGACY_DAILY_DIGEST_MARKER = "__daily_digest__";
 
 /** Super admin → Jasper rate plan; reseller → modem_ID. */
 export type UsageAllowanceBasis = "rate_plan" | "modem";
@@ -109,16 +115,191 @@ export async function listSimModemUsage(input?: {
 
 type AlertCandidate = SimModemUsage & { allowanceMb: number; pct: number };
 
+type PoolBreachRow = {
+  key: string;
+  label: string;
+  customer: string | null;
+  ctdUsageMb: number;
+  allowanceMb: number;
+  pct: number;
+  simCount: number;
+};
+
+async function listResellerAdminEmails(tenantId: string): Promise<string[]> {
+  const rows = await getDB()
+    .prepare(
+      `SELECT email FROM tenant_members
+       WHERE tenant_id = ? AND role = 'reseller_admin'
+       ORDER BY email COLLATE NOCASE`,
+    )
+    .bind(tenantId)
+    .all<{ email: string }>();
+  return [...new Set((rows.results ?? []).map((row) => row.email.trim().toLowerCase()).filter(Boolean))];
+}
+
+async function digestAlreadySent(marker: string, day: string, threshold: number): Promise<boolean> {
+  const row = await getDB()
+    .prepare(
+      `SELECT 1 AS ok FROM sim_allowance_alerts
+       WHERE iccid = ? AND day = ? AND threshold = ?`,
+    )
+    .bind(marker, day, threshold)
+    .first<{ ok: number }>();
+  return Boolean(row);
+}
+
+async function markDigestSent(marker: string, day: string, threshold: number, basis: UsageAllowanceBasis) {
+  const now = new Date().toISOString();
+  await getDB()
+    .prepare(
+      `INSERT INTO sim_allowance_alerts
+         (iccid, day, threshold, pct, ctd_usage_mb, allowance_mb, modem_id, customer, emailed_at, rate_plan, basis)
+       VALUES (?, ?, ?, 0, 0, 0, NULL, NULL, ?, NULL, ?)
+       ON CONFLICT(iccid, day, threshold) DO UPDATE SET emailed_at = excluded.emailed_at`,
+    )
+    .bind(marker, day, threshold, now, basis)
+    .run();
+}
+
+async function recordUsageAlerts(
+  sims: AlertCandidate[],
+  day: string,
+  threshold: number,
+  basis: UsageAllowanceBasis,
+) {
+  const now = new Date().toISOString();
+  const db = getDB();
+  const stmts = sims.map((sim) =>
+    db
+      .prepare(
+        `INSERT INTO sim_allowance_alerts
+           (iccid, day, threshold, pct, ctd_usage_mb, allowance_mb, modem_id, customer, emailed_at, rate_plan, basis)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(iccid, day, threshold) DO UPDATE SET
+           pct = excluded.pct,
+           ctd_usage_mb = excluded.ctd_usage_mb,
+           allowance_mb = excluded.allowance_mb,
+           emailed_at = excluded.emailed_at,
+           rate_plan = excluded.rate_plan,
+           basis = excluded.basis`,
+      )
+      .bind(
+        sim.iccid,
+        day,
+        threshold,
+        sim.pct,
+        sim.ctdUsageMb,
+        sim.allowanceMb,
+        sim.modemId,
+        sim.customer,
+        now,
+        sim.ratePlan,
+        basis,
+      ),
+  );
+  for (let i = 0; i < stmts.length; i += 40) {
+    await db.batch(stmts.slice(i, i + 40));
+  }
+}
+
+async function sendAlertHtml(to: string[], subject: string, html: string): Promise<boolean> {
+  let emailed = false;
+  for (const addr of to) {
+    try {
+      await sendSystemEmail(addr, subject, html);
+      emailed = true;
+    } catch (err) {
+      console.error("[sim-usage] alert email failed", addr, err);
+    }
+  }
+  return emailed;
+}
+
+function buildPoolAlertEmail(input: {
+  rows: PoolBreachRow[];
+  day: string;
+  threshold: number;
+  kind: "rate_plan" | "modem";
+  audience: "super" | "reseller";
+  customer?: string;
+}): { subject: string; html: string } {
+  const { rows, day, threshold, kind, audience, customer } = input;
+  const keyLabel = kind === "rate_plan" ? "Rate plan" : "modem_ID";
+  const title = kind === "rate_plan" ? "Pools · rate plan alert" : "Pools · modem_ID alert";
+  const scope =
+    audience === "reseller" && customer
+      ? ` for CC customer <strong>${escapeHtml(customer)}</strong>`
+      : "";
+  const rowsHtml = rows
+    .map((row, index) => {
+      const pctColor = row.pct >= 100 ? "#b91c1c" : row.pct >= threshold ? "#b45309" : "#047857";
+      return `
+      <tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:12px;">${index + 1}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#111827;">${escapeHtml(row.label)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;color:#111827;">${escapeHtml(row.customer ?? "—")}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;">${row.simCount.toLocaleString("en-AU")}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;">${row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#111827;">${row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:${pctColor};">${row.pct}%</td>
+      </tr>`;
+    })
+    .join("");
+
+  const subject = `Catalyst daily Pools: ${rows.length} ${
+    kind === "rate_plan" ? "rate plan" : "modem_ID"
+  }${rows.length === 1 ? "" : "s"} ≥${threshold}% (${day})`;
+
+  const html = `
+  <div style="background:#f3f4f6;padding:24px 12px;">
+    <div style="font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;">
+      <div style="background:#070B14;padding:20px 24px;">
+        <p style="margin:0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#2EE6D6;font-weight:700;">ATN Catalyst</p>
+        <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:600;">${title}</h1>
+      </div>
+      <div style="padding:24px;">
+        <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.5;">
+          Daily Pools digest for Sydney day <strong>${day}</strong>${scope}:
+          ${rows.length} ${keyLabel}${rows.length === 1 ? "" : "s"} at <strong>≥${threshold}%</strong>
+          of mapped allowance (Σ CTD MB ÷ Σ allowance MB).
+        </p>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0 20px;font-size:13px;">
+          <thead>
+            <tr style="text-align:left;background:#f9fafb;color:#6b7280;">
+              <th style="padding:10px 12px;font-weight:600;">#</th>
+              <th style="padding:10px 12px;font-weight:600;">${keyLabel}</th>
+              <th style="padding:10px 12px;font-weight:600;">CC customer</th>
+              <th style="padding:10px 12px;font-weight:600;text-align:right;">SIMs</th>
+              <th style="padding:10px 12px;font-weight:600;text-align:right;">CTD MB</th>
+              <th style="padding:10px 12px;font-weight:600;text-align:right;">Allowance</th>
+              <th style="padding:10px 12px;font-weight:600;text-align:right;">%</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml || `<tr><td colspan="7" style="padding:16px;color:#6b7280;">No pools with an allowance.</td></tr>`}</tbody>
+        </table>
+        <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.5;">
+          Open Catalyst → Pools for the live chart
+          ${rows.length > 50 ? ` (email shows top 50 of ${rows.length}).` : "."}
+        </p>
+      </div>
+    </div>
+  </div>`;
+
+  return { subject, html };
+}
+
 function buildSimAllowanceAlertEmail(input: {
   sims: AlertCandidate[];
   day: string;
   threshold: number;
   basis: UsageAllowanceBasis;
+  customer?: string;
 }): { subject: string; html: string } {
-  const { sims, day, threshold, basis } = input;
+  const { sims, day, threshold, basis, customer } = input;
   const keyLabel = basis === "rate_plan" ? "Rate plan" : "modem_ID";
   const title =
-    basis === "rate_plan" ? "Rate plan allowance alert" : "Modem allowance alert";
+    basis === "rate_plan" ? "Usage · rate plan allowance alert" : "Usage · modem allowance alert";
+  const scope = customer ? ` for CC customer <strong>${escapeHtml(customer)}</strong>` : "";
   const rowsHtml = sims
     .map((sim, index) => {
       const pctColor = sim.pct >= 100 ? "#b91c1c" : sim.pct >= threshold ? "#b45309" : "#047857";
@@ -136,7 +317,7 @@ function buildSimAllowanceAlertEmail(input: {
     })
     .join("");
 
-  const subject = `Catalyst daily: ${sims.length} SIM${sims.length === 1 ? "" : "s"} ≥${threshold}% ${
+  const subject = `Catalyst daily Usage: ${sims.length} SIM${sims.length === 1 ? "" : "s"} ≥${threshold}% ${
     basis === "rate_plan" ? "rate plan" : "modem"
   } allowance (${day})`;
 
@@ -149,7 +330,7 @@ function buildSimAllowanceAlertEmail(input: {
       </div>
       <div style="padding:24px;">
         <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.5;">
-          Daily digest for Sydney day <strong>${day}</strong>:
+          Daily Usage digest for Sydney day <strong>${day}</strong>${scope}:
           ${sims.length} SIM${sims.length === 1 ? " is" : "s are"} at <strong>≥${threshold}%</strong> of
           ${basis === "rate_plan" ? "Jasper rate plan" : "modem_ID"} allowance (CTD MB ÷ allowance MB).
         </p>
@@ -168,7 +349,7 @@ function buildSimAllowanceAlertEmail(input: {
           <tbody>${rowsHtml || `<tr><td colspan="7" style="padding:16px;color:#6b7280;">No SIMs with an allowance.</td></tr>`}</tbody>
         </table>
         <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.5;">
-          Sent once per Sydney day to jerry.qiu@allthingsnet.io. Open Catalyst → Usage for the live list
+          Open Catalyst → Usage for the live list
           ${sims.length > 50 ? ` (email shows top 50 of ${sims.length}).` : "."}
         </p>
       </div>
@@ -178,36 +359,28 @@ function buildSimAllowanceAlertEmail(input: {
   return { subject, html };
 }
 
-async function sendAlertHtml(subject: string, html: string): Promise<boolean> {
-  let emailed = false;
-  for (const to of SIM_ALLOWANCE_ALERT_TO) {
-    try {
-      await sendSystemEmail(to, subject, html);
-      emailed = true;
-    } catch (err) {
-      console.error("[sim-usage] alert email failed", to, err);
-    }
-  }
-  return emailed;
-}
-
-/** SIMs at ≥threshold% of rate-plan allowance (SQL filter — not capped by Usage page limit). */
-async function listRatePlanBreachCandidates(threshold: number): Promise<AlertCandidate[]> {
+/** SIMs at ≥threshold% of modem_ID allowance, optionally scoped to one CC customer. */
+async function listModemBreachCandidates(
+  threshold: number,
+  customer: string,
+): Promise<AlertCandidate[]> {
   const ratio = threshold / 100;
+  const exact = customer.trim();
   const rows = await getDB()
     .prepare(
       `SELECT d.iccid, d.customer, d.modem_id, d.rate_plan, d.status,
               IFNULL(d.ctd_usage_mb, 0) AS ctd_usage_mb,
               a.allowance_mb AS allowance_mb
        FROM cc_devices d
-       INNER JOIN rate_plan_allowances a ON a.rate_plan = d.rate_plan
+       INNER JOIN modem_allowances a ON a.modem_id = d.modem_id
        WHERE a.allowance_mb > 0
          AND IFNULL(d.ctd_usage_mb, 0) / a.allowance_mb >= ?
-         AND d.rate_plan IS NOT NULL AND TRIM(d.rate_plan) != ''
+         AND d.modem_id IS NOT NULL AND TRIM(d.modem_id) != ''
+         AND (? = '' OR IFNULL(d.customer, '') = ?)
        ORDER BY IFNULL(d.ctd_usage_mb, 0) / a.allowance_mb DESC, d.iccid ASC
        LIMIT 500`,
     )
-    .bind(ratio)
+    .bind(ratio, exact, exact)
     .all<{
       iccid: string;
       customer: string | null;
@@ -231,14 +404,185 @@ async function listRatePlanBreachCandidates(threshold: number): Promise<AlertCan
       allowanceMb,
       pct,
       status: row.status,
-      basis: "rate_plan" as const,
+      basis: "modem" as const,
     };
   });
 }
 
+type DigestAttempt = {
+  checked: number;
+  newlyAlerted: number;
+  emailed: boolean;
+  skipReason?: string;
+  error?: string;
+};
+
+async function sendPoolsRatePlanDigest(input: {
+  day: string;
+  threshold: number;
+  force: boolean;
+}): Promise<DigestAttempt> {
+  const marker = DIGEST_POOLS_RATE_PLAN;
+  if (!input.force && (await digestAlreadySent(marker, input.day, input.threshold))) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "already_sent_today" };
+  }
+
+  const breaches = (await listPoolRatePlanLatest())
+    .filter((row) => row.allowanceMb > 0 && row.pct >= input.threshold)
+    .sort((a, b) => b.pct - a.pct)
+    .map(
+      (row): PoolBreachRow => ({
+        key: row.ratePlan,
+        label: row.ratePlan,
+        customer: null,
+        ctdUsageMb: row.ctdUsageMb,
+        allowanceMb: row.allowanceMb,
+        pct: row.pct,
+        simCount: row.simCount,
+      }),
+    );
+
+  if (breaches.length === 0) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_breaches" };
+  }
+
+  const { subject, html } = buildPoolAlertEmail({
+    rows: breaches.slice(0, 50),
+    day: input.day,
+    threshold: input.threshold,
+    kind: "rate_plan",
+    audience: "super",
+  });
+
+  const emailed = await sendAlertHtml(SUPER_ADMIN_ALERT_TO, subject, html);
+  if (!emailed) {
+    return {
+      checked: breaches.length,
+      newlyAlerted: breaches.length,
+      emailed: false,
+      error: "SMTP send failed for super-admin pools digest.",
+    };
+  }
+
+  await markDigestSent(marker, input.day, input.threshold, "rate_plan");
+  console.log(
+    `[sim-usage] pools rate-plan digest emailed: ${breaches.length} ≥${input.threshold}% → ${SUPER_ADMIN_ALERT_TO.join(",")}`,
+  );
+  return { checked: breaches.length, newlyAlerted: breaches.length, emailed: true };
+}
+
+async function sendPoolsModemDigest(input: {
+  day: string;
+  threshold: number;
+  force: boolean;
+  tenantId: string;
+  customer: string;
+  recipients: string[];
+}): Promise<DigestAttempt> {
+  const marker = `${DIGEST_POOLS_MODEM_PREFIX}${input.tenantId}`;
+  if (!input.force && (await digestAlreadySent(marker, input.day, input.threshold))) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "already_sent_today" };
+  }
+  if (input.recipients.length === 0) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_recipients" };
+  }
+
+  const breaches = (await listPoolModemLatest({ exactCustomer: input.customer }))
+    .filter((row) => row.allowanceMb > 0 && row.pct >= input.threshold)
+    .sort((a, b) => b.pct - a.pct)
+    .map(
+      (row): PoolBreachRow => ({
+        key: row.modemId,
+        label: row.modemId,
+        customer: row.customer,
+        ctdUsageMb: row.ctdUsageMb,
+        allowanceMb: row.allowanceMb,
+        pct: row.pct,
+        simCount: row.simCount,
+      }),
+    );
+
+  if (breaches.length === 0) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_breaches" };
+  }
+
+  const { subject, html } = buildPoolAlertEmail({
+    rows: breaches.slice(0, 50),
+    day: input.day,
+    threshold: input.threshold,
+    kind: "modem",
+    audience: "reseller",
+    customer: input.customer,
+  });
+
+  const emailed = await sendAlertHtml(input.recipients, subject, html);
+  if (!emailed) {
+    return {
+      checked: breaches.length,
+      newlyAlerted: breaches.length,
+      emailed: false,
+      error: `SMTP send failed for pools modem digest (${input.customer}).`,
+    };
+  }
+
+  await markDigestSent(marker, input.day, input.threshold, "modem");
+  console.log(
+    `[sim-usage] pools modem digest emailed: ${breaches.length} ≥${input.threshold}% → ${input.recipients.join(",")} (${input.customer})`,
+  );
+  return { checked: breaches.length, newlyAlerted: breaches.length, emailed: true };
+}
+
+async function sendUsageModemDigest(input: {
+  day: string;
+  threshold: number;
+  force: boolean;
+  tenantId: string;
+  customer: string;
+  recipients: string[];
+}): Promise<DigestAttempt> {
+  const marker = `${DIGEST_USAGE_MODEM_PREFIX}${input.tenantId}`;
+  if (!input.force && (await digestAlreadySent(marker, input.day, input.threshold))) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "already_sent_today" };
+  }
+  if (input.recipients.length === 0) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_recipients" };
+  }
+
+  const candidates = await listModemBreachCandidates(input.threshold, input.customer);
+  if (candidates.length === 0) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_breaches" };
+  }
+
+  const { subject, html } = buildSimAllowanceAlertEmail({
+    sims: candidates.slice(0, 50),
+    day: input.day,
+    threshold: input.threshold,
+    basis: "modem",
+    customer: input.customer,
+  });
+
+  const emailed = await sendAlertHtml(input.recipients, subject, html);
+  if (!emailed) {
+    return {
+      checked: candidates.length,
+      newlyAlerted: candidates.length,
+      emailed: false,
+      error: `SMTP send failed for usage modem digest (${input.customer}).`,
+    };
+  }
+
+  await markDigestSent(marker, input.day, input.threshold, "modem");
+  await recordUsageAlerts(candidates, input.day, input.threshold, "modem");
+  console.log(
+    `[sim-usage] usage modem digest emailed: ${candidates.length} SIMs ≥${input.threshold}% → ${input.recipients.join(",")} (${input.customer})`,
+  );
+  return { checked: candidates.length, newlyAlerted: candidates.length, emailed: true };
+}
+
 /**
- * Daily platform digest: all SIMs at ≥threshold% of Jasper rate-plan allowance.
- * Emails jerry.qiu@allthingsnet.io once per Sydney calendar day (cron).
+ * Daily ≥80% digests (once per Sydney day unless force):
+ * - Super admin → Pools by rate plan (jerry.qiu@allthingsnet.io)
+ * - Each bound reseller → Pools by modem_ID + Usage per SIM (reseller_admin emails)
  */
 export async function notifySimAllowanceAlerts(
   threshold = SIM_ALLOWANCE_ALERT_PCT,
@@ -251,131 +595,96 @@ export async function notifySimAllowanceAlerts(
   skipReason?: string;
   error?: string;
 }> {
-  const basis: UsageAllowanceBasis = "rate_plan";
   const day = sydneyDayKey();
-  const db = getDB();
   const force = opts?.force === true;
+  const db = getDB();
 
   if (force) {
     await db
-      .prepare("DELETE FROM sim_allowance_alerts WHERE iccid = ? AND day = ? AND threshold = ?")
-      .bind(DAILY_DIGEST_MARKER, day, threshold)
+      .prepare(
+        `DELETE FROM sim_allowance_alerts
+         WHERE day = ? AND threshold = ?
+           AND (
+             iccid = ?
+             OR iccid = ?
+             OR iccid LIKE ?
+             OR iccid LIKE ?
+           )`,
+      )
+      .bind(
+        day,
+        threshold,
+        LEGACY_DAILY_DIGEST_MARKER,
+        DIGEST_POOLS_RATE_PLAN,
+        `${DIGEST_POOLS_MODEM_PREFIX}%`,
+        `${DIGEST_USAGE_MODEM_PREFIX}%`,
+      )
       .run();
-  } else {
-    const alreadySent = await db
-      .prepare(
-        `SELECT 1 AS ok FROM sim_allowance_alerts
-         WHERE iccid = ? AND day = ? AND threshold = ?`,
-      )
-      .bind(DAILY_DIGEST_MARKER, day, threshold)
-      .first<{ ok: number }>();
-    if (alreadySent) {
-      return {
-        checked: 0,
-        newlyAlerted: 0,
-        emailed: false,
-        day,
-        skipReason: "already_sent_today",
-      };
-    }
   }
 
-  const candidates = await listRatePlanBreachCandidates(threshold);
-
-  if (candidates.length === 0) {
-    console.log(
-      `[sim-usage] daily digest skipped: 0 SIMs ≥${threshold}% (day ${day})`,
-    );
-    return {
-      checked: 0,
-      newlyAlerted: 0,
-      emailed: false,
-      day,
-      skipReason: "no_breaches",
-    };
-  }
-
-  const { subject, html } = buildSimAllowanceAlertEmail({
-    sims: candidates.slice(0, 50),
-    day,
-    threshold,
-    basis,
-  });
-
+  let checked = 0;
+  let newlyAlerted = 0;
   let emailed = false;
-  try {
-    emailed = await sendAlertHtml(subject, html);
-    if (!emailed) {
-      return {
-        checked: candidates.length,
-        newlyAlerted: candidates.length,
-        emailed: false,
-        day,
-        error: "SMTP send failed for all recipients.",
-      };
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "SMTP send failed.";
-    console.error("[sim-usage] daily digest send failed", message);
-    return {
-      checked: candidates.length,
-      newlyAlerted: candidates.length,
-      emailed: false,
-      day,
-      error: message,
-    };
-  }
+  const errors: string[] = [];
+  const skipReasons = new Set<string>();
 
-  const now = new Date().toISOString();
-  const stmts = [
-    db
-      .prepare(
-        `INSERT INTO sim_allowance_alerts
-           (iccid, day, threshold, pct, ctd_usage_mb, allowance_mb, modem_id, customer, emailed_at, rate_plan, basis)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(iccid, day, threshold) DO UPDATE SET emailed_at = excluded.emailed_at`,
-      )
-      .bind(DAILY_DIGEST_MARKER, day, threshold, 0, 0, 0, null, null, now, null, basis),
-    ...candidates.map((sim) =>
-      db
-        .prepare(
-          `INSERT INTO sim_allowance_alerts
-             (iccid, day, threshold, pct, ctd_usage_mb, allowance_mb, modem_id, customer, emailed_at, rate_plan, basis)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(iccid, day, threshold) DO UPDATE SET
-             pct = excluded.pct,
-             ctd_usage_mb = excluded.ctd_usage_mb,
-             allowance_mb = excluded.allowance_mb,
-             emailed_at = excluded.emailed_at`,
-        )
-        .bind(
-          sim.iccid,
-          day,
-          threshold,
-          sim.pct,
-          sim.ctdUsageMb,
-          sim.allowanceMb,
-          sim.modemId,
-          sim.customer,
-          now,
-          sim.ratePlan,
-          basis,
-        ),
-    ),
-  ];
-  for (let i = 0; i < stmts.length; i += 40) {
-    await db.batch(stmts.slice(i, i + 40));
-  }
-
-  console.log(
-    `[sim-usage] daily digest emailed: ${candidates.length} SIMs ≥${threshold}% → ${SIM_ALLOWANCE_ALERT_TO.join(",")} (day ${day})`,
-  );
-  return {
-    checked: candidates.length,
-    newlyAlerted: candidates.length,
-    emailed: true,
-    day,
+  const fold = (result: DigestAttempt) => {
+    checked += result.checked;
+    newlyAlerted += result.newlyAlerted;
+    if (result.emailed) emailed = true;
+    if (result.error) errors.push(result.error);
+    if (result.skipReason) skipReasons.add(result.skipReason);
   };
+
+  fold(await sendPoolsRatePlanDigest({ day, threshold, force }));
+
+  const bindings = await listCcCustomerBindings();
+  for (const binding of bindings) {
+    const recipients = await listResellerAdminEmails(binding.tenantId);
+    if (recipients.length === 0) {
+      skipReasons.add("no_recipients");
+      continue;
+    }
+    fold(
+      await sendPoolsModemDigest({
+        day,
+        threshold,
+        force,
+        tenantId: binding.tenantId,
+        customer: binding.ccCustomer,
+        recipients,
+      }),
+    );
+    fold(
+      await sendUsageModemDigest({
+        day,
+        threshold,
+        force,
+        tenantId: binding.tenantId,
+        customer: binding.ccCustomer,
+        recipients,
+      }),
+    );
+  }
+
+  if (emailed) {
+    return { checked, newlyAlerted, emailed: true, day, error: errors[0] };
+  }
+
+  if (errors.length > 0) {
+    return { checked, newlyAlerted, emailed: false, day, error: errors.join(" · ") };
+  }
+
+  const skipReason =
+    skipReasons.has("already_sent_today") && skipReasons.size === 1
+      ? "already_sent_today"
+      : skipReasons.has("no_breaches") && !skipReasons.has("already_sent_today")
+        ? "no_breaches"
+        : skipReasons.size > 0
+          ? [...skipReasons].join(",")
+          : "no_breaches";
+
+  return { checked, newlyAlerted, emailed: false, day, skipReason };
 }
 
 function escapeHtml(value: string): string {
