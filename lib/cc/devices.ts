@@ -1478,11 +1478,9 @@ async function enrichSessionOnlyBatch(
       await flushWrites();
       return enriched;
     }
-    // Parallel CTD + session — same 2 Jasper calls, ~half the wall time vs sequential.
-    const [usage, session] = await Promise.all([
-      fetchJasperCtdUsage(iccid),
-      fetchJasperSessionInfo(iccid),
-    ]);
+    // Sequential CTD then session — Optus often 500/30000001 under concurrent burst.
+    const usage = await fetchJasperCtdUsage(iccid);
+    const session = await fetchJasperSessionInfo(iccid);
     pendingWrites.push(sessionRefreshStatement(iccid, usage, session, isoNow()));
     input.done.add(iccid);
     enriched += 1;

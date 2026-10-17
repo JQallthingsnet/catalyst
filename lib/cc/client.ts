@@ -2,8 +2,12 @@ import { getEnv } from "@/lib/env";
 
 const DEFAULT_BASE = "https://restapi1.jasper.com/rws/api/v1";
 const PAGE_SIZE = 50;
-/** Stay under Jasper's published ~5 req/s; Optus accounts often trip earlier under burst. */
-const MIN_INTERVAL_MS = 300;
+/**
+ * Stay under Jasper's published ~5 req/s. Optus Control Center often returns
+ * HTTP 500 / 30000001 ("Unknown server error") under burst instead of 429 — keep
+ * spacing conservative, especially with every-5-min auto-poll.
+ */
+const MIN_INTERVAL_MS = 450;
 const MAX_429_RETRIES = 4;
 
 let lastCallAt = 0;
@@ -156,20 +160,38 @@ async function throttle(): Promise<void> {
   await run;
 }
 
-async function jasperErrorMessage(res: Response): Promise<string> {
-  const fallback = `Control Center returned HTTP ${res.status}.`;
+type JasperErrorBody = {
+  errorMessage?: string;
+  errorCode?: string | number;
+  message?: string;
+};
+
+function formatJasperError(status: number, body: JasperErrorBody | null): string {
+  const fallback = `Control Center returned HTTP ${status}.`;
+  if (!body) return fallback;
+  const detail = body.errorMessage || body.message;
+  if (!detail) return fallback;
+  return body.errorCode != null ? `${fallback} ${body.errorCode}: ${detail}` : `${fallback} ${detail}`;
+}
+
+async function readJasperError(res: Response): Promise<{ message: string; body: JasperErrorBody | null }> {
   try {
-    const body = (await res.json()) as {
-      errorMessage?: string;
-      errorCode?: string | number;
-      message?: string;
-    };
-    const detail = body.errorMessage || body.message;
-    if (!detail) return fallback;
-    return body.errorCode != null ? `${fallback} ${body.errorCode}: ${detail}` : `${fallback} ${detail}`;
+    const body = (await res.json()) as JasperErrorBody;
+    return { message: formatJasperError(res.status, body), body };
   } catch {
-    return fallback;
+    return { message: formatJasperError(res.status, null), body: null };
   }
+}
+
+/**
+ * Optus/Jasper often answers quota pressure with HTTP 500 + 30000001
+ * ("Unknown server error") rather than 429. Treat those as soft rate limits.
+ */
+function isJasperSoftRateLimit(status: number, body: JasperErrorBody | null, message: string): boolean {
+  if (status === 429) return true;
+  const code = body?.errorCode != null ? String(body.errorCode) : "";
+  if (code === "30000001" || code === "40000029") return true;
+  return /too many|rate limit|throttl/i.test(message);
 }
 
 async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
@@ -192,16 +214,18 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
         },
       });
       if (allow404 && res.status === 404) return null;
-      if (res.status === 429) {
-        const detail = await jasperErrorMessage(res);
-        attempt += 1;
-        if (attempt > MAX_429_RETRIES) throw new CcRateLimitError(detail);
-        const delayMs = Math.min(30_000, 2_000 * 2 ** (attempt - 1));
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        lastCallAt = Date.now();
-        continue;
+      if (!res.ok) {
+        const { message, body } = await readJasperError(res);
+        if (isJasperSoftRateLimit(res.status, body, message)) {
+          attempt += 1;
+          if (attempt > MAX_429_RETRIES) throw new CcRateLimitError(message);
+          const delayMs = Math.min(30_000, 2_000 * 2 ** (attempt - 1));
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          lastCallAt = Date.now();
+          continue;
+        }
+        throw new Error(message);
       }
-      if (!res.ok) throw new Error(await jasperErrorMessage(res));
       return (await res.json()) as T;
     }
   } finally {
