@@ -70,6 +70,11 @@ const AUTO_DETAILS_PER_TICK = 1;
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
 /** Hold the D1 lock for the tick budget + small buffer; must stay < 10 min cron gap. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
+/**
+ * After a tick that rate-limits with 0 SIMs refreshed, skip auto-poll for this long.
+ * Retrying every 10 minutes keeps Optus hot and never advances <24h.
+ */
+const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
 /** null = not tried this sync run; false = fall back to per-ICCID details. */
 let bulkDetailsAvailable: boolean | null = null;
@@ -576,11 +581,26 @@ export async function runCcCatchUpBatch(): Promise<CcCatchUpBatchResult> {
   };
 }
 
+function isCcRateLimitCooldowning(state: CcSyncState): boolean {
+  if (!state.lastError || !/rate limited/i.test(state.lastError)) return false;
+  if (!state.lastPolledAt) return false;
+  const at = Date.parse(state.lastPolledAt);
+  if (!Number.isFinite(at)) return false;
+  return Date.now() - at < RATE_LIMIT_COOLDOWN_MS;
+}
+
 /** Cron entry. Runs when the Auto poll button is ON (and CC_AUTO_POLL is not false). */
 export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
   if (!jasperConfigured()) return null;
   const state = await getCcSyncState();
   if (!state.autoPoll) return null;
+  if (isCcRateLimitCooldowning(state)) {
+    console.log(
+      "[cron:cc-poll] skipped (Control Center rate-limit cooldown)",
+      state.lastPolledAt,
+    );
+    return null;
+  }
   try {
     // Pool daily snapshot runs once/day in worker.ts (IfNeeded). Do not re-scan all
     // devices after every tick — that burns D1 headroom and hides enrich throughput.
@@ -1791,7 +1811,7 @@ export async function syncCcDevices(input?: {
         ? unlimited
           ? details > 0
             ? null
-            : "Control Center rate limited this tick — 0 SIMs refreshed. Auto poll will retry."
+            : "Control Center rate limited this tick — 0 SIMs refreshed. Auto poll cools down ~30 minutes, then retries. Do not mash Sync."
           : "Rate limited by Control Center. Progress saved — wait ~1 minute, then Sync again (do not mash Sync)."
         : subLimited
           ? unlimited
