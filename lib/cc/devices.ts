@@ -34,11 +34,11 @@ const MANUAL_BUDGET_MS = 25_000;
 const AUTO_BUDGET_MS = 3 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
- * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1)
- * and Optus Control Center rate limits. Usage+session = 2 calls/SIM.
- * With every-10-min cron: ~10 SIMs/tick × 6/hour ≈ 1.4k session refreshes/day.
+ * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1).
+ * Usage+session = 2 calls/SIM; stay ~24 so lock/list/D1 still fit.
+ * Sequential + 400 ms spacing; every-10-min cron: ~12 SIMs/tick × 6/hour ≈ 1.7k/day.
  */
-const JASPER_CALLS_AUTO = 20;
+const JASPER_CALLS_AUTO = 24;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
  * List-only — do not burn budget on session/usage until the window is complete.

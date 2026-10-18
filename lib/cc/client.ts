@@ -3,11 +3,10 @@ import { getEnv } from "@/lib/env";
 const DEFAULT_BASE = "https://restapi1.jasper.com/rws/api/v1";
 const PAGE_SIZE = 50;
 /**
- * Stay under Jasper's published ~5 req/s. Optus Control Center often returns
- * HTTP 500 / 30000001 ("Unknown server error") under burst instead of 429 — keep
- * spacing conservative with frequent auto-poll.
+ * Stay under Jasper's published ~5 req/s (~400 ms ≈ 2.5/s). Optus often returns
+ * HTTP 500 / 30000001 under concurrent burst — keep MAX_IN_FLIGHT at 1.
  */
-const MIN_INTERVAL_MS = 600;
+const MIN_INTERVAL_MS = 400;
 const MAX_429_RETRIES = 3;
 
 let lastCallAt = 0;
