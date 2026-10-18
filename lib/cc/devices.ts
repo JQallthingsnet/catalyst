@@ -1440,16 +1440,25 @@ async function enrichFullDetailsBatch(
   const pending = iccids.filter((iccid) => !input.done.has(iccid));
   if (pending.length === 0) return 0;
   let enriched = 0;
-  const detailsMap = await fetchDeviceDetailsBatch(pending);
-  for (const iccid of pending) {
-    if (Date.now() >= input.deadline) return enriched;
-    if (!jasperHasBudget(2)) return enriched;
-    const usage = await fetchJasperCtdUsage(iccid);
-    const session = await fetchJasperSessionInfo(iccid);
-    await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, session);
-    input.done.add(iccid);
-    enriched += 1;
-    if (enriched % 10 === 0) await heartbeatLock();
+  try {
+    const detailsMap = await fetchDeviceDetailsBatch(pending);
+    for (const iccid of pending) {
+      if (Date.now() >= input.deadline) return enriched;
+      if (!jasperHasBudget(2)) return enriched;
+      const usage = await fetchJasperCtdUsage(iccid);
+      const session = await fetchJasperSessionInfo(iccid);
+      await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, session);
+      input.done.add(iccid);
+      enriched += 1;
+      if (enriched % 10 === 0) await heartbeatLock();
+    }
+  } catch (err) {
+    // Keep SIMs already written; stop this wave so the tick can finish cleanly.
+    if (err instanceof CcRateLimitError || err instanceof CcBudgetError) {
+      if (enriched > 0) return enriched;
+      throw err;
+    }
+    throw err;
   }
   return enriched;
 }
@@ -1459,34 +1468,28 @@ async function enrichSessionOnlyBatch(
   input: { deadline: number; done: Set<string> },
 ): Promise<number> {
   let enriched = 0;
-  const pendingWrites: D1PreparedStatement[] = [];
-  const flushWrites = async () => {
-    if (pendingWrites.length === 0) return;
-    const chunk = pendingWrites.splice(0, pendingWrites.length);
-    // batch() is one round-trip; each statement still counts toward D1 query limits.
-    await getDB().batch(chunk);
-  };
-
+  // Write each SIM immediately — batched flushes were lost when a mid-tick
+  // rate-limit threw, so Last tick advanced while <24h stayed at 0.
   for (const iccid of iccids) {
     if (input.done.has(iccid)) continue;
-    if (Date.now() >= input.deadline) {
-      await flushWrites();
-      return enriched;
+    if (Date.now() >= input.deadline) return enriched;
+    if (!jasperHasBudget(2)) return enriched;
+    try {
+      // Sequential CTD then session — Optus often 500/30000001 under concurrent burst.
+      const usage = await fetchJasperCtdUsage(iccid);
+      const session = await fetchJasperSessionInfo(iccid);
+      await sessionRefreshStatement(iccid, usage, session, isoNow()).run();
+      input.done.add(iccid);
+      enriched += 1;
+      if (enriched % 50 === 0) await heartbeatLock();
+    } catch (err) {
+      if (err instanceof CcRateLimitError || err instanceof CcBudgetError) {
+        if (enriched > 0) return enriched;
+        throw err;
+      }
+      throw err;
     }
-    if (!jasperHasBudget(2)) {
-      await flushWrites();
-      return enriched;
-    }
-    // Sequential CTD then session — Optus often 500/30000001 under concurrent burst.
-    const usage = await fetchJasperCtdUsage(iccid);
-    const session = await fetchJasperSessionInfo(iccid);
-    pendingWrites.push(sessionRefreshStatement(iccid, usage, session, isoNow()));
-    input.done.add(iccid);
-    enriched += 1;
-    if (pendingWrites.length >= 25) await flushWrites();
-    if (enriched % 50 === 0) await heartbeatLock();
   }
-  await flushWrites();
   return enriched;
 }
 
@@ -1782,14 +1785,19 @@ export async function syncCcDevices(input?: {
     if (isSubrequestLimit(err) || err instanceof CcBudgetError || err instanceof CcRateLimitError) {
       const rateLimited = err instanceof CcRateLimitError;
       const subLimited = isSubrequestLimit(err);
-      // Auto/cron: quiet — next tick continues. Manual Sync: tell the operator to wait.
+      // Auto: only surface an error when the tick refreshed nobody (Last tick alone
+      // looked “healthy” while <24h fell to 0). Manual Sync keeps the Sync guidance.
       const lastError = rateLimited
         ? unlimited
-          ? null
+          ? details > 0
+            ? null
+            : "Control Center rate limited this tick — 0 SIMs refreshed. Auto poll will retry."
           : "Rate limited by Control Center. Progress saved — wait ~1 minute, then Sync again (do not mash Sync)."
         : subLimited
           ? unlimited
-            ? null
+            ? details > 0
+              ? null
+              : "Worker subrequest/D1 budget hit — 0 SIMs refreshed this tick. Auto poll will retry."
             : "Worker subrequest/D1 budget hit mid-tick. Progress saved — run Sync again in a minute."
           : null;
       await releaseLock({
