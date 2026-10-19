@@ -44,7 +44,7 @@ export default {
       return;
     }
 
-    // Everything else is CC poll (`*/10 * * * *`, legacy schedules, etc.).
+    // Everything else is CC poll (`0 * * * *` hourly, legacy schedules, etc.).
     // Exact-match-only used to no-op when Wrangler triggers lagged the Worker deploy.
     console.log("[cron:cc-poll] start", cron);
     try {

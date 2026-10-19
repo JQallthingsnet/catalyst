@@ -1,7 +1,7 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import { ensurePortalSchema } from "@/lib/portal/schema";
-import { getCcSyncState, setCcAutoPoll, syncCcDevices } from "@/lib/cc/devices";
+import { clearCcLastError, getCcSyncState, setCcAutoPoll } from "@/lib/cc/devices";
 
 export async function POST(request: Request) {
   const ctx = await requirePortalApi();
@@ -32,12 +32,10 @@ export async function POST(request: Request) {
   }
 
   await setCcAutoPoll(enabled);
-  if (enabled) {
-    after(() =>
-      syncCcDevices({ mode: "auto" }).catch(() => {
-        // last_error is stored on cc_sync_state
-      }),
-    );
+  // Do not fire syncCcDevices on enable — that instantly re-hits Optus after a cooldown
+  // night and rewrites the rate-limit banner. Hourly cron picks up Auto poll ON.
+  if (!enabled) {
+    await clearCcLastError();
   }
   return NextResponse.json({ success: true, autoPoll: enabled });
 }

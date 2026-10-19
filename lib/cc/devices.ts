@@ -28,15 +28,14 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — must finish before the next every-10-min cron so ticks
- * do not overlap (overlap leads to CcBusy skip). Keep well under 10 min.
+ * Auto poll wall budget — hourly cron; stay well under 15 min cron CPU/wall.
  */
 const AUTO_BUDGET_MS = 3 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
  * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1).
  * Usage+session = 2 calls/SIM; stay ~24 so lock/list/D1 still fit.
- * Sequential + 400 ms spacing; every-10-min cron: ~12 SIMs/tick × 6/hour ≈ 1.7k/day.
+ * Sequential + 400 ms; hourly cron: ~12 SIMs/tick × 24/day ≈ 300 SIMs/day until Paid.
  */
 const JASPER_CALLS_AUTO = 24;
 /**
@@ -68,13 +67,13 @@ const AUTO_DETAILS_PER_TICK = 1;
  * Work oldest `polled_at` first so >24h / >48h drain first.
  */
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
-/** Hold the D1 lock for the tick budget + small buffer; must stay < 10 min cron gap. */
+/** Hold the D1 lock for the tick budget + small buffer; well under hourly cron gap. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 /**
  * After a tick that rate-limits with 0 SIMs refreshed, skip auto-poll for this long.
- * Retrying every 10 minutes keeps Optus hot and never advances <24h.
+ * Optus often stays hot well past 30 minutes; short cooldowns just re-show the same error.
  */
-const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+const RATE_LIMIT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 
 /** null = not tried this sync run; false = fall back to per-ICCID details. */
 let bulkDetailsAvailable: boolean | null = null;
@@ -466,6 +465,15 @@ export async function setCcAutoPoll(enabled: boolean): Promise<void> {
   await getDB()
     .prepare(`UPDATE cc_sync_state SET auto_poll = ? WHERE id = ?`)
     .bind(enabled ? 1 : 0, SYNC_ID)
+    .run();
+}
+
+/** Clear sticky CC banner (e.g. when turning Auto poll off after a rate-limit night). */
+export async function clearCcLastError(): Promise<void> {
+  await ensureSyncRow();
+  await getDB()
+    .prepare(`UPDATE cc_sync_state SET last_error = NULL WHERE id = ?`)
+    .bind(SYNC_ID)
     .run();
 }
 
@@ -1811,7 +1819,7 @@ export async function syncCcDevices(input?: {
         ? unlimited
           ? details > 0
             ? null
-            : "Control Center rate limited this tick — 0 SIMs refreshed. Auto poll cools down ~30 minutes, then retries. Do not mash Sync."
+            : "Control Center rate limited this tick — 0 SIMs refreshed. Auto poll cools down ~2 hours, then retries. Do not mash Sync."
           : "Rate limited by Control Center. Progress saved — wait ~1 minute, then Sync again (do not mash Sync)."
         : subLimited
           ? unlimited
