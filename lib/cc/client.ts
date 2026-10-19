@@ -292,3 +292,68 @@ export async function fetchJasperCtdUsage(iccid: string): Promise<JasperCtdUsage
 export async function fetchJasperSessionInfo(iccid: string): Promise<JasperSessionInfo | null> {
   return jasperGet<JasperSessionInfo>(`/devices/${encodeURIComponent(iccid)}/sessionInfo`, true);
 }
+
+export type JasperProbeKind = "ctd" | "session" | "details";
+
+export type JasperProbeResult = {
+  kind: JasperProbeKind;
+  iccid: string;
+  path: string;
+  httpStatus: number;
+  ok: boolean;
+  /** Parsed JSON when possible; otherwise raw text. */
+  body: unknown;
+  rawText: string;
+  durationMs: number;
+};
+
+/**
+ * One raw Control Center GET — no retries, no soft rate-limit classification.
+ * For diagnosing whether the account is actually blocked vs our enrich path.
+ */
+export async function probeJasperEnrichCall(
+  iccid: string,
+  kind: JasperProbeKind = "ctd",
+): Promise<JasperProbeResult> {
+  if (!jasperConfigured()) {
+    throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
+  }
+  const cleaned = iccid.replace(/\s/g, "");
+  if (!/^\d{15,22}$/.test(cleaned)) {
+    throw new Error("ICCID must be 15–22 digits.");
+  }
+  const path =
+    kind === "session"
+      ? `/devices/${encodeURIComponent(cleaned)}/sessionInfo`
+      : kind === "details"
+        ? `/devices/${encodeURIComponent(cleaned)}`
+        : `/devices/${encodeURIComponent(cleaned)}/ctdUsages`;
+
+  await throttle();
+  const started = Date.now();
+  const res = await fetch(`${apiBase()}${path}`, {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      Authorization: authorizationHeader(),
+    },
+  });
+  const durationMs = Date.now() - started;
+  const rawText = await res.text();
+  let body: unknown = rawText;
+  try {
+    body = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    // keep raw text
+  }
+  return {
+    kind,
+    iccid: cleaned,
+    path,
+    httpStatus: res.status,
+    ok: res.ok,
+    body,
+    rawText,
+    durationMs,
+  };
+}

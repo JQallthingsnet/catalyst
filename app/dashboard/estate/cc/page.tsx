@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CcInventoryTable } from "@/components/portal/cc-inventory-table";
 import { CcAutoPollToggle } from "@/components/portal/cc-auto-poll-toggle";
+import { CcJasperProbeButton } from "@/components/portal/cc-jasper-probe-button";
 import { CcExportButton } from "@/components/portal/cc-export-button";
 import { CcImportDialog } from "@/components/portal/cc-import-dialog";
 import { SyncCcButton } from "@/components/portal/sync-cc-button";
@@ -172,6 +173,7 @@ export default async function CcSnapshotPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <CcAutoPollToggle enabled={sync.autoPoll} />
+          <CcJasperProbeButton />
           <CcImportDialog />
           <CcExportButton queryString={exportQuery} />
           <SyncCcButton
