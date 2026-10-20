@@ -1,8 +1,6 @@
 import Link from "next/link";
-import { CcInventoryTable } from "@/components/portal/cc-inventory-table";
 import { TenantDirectory } from "@/components/portal/tenant-directory";
-import { ccInventorySummary, listCcDevices } from "@/lib/cc/devices";
-import { can } from "@/lib/portal/role-model";
+import { ccInventorySummary } from "@/lib/cc/devices";
 import { requirePortal } from "@/lib/portal/guard";
 import { dashboardSummary } from "@/lib/portal/repo";
 import { excludeHomeTenant, listPlatformTenants } from "@/lib/portal/tenant";
@@ -19,10 +17,9 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
 
 export default async function DashboardPage() {
   const ctx = await requirePortal();
-  const [data, tenants, ccDevices, ccSummary] = await Promise.all([
+  const [data, tenants, ccSummary] = await Promise.all([
     dashboardSummary(ctx.tenantId),
     ctx.isSuperAdmin && ctx.role === "super_admin" ? listPlatformTenants(true) : Promise.resolve([]),
-    ctx.isSuperAdmin && ctx.role === "super_admin" ? listCcDevices("", 50) : Promise.resolve([]),
     ctx.isSuperAdmin && ctx.role === "super_admin"
       ? ccInventorySummary()
       : Promise.resolve({
@@ -48,60 +45,9 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm text-quiet">{ctx.tenantName}</p>
-          <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {can(ctx.role, "wholesale.allocate") ? (
-            <Link
-              href="/dashboard/estate/allocate"
-              className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
-            >
-              Sell stock
-            </Link>
-          ) : null}
-          {can(ctx.role, "platform.estate") ? (
-            <Link
-              href="/dashboard/estate/cc"
-              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
-            >
-              CC snapshot
-            </Link>
-          ) : null}
-          {can(ctx.role, "platform.plan") ? (
-            <Link
-              href="/dashboard/plans/new"
-              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
-            >
-              Create ATN plan
-            </Link>
-          ) : can(ctx.role, "plan.create") ? (
-            <Link
-              href="/dashboard/plans/new"
-              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
-            >
-              Create retail plan
-            </Link>
-          ) : null}
-          {can(ctx.role, "pool.view") ? (
-            <Link
-              href="/dashboard/pools"
-              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
-            >
-              Pools
-            </Link>
-          ) : null}
-          {can(ctx.role, "assign") && !onPlatform ? (
-            <Link
-              href="/dashboard/sims/assign"
-              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm text-ink hover:border-accent"
-            >
-              Assign SIMs
-            </Link>
-          ) : null}
-        </div>
+      <div>
+        <p className="text-sm text-quiet">{ctx.tenantName}</p>
+        <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
       </div>
 
       {resellers.length > 0 || onPlatform ? (
@@ -150,18 +96,6 @@ export default async function DashboardPage() {
           </>
         )}
       </div>
-
-      {onPlatform ? (
-        <div className="mt-6 space-y-3">
-          <div className="flex items-end justify-between gap-3">
-            <h2 className="text-lg font-semibold">Control Center devices</h2>
-            <Link href="/dashboard/estate/cc" className="text-sm text-accent">
-              Open full snapshot
-            </Link>
-          </div>
-          <CcInventoryTable devices={ccDevices} />
-        </div>
-      ) : null}
 
       <div className="mt-6 grid gap-4 lg:grid-cols-5">
         <article className="rounded-card border border-line bg-panel p-5 lg:col-span-3">
