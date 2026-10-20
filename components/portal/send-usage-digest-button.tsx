@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-/** Super admin: force today's ≥80% digests (Pools for platform + Pools/Usage for resellers). */
+/** Super admin: force today's digests using Alerts settings (Pools + reseller Pools/Usage). */
 export function SendUsageDigestButton() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -26,10 +26,10 @@ export function SendUsageDigestButton() {
       if (!res.ok) throw new Error(data.error ?? "Could not send digest.");
       if (data.emailed) {
         setMessage(
-          `Digests sent for ${data.day}: ${data.newlyAlerted ?? 0} breach row(s). Super admin gets Pools (rate plan); reseller admins get Pools + Usage.`,
+          `Digests sent for ${data.day}: ${data.newlyAlerted ?? 0} breach row(s). Uses Alerts recipients and thresholds.`,
         );
       } else if (data.skipReason === "no_breaches") {
-        setMessage("No pools/SIMs ≥80% right now — nothing to email.");
+        setMessage("No pools/SIMs at the configured thresholds right now — nothing to email.");
       } else {
         setMessage(data.skipReason ? `Skipped: ${data.skipReason}` : "Digest not sent.");
       }
