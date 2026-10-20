@@ -8,10 +8,9 @@
   "main": "worker.ts",
   "triggers": {
     // Separate schedules (same Worker, branched in worker.ts via controller.cron):
-    // 1) CC poll — hourly. Optus rate-limits when we tick too often; Free also caps
-    //    ~50 subrequests/tick. Hourly keeps account cool and still moves the queue.
+    // 1) CC poll — every 15 min. CTD-only enrich, 1 Jasper call/s, Free ~50 subrequests/tick.
     // 2) ≥80% usage digest email — near Sydney midnight (13:00 UTC = AEDT midnight, 14:00 = AEST)
-    "crons": ["0 * * * *", "0 13 * * *", "0 14 * * *"]
+    "crons": ["*/15 * * * *", "0 13 * * *", "0 14 * * *"]
   },
   "assets": {
     "directory": "dist/client",

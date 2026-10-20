@@ -8,7 +8,6 @@ import {
   fetchJasperCtdUsage,
   fetchJasperDeviceDetails,
   fetchJasperDevicesPage,
-  fetchJasperSessionInfo,
   JASPER_BULK_DEVICE_LIMIT,
   jasperConfigured,
   jasperHasBudget,
@@ -28,46 +27,47 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — hourly cron; stay well under 15 min cron CPU/wall.
+ * Auto poll wall budget — 15 min cron; CTD @ 1/s fits well under this.
  */
 const AUTO_BUDGET_MS = 3 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
  * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1).
- * Usage+session = 2 calls/SIM; stay ~24 so lock/list/D1 still fit.
- * Sequential + 400 ms; hourly cron: ~12 SIMs/tick × 24/day ≈ 300 SIMs/day until Paid.
+ * CTD-only = 1 call/SIM; leave headroom for list/lock/D1/details drip.
+ * 15 min × ~40 SIMs ≈ ~3840 CTD refreshes/day until Paid.
  */
-const JASPER_CALLS_AUTO = 24;
+const JASPER_CALLS_AUTO = 40;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
- * List-only — do not burn budget on session/usage until the window is complete.
+ * List-only — do not burn budget on CTD until the window is complete.
  */
 const CATCHUP_PAGES_PER_RUN = 40;
 const CATCHUP_JASPER_CALLS = 45;
 const CATCHUP_BUDGET_MS = 55_000;
 /**
  * After one full list cycle, at most one incremental Search page so almost all
- * of the tiny Free-tier budget goes to session/usage.
+ * of the tiny Free-tier budget goes to CTD usage.
  */
 const AUTO_LIST_PAGES_WHEN_COMPLETE = 1;
 /** Manual Sync: refresh details if older than this. */
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
  * Auto poll: full Get Device / bulk details this often. Never-enriched stay first.
- * Free-tier details drip (~1×6×24 ≈ 144/day) ⇒ multi-week full-estate refresh;
- * 14d remains the product age band (In session stays on a 24h bar).
+ * Free-tier details drip (~1×4×24 ≈ 96/day) ⇒ multi-week full-estate refresh;
+ * 14d remains the product age band (CTD freshness stays on a 24h bar).
  */
 const AUTO_DETAILS_STALE_MS = 14 * 24 * 60 * 60 * 1000;
 /**
- * Per auto tick, at most one full-details refresh so session/CTD keeps the budget.
+ * Per auto tick, at most one full-details refresh so CTD keeps the budget.
  */
 const AUTO_DETAILS_PER_TICK = 1;
 /**
- * Auto poll: refresh usage (Cycle to date MB) + In session at least this often.
+ * Auto poll: refresh CTD usage (Cycle to date MB) at least this often.
+ * sessionInfo skipped for now (this Optus account returns 30000001).
  * Work oldest `polled_at` first so >24h / >48h drain first.
  */
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
-/** Hold the D1 lock for the tick budget + small buffer; well under hourly cron gap. */
+/** Hold the D1 lock for the tick budget + small buffer; well under 15 min cron gap. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 /**
  * After a tick that rate-limits with 0 SIMs refreshed, skip auto-poll for this long.
@@ -169,16 +169,6 @@ function defaultModifiedSince(): string {
 function bytesToMb(bytes: number | undefined): number | null {
   if (bytes == null || Number.isNaN(bytes)) return null;
   return Math.round((bytes / (1024 * 1024)) * 10) / 10;
-}
-
-function isPresent(value: string | null | undefined): boolean {
-  if (value == null) return false;
-  const trimmed = value.trim();
-  return trimmed.length > 0 && trimmed.toLowerCase() !== "null";
-}
-
-function sessionActive(started: string | null | undefined, ended: string | null | undefined): boolean {
-  return isPresent(started) && !isPresent(ended);
 }
 
 export function mapCcStatus(status: string): SimState | null {
@@ -1013,9 +1003,10 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
               SUM(CASE WHEN details_polled_at IS NULL THEN 1 ELSE 0 END) as never_enriched,
               SUM(CASE WHEN in_session IS NOT NULL THEN 1 ELSE 0 END) as session_known,
               SUM(CASE WHEN in_session IS NULL THEN 1 ELSE 0 END) as session_unknown,
-              SUM(CASE WHEN in_session IS NOT NULL AND polled_at >= ? THEN 1 ELSE 0 END) as session_fresh_24h,
-              SUM(CASE WHEN in_session IS NOT NULL AND polled_at < ? AND polled_at >= ? THEN 1 ELSE 0 END) as session_stale_24_48h,
-              SUM(CASE WHEN in_session IS NOT NULL AND (polled_at IS NULL OR polled_at < ?) THEN 1 ELSE 0 END) as session_older_48h,
+              -- CTD freshness = polled_at (updated by /ctdUsages only; sessionInfo paused)
+              SUM(CASE WHEN polled_at >= ? THEN 1 ELSE 0 END) as session_fresh_24h,
+              SUM(CASE WHEN polled_at < ? AND polled_at >= ? THEN 1 ELSE 0 END) as session_stale_24_48h,
+              SUM(CASE WHEN polled_at IS NULL OR polled_at < ? THEN 1 ELSE 0 END) as session_older_48h,
               SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_fresh_7d,
               SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_stale_7_14d,
               SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? THEN 1 ELSE 0 END) as details_older_14d,
@@ -1240,7 +1231,7 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
     upserts.push(
       db
         .prepare(
-          // polled_at is set on insert only; list Search must not bump it (that means session/usage enrich).
+          // polled_at is set on insert only; list Search must not bump it (that means CTD enrich).
           `INSERT INTO cc_devices (iccid, supplier, status, rate_plan, communication_plan, customer, polled_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(iccid) DO UPDATE SET
@@ -1312,7 +1303,6 @@ async function persistDeviceEnrichment(
   iccid: string,
   details: JasperDevice | null,
   usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
-  session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
 ): Promise<void> {
   const now = isoNow();
   const status = details?.status ?? usage?.status ?? "";
@@ -1321,12 +1311,7 @@ async function persistDeviceEnrichment(
   const imsi = textOrNull(details?.imsi ?? usage?.imsi);
   const msisdn = textOrNull(details?.msisdn ?? usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
-  // null sessionInfo (404) ⇒ not in session; do not leave a sticky previous Yes.
-  const inSession = session
-    ? sessionActive(session.dateSessionStarted, session.dateSessionEnded)
-      ? 1
-      : 0
-    : 0;
+  // sessionInfo skipped — leave in_session unchanged until that Optus endpoint is stable.
   const customFields = details ? packCustomFields(details) : null;
   const detailsJson = details ? JSON.stringify(details) : null;
 
@@ -1342,7 +1327,6 @@ async function persistDeviceEnrichment(
            customer = COALESCE(?, customer),
            end_consumer_id = COALESCE(?, end_consumer_id),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
-           in_session = ?,
            date_added = COALESCE(?, date_added),
            date_activated = COALESCE(?, date_activated),
            date_updated = COALESCE(?, date_updated),
@@ -1374,7 +1358,6 @@ async function persistDeviceEnrichment(
       textOrNull(details?.customer),
       textOrNull(details?.endConsumerId),
       usageMb,
-      inSession,
       textOrNull(details?.dateAdded),
       textOrNull(details?.dateActivated),
       textOrNull(details?.dateUpdated),
@@ -1416,11 +1399,10 @@ async function persistDeviceEnrichment(
   });
 }
 
-/** Usage + In session only — does not advance details_polled_at. */
-function sessionRefreshStatement(
+/** CTD usage only — does not advance details_polled_at; leaves in_session unchanged. */
+function ctdRefreshStatement(
   iccid: string,
   usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
-  session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
   polledAt: string,
 ) {
   const status = usage?.status ?? "";
@@ -1429,13 +1411,8 @@ function sessionRefreshStatement(
   const imsi = textOrNull(usage?.imsi);
   const msisdn = textOrNull(usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
-  const inSession = session
-    ? sessionActive(session.dateSessionStarted, session.dateSessionEnded)
-      ? 1
-      : 0
-    : 0;
 
-  // Session ticks skip sims overlay — saves a D1 write per SIM. CC snapshot / pools
+  // CTD ticks skip sims overlay — saves a D1 write per SIM. CC snapshot / pools
   // read cc_devices; full-details enrich still overlays warehouse sims.
   return getDB()
     .prepare(
@@ -1446,19 +1423,10 @@ function sessionRefreshStatement(
            imsi = COALESCE(?, imsi),
            msisdn = COALESCE(?, msisdn),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
-           in_session = ?,
            polled_at = ?
        WHERE iccid = ?`,
     )
-    .bind(status, status, ratePlan, communicationPlan, imsi, msisdn, usageMb, inSession, polledAt, iccid);
-}
-
-async function persistSessionRefresh(
-  iccid: string,
-  usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
-  session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
-): Promise<void> {
-  await sessionRefreshStatement(iccid, usage, session, isoNow()).run();
+    .bind(status, status, ratePlan, communicationPlan, imsi, msisdn, usageMb, polledAt, iccid);
 }
 
 async function enrichFullDetailsBatch(
@@ -1472,10 +1440,9 @@ async function enrichFullDetailsBatch(
     const detailsMap = await fetchDeviceDetailsBatch(pending);
     for (const iccid of pending) {
       if (Date.now() >= input.deadline) return enriched;
-      if (!jasperHasBudget(2)) return enriched;
+      if (!jasperHasBudget(1)) return enriched;
       const usage = await fetchJasperCtdUsage(iccid);
-      const session = await fetchJasperSessionInfo(iccid);
-      await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, session);
+      await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage);
       input.done.add(iccid);
       enriched += 1;
       if (enriched % 10 === 0) await heartbeatLock();
@@ -1491,7 +1458,7 @@ async function enrichFullDetailsBatch(
   return enriched;
 }
 
-async function enrichSessionOnlyBatch(
+async function enrichCtdOnlyBatch(
   iccids: string[],
   input: { deadline: number; done: Set<string> },
 ): Promise<number> {
@@ -1501,19 +1468,10 @@ async function enrichSessionOnlyBatch(
   for (const iccid of iccids) {
     if (input.done.has(iccid)) continue;
     if (Date.now() >= input.deadline) return enriched;
-    if (!jasperHasBudget(2)) return enriched;
+    if (!jasperHasBudget(1)) return enriched;
     try {
-      // Sequential CTD then session. Persist after CTD even if sessionInfo is flaky
-      // (null session ⇒ not in session) so polled_at still advances.
       const usage = await fetchJasperCtdUsage(iccid);
-      let session: Awaited<ReturnType<typeof fetchJasperSessionInfo>> = null;
-      try {
-        session = await fetchJasperSessionInfo(iccid);
-      } catch (sessionErr) {
-        if (!(sessionErr instanceof CcRateLimitError)) throw sessionErr;
-        // Keep CTD progress; session stays unknown/false for this tick.
-      }
-      await sessionRefreshStatement(iccid, usage, session, isoNow()).run();
+      await ctdRefreshStatement(iccid, usage, isoNow()).run();
       input.done.add(iccid);
       enriched += 1;
       if (enriched % 50 === 0) await heartbeatLock();
@@ -1568,10 +1526,10 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     return enrichFullDetailsBatch(iccids, { deadline: input.deadline, done });
   }
 
-  // Auto: never-enriched first, then oldest session/usage, then a capped details wave.
+  // Auto: never-enriched first, then oldest CTD usage, then a capped details wave.
   // Keyset pagination (polled_at, iccid) — do NOT break when a page is entirely in `done`,
   // or the same first ICCIDs get re-selected every cycle and the rest of the estate starves.
-  while (Date.now() < input.deadline && jasperHasBudget(2)) {
+  while (Date.now() < input.deadline && jasperHasBudget(1)) {
     const neverRows = await getDB()
       .prepare(
         `SELECT iccid FROM cc_devices
@@ -1584,18 +1542,18 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     const neverList = (neverRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
     if (neverList.length === 0) break;
     enriched += await enrichFullDetailsBatch(neverList, { deadline: input.deadline, done });
-    if (Date.now() >= input.deadline || !jasperHasBudget(2)) return enriched;
+    if (Date.now() >= input.deadline || !jasperHasBudget(1)) return enriched;
     if ((neverRows.results?.length ?? 0) < JASPER_BULK_DEVICE_LIMIT) break;
   }
 
-  // Session is per-ICCID (2 Jasper calls) — page larger than bulk Get Device limit.
-  const sessionPage = 200;
-  let sessionAfterAt = "";
-  let sessionAfterIccid = "";
-  const detailsReserveCalls = AUTO_DETAILS_PER_TICK * 3;
-  while (Date.now() < input.deadline && jasperHasBudget(2 + detailsReserveCalls)) {
-    const sessionRows =
-      sessionAfterAt === ""
+  // CTD is 1 Jasper call/SIM — page larger than bulk Get Device limit.
+  const ctdPage = 200;
+  let ctdAfterAt = "";
+  let ctdAfterIccid = "";
+  const detailsReserveCalls = AUTO_DETAILS_PER_TICK * 2;
+  while (Date.now() < input.deadline && jasperHasBudget(1 + detailsReserveCalls)) {
+    const ctdRows =
+      ctdAfterAt === ""
         ? await getDB()
             .prepare(
               `SELECT iccid, polled_at FROM cc_devices
@@ -1603,7 +1561,7 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
                ORDER BY polled_at ASC, iccid ASC
                LIMIT ?`,
             )
-            .bind(sessionStaleBefore, sessionPage)
+            .bind(sessionStaleBefore, ctdPage)
             .all<{ iccid: string; polled_at: string }>()
         : await getDB()
             .prepare(
@@ -1613,30 +1571,30 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
                ORDER BY polled_at ASC, iccid ASC
                LIMIT ?`,
             )
-            .bind(sessionStaleBefore, sessionAfterAt, sessionAfterAt, sessionAfterIccid, sessionPage)
+            .bind(sessionStaleBefore, ctdAfterAt, ctdAfterAt, ctdAfterIccid, ctdPage)
             .all<{ iccid: string; polled_at: string }>();
 
-    const page = sessionRows.results ?? [];
+    const page = ctdRows.results ?? [];
     if (page.length === 0) break;
 
     // Advance past this page even if every row was already in `done` this tick.
     const tail = page[page.length - 1]!;
-    sessionAfterAt = tail.polled_at;
-    sessionAfterIccid = tail.iccid;
+    ctdAfterAt = tail.polled_at;
+    ctdAfterIccid = tail.iccid;
 
-    const sessionList = page.map((row) => row.iccid).filter((id) => !done.has(id));
-    if (sessionList.length === 0) continue;
+    const ctdList = page.map((row) => row.iccid).filter((id) => !done.has(id));
+    if (ctdList.length === 0) continue;
 
-    const got = await enrichSessionOnlyBatch(sessionList, { deadline: input.deadline, done });
+    const got = await enrichCtdOnlyBatch(ctdList, { deadline: input.deadline, done });
     enriched += got;
     if (got === 0) break;
-    if (Date.now() >= input.deadline || !jasperHasBudget(2 + detailsReserveCalls)) break;
+    if (Date.now() >= input.deadline || !jasperHasBudget(1 + detailsReserveCalls)) break;
   }
 
   let detailsLeft = AUTO_DETAILS_PER_TICK;
   let detailsAfterAt = "";
   let detailsAfterIccid = "";
-  while (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(2)) {
+  while (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(1)) {
     const take = Math.min(detailsLeft, JASPER_BULK_DEVICE_LIMIT);
     const detailRows =
       detailsAfterAt === ""
@@ -1784,9 +1742,9 @@ export async function syncCcDevices(input?: {
     }
 
     // Catch-up: list only until lastPage. Incomplete crawl / manual: enrich after list.
-    // enrichFirst path already spent the tick on session/usage (leftover budget optional).
+    // enrichFirst path already spent the tick on CTD (leftover budget optional).
     if (enrichFirst) {
-      if (Date.now() < deadline && jasperHasBudget(2 + AUTO_DETAILS_PER_TICK * 3)) {
+      if (Date.now() < deadline && jasperHasBudget(1 + AUTO_DETAILS_PER_TICK * 2)) {
         details += await enrichStaleDevices({ unlimited, deadline });
       }
     } else if (!catchup && (lastPage || state.lastPageComplete)) {
@@ -1893,7 +1851,7 @@ export type CcImportResult = {
 };
 
 /**
- * Seed / refresh SIMs by ICCID via Get Device (+ usage/session).
+ * Seed / refresh SIMs by ICCID via Get Device (+ CTD usage).
  * Used for estate stock that Jasper Search Devices never returns (idle > ~1 year).
  * Processes up to IMPORT_MAX_PER_RUN per call — send remaining in follow-up requests.
  */
@@ -1924,7 +1882,7 @@ export async function importCcIccids(iccids: string[]): Promise<CcImportResult> 
   try {
     const detailsMap = await fetchDeviceDetailsBatch(batch);
     for (const iccid of batch) {
-      if (Date.now() >= deadline || !jasperHasBudget(2)) {
+      if (Date.now() >= deadline || !jasperHasBudget(1)) {
         rateLimited = true;
         break;
       }
@@ -1936,8 +1894,7 @@ export async function importCcIccids(iccids: string[]): Promise<CcImportResult> 
       try {
         await persistDevices([details], isoNow());
         const usage = await fetchJasperCtdUsage(iccid);
-        const session = await fetchJasperSessionInfo(iccid);
-        await persistDeviceEnrichment(iccid, details, usage, session);
+        await persistDeviceEnrichment(iccid, details, usage);
         imported += 1;
       } catch (err) {
         if (err instanceof CcRateLimitError || err instanceof CcBudgetError) {

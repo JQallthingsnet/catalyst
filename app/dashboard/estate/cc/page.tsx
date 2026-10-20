@@ -225,25 +225,29 @@ export default async function CcSnapshotPage({
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">In session</p>
-          <p className="mt-2 text-3xl font-semibold">{summary.inSession.toLocaleString("en-AU")}</p>
-          <p className="mt-1 text-xs text-quiet">
-            Known {summary.sessionKnown.toLocaleString("en-AU")}
-            {" · "}
-            unknown {summary.sessionUnknown.toLocaleString("en-AU")}
+          <p className="text-sm text-quiet">CTD usage age</p>
+          <p className="mt-2 text-3xl font-semibold">
+            {summary.sessionFresh24h.toLocaleString("en-AU")}
+            <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
           </p>
-          <p className="mt-3 text-sm text-quiet">Session / CTD enrich age</p>
           <p className="mt-1 text-xs text-quiet">
-            &lt;24h {summary.sessionFresh24h.toLocaleString("en-AU")}
+            From Jasper <span className="text-ink">/ctdUsages</span>
             {" · "}
             24–48h {summary.sessionStale24to48h.toLocaleString("en-AU")}
             {" · "}
-            <span className={summary.sessionOlder48h > 0 || summary.sessionUnknown > 0 ? "text-danger" : ""}>
+            <span className={summary.sessionOlder48h > 0 ? "text-danger" : ""}>
               &gt;48h {summary.sessionOlder48h.toLocaleString("en-AU")}
-              {summary.sessionUnknown > 0
-                ? ` · +${summary.sessionUnknown.toLocaleString("en-AU")} unknown`
-                : ""}
             </span>
+          </p>
+          <p className="mt-3 text-sm text-quiet">In session (last known)</p>
+          <p className="mt-1 text-xs text-quiet">
+            {summary.inSession.toLocaleString("en-AU")} yes
+            {" · "}
+            known {summary.sessionKnown.toLocaleString("en-AU")}
+            {" · "}
+            unknown {summary.sessionUnknown.toLocaleString("en-AU")}
+            {" · "}
+            not refreshed (sessionInfo paused)
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">

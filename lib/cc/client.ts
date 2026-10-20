@@ -3,14 +3,14 @@ import { getEnv } from "@/lib/env";
 const DEFAULT_BASE = "https://restapi1.jasper.com/rws/api/v1";
 const PAGE_SIZE = 50;
 /**
- * Stay under Jasper's published ~5 req/s (~400 ms ≈ 2.5/s). Optus often returns
- * HTTP 500 / 30000001 under concurrent burst — keep MAX_IN_FLIGHT at 1.
+ * Optus soft-throttles this account (esp. sessionInfo → 30000001). Keep a single
+ * in-flight call and at most 1 Jasper request per second.
  */
-const MIN_INTERVAL_MS = 400;
+const MIN_INTERVAL_MS = 1000;
 const MAX_429_RETRIES = 3;
 
 let lastCallAt = 0;
-/** One Jasper call at a time — Optus trips on concurrent CTD+session. */
+/** One Jasper call at a time — never concurrent. */
 let inFlight = 0;
 const MAX_IN_FLIGHT = 1;
 let throttleChain: Promise<void> = Promise.resolve();
