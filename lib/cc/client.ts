@@ -4,9 +4,9 @@ const DEFAULT_BASE = "https://restapi1.jasper.com/rws/api/v1";
 const PAGE_SIZE = 50;
 /**
  * Optus soft-throttles this account (esp. sessionInfo → 30000001). Keep a single
- * in-flight call and at most 1 Jasper request per second.
+ * in-flight call; ~2/s — session soft-fails are per-SIM, not account-wide.
  */
-const MIN_INTERVAL_MS = 1000;
+const MIN_INTERVAL_MS = 500;
 const MAX_429_RETRIES = 3;
 
 let lastCallAt = 0;
@@ -194,7 +194,12 @@ function isJasperSoftRateLimit(status: number, body: JasperErrorBody | null, mes
   return /too many|rate limit|throttl/i.test(message);
 }
 
-async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
+async function jasperGet<T>(
+  path: string,
+  allow404 = false,
+  /** When false, soft RL (30000001) throws immediately — enrich soft-catches sessionInfo. */
+  softRetry = true,
+): Promise<T | null> {
   if (!jasperConfigured()) {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
   }
@@ -218,7 +223,7 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
         const { message, body } = await readJasperError(res);
         if (isJasperSoftRateLimit(res.status, body, message)) {
           attempt += 1;
-          if (attempt > MAX_429_RETRIES) {
+          if (!softRetry || attempt > MAX_429_RETRIES) {
             // Always throw — callers soft-catch so CTD can still persist when
             // sessionInfo returns 30000001 (works for many SIMs, flaky for some).
             throw new CcRateLimitError(message);
@@ -295,7 +300,8 @@ export async function fetchJasperCtdUsage(iccid: string): Promise<JasperCtdUsage
 }
 
 export async function fetchJasperSessionInfo(iccid: string): Promise<JasperSessionInfo | null> {
-  return jasperGet<JasperSessionInfo>(`/devices/${encodeURIComponent(iccid)}/sessionInfo`, true);
+  // Fail-fast on 30000001 — enrich soft-catches and keeps CTD; retries burn the tick.
+  return jasperGet<JasperSessionInfo>(`/devices/${encodeURIComponent(iccid)}/sessionInfo`, true, false);
 }
 
 export type JasperProbeKind = "ctd" | "session" | "details";
