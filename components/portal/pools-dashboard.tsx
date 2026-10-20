@@ -637,8 +637,8 @@ export function PoolsDashboard({
         <table className="w-full min-w-180 text-left text-sm">
           <thead className="text-quiet">
             <tr>
-              <th className="px-4 py-3">{entityLabel}</th>
               {groupBy === "modem" ? <th className="px-4 py-3">Customer</th> : null}
+              <th className="px-4 py-3">{entityLabel}</th>
               <th className="px-4 py-3">Day</th>
               <th className="px-4 py-3">CTD MB</th>
               <th className="px-4 py-3">{allowanceLabel}</th>
@@ -652,6 +652,9 @@ export function PoolsDashboard({
               const onChart = plotted.includes(row.name);
               return (
                 <tr key={row.name} className="border-t border-line hover:bg-panel-2">
+                  {groupBy === "modem" ? (
+                    <td className="px-4 py-3 text-quiet">{row.customer || "—"}</td>
+                  ) : null}
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-2">
                       {onChart ? (
@@ -663,9 +666,6 @@ export function PoolsDashboard({
                       <span className="font-mono text-xs">{row.name}</span>
                     </span>
                   </td>
-                  {groupBy === "modem" ? (
-                    <td className="px-4 py-3 text-quiet">{row.customer || "—"}</td>
-                  ) : null}
                   <td className="px-4 py-3 font-mono text-xs">{row.day}</td>
                   <td className="px-4 py-3">
                     {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
