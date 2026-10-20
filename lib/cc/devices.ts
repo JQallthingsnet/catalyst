@@ -782,7 +782,9 @@ export type CcDeviceFilter = {
   globalSimType?: string;
   simProfileId?: string;
   inSession?: "yes" | "no" | "";
-  dateField?: "added" | "activated" | "updated" | "";
+  sessionIp?: string;
+  sessionApn?: string;
+  dateField?: "added" | "activated" | "updated" | "session_started" | "session_ended" | "";
   dateFrom?: string;
   dateTo?: string;
 };
@@ -798,6 +800,8 @@ export type CcFilterOptions = {
   modemIds: string[];
   globalSimTypes: string[];
   simProfileIds: string[];
+  sessionIps: string[];
+  sessionApns: string[];
 };
 
 function clipFilter(value: string | undefined, max = 120): string {
@@ -808,7 +812,11 @@ export function normalizeCcFilter(input: string | CcDeviceFilter = {}): CcDevice
   if (typeof input === "string") return { query: clipFilter(input) };
   const inSession = input.inSession === "yes" || input.inSession === "no" ? input.inSession : "";
   const dateField =
-    input.dateField === "added" || input.dateField === "activated" || input.dateField === "updated"
+    input.dateField === "added" ||
+    input.dateField === "activated" ||
+    input.dateField === "updated" ||
+    input.dateField === "session_started" ||
+    input.dateField === "session_ended"
       ? input.dateField
       : "";
   let dateFrom = parseYmd(input.dateFrom)?.key ?? "";
@@ -831,6 +839,8 @@ export function normalizeCcFilter(input: string | CcDeviceFilter = {}): CcDevice
     globalSimType: clipFilter(input.globalSimType),
     simProfileId: clipFilter(input.simProfileId),
     inSession,
+    sessionIp: clipFilter(input.sessionIp),
+    sessionApn: clipFilter(input.sessionApn),
     dateField: dateFrom || dateTo ? dateField || "added" : dateField,
     dateFrom,
     dateTo,
@@ -852,6 +862,8 @@ export function ccFilterActive(filter: CcDeviceFilter): boolean {
       normalized.globalSimType ||
       normalized.simProfileId ||
       normalized.inSession ||
+      normalized.sessionIp ||
+      normalized.sessionApn ||
       normalized.dateFrom ||
       normalized.dateTo,
   );
@@ -867,12 +879,12 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
         OR IFNULL(customer,'') LIKE ? OR IFNULL(end_customer,'') LIKE ? OR IFNULL(account_id,'') LIKE ?
         OR IFNULL(device_id,'') LIKE ? OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ?
         OR IFNULL(modem_id,'') LIKE ? OR IFNULL(supplier,'') LIKE ? OR IFNULL(sim_notes,'') LIKE ?
-        OR IFNULL(custom_fields,'') LIKE ?)`,
+        OR IFNULL(custom_fields,'') LIKE ? OR IFNULL(session_ip,'') LIKE ? OR IFNULL(session_apn,'') LIKE ?)`,
     );
     const q = normalized.query;
     const digits = `%${q.replace(/\s/g, "")}%`;
     const text = `%${q}%`;
-    binds.push(digits, text, text, text, text, text, text, text, text, text, text, text, text, text);
+    binds.push(digits, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text);
   }
   if (normalized.supplier) {
     clauses.push("IFNULL(NULLIF(TRIM(supplier), ''), ?) = ?");
@@ -895,8 +907,9 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
     binds.push(normalized.customer);
   }
   if (normalized.endCustomer) {
-    clauses.push("end_customer = ?");
-    binds.push(normalized.endCustomer);
+    // Partial match so typing letters narrows the list (suggestions + free text).
+    clauses.push("IFNULL(end_customer,'') LIKE ?");
+    binds.push(`%${normalized.endCustomer}%`);
   }
   if (normalized.accountId) {
     clauses.push("account_id = ?");
@@ -916,14 +929,26 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
   }
   if (normalized.inSession === "yes") clauses.push("in_session = 1");
   if (normalized.inSession === "no") clauses.push("in_session = 0");
+  if (normalized.sessionIp) {
+    clauses.push("session_ip = ?");
+    binds.push(normalized.sessionIp);
+  }
+  if (normalized.sessionApn) {
+    clauses.push("session_apn = ?");
+    binds.push(normalized.sessionApn);
+  }
   const dateColumn =
     normalized.dateField === "activated"
       ? "date_activated"
       : normalized.dateField === "updated"
         ? "date_updated"
-        : normalized.dateField === "added"
-          ? "date_added"
-          : null;
+        : normalized.dateField === "session_started"
+          ? "session_started_at"
+          : normalized.dateField === "session_ended"
+            ? "session_ended_at"
+            : normalized.dateField === "added"
+              ? "date_added"
+              : null;
   if (dateColumn && (normalized.dateFrom || normalized.dateTo)) {
     const startIso = normalized.dateFrom ? sydneyDayStartIso(normalized.dateFrom) : null;
     const endExclusiveIso = normalized.dateTo ? sydneyDayEndExclusiveIso(normalized.dateTo) : null;
@@ -1052,6 +1077,8 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
     modemIds,
     globalSimTypes,
     simProfileIds,
+    sessionIps,
+    sessionApns,
   ] = await Promise.all([
     distinctCcValues("supplier"),
     distinctCcValues("status"),
@@ -1063,6 +1090,8 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
     distinctCcValues("modem_id"),
     distinctCcValues("global_sim_type"),
     distinctCcValues("sim_profile_id"),
+    distinctCcValues("session_ip"),
+    distinctCcValues("session_apn"),
   ]);
   const listedSuppliers = suppliers.includes(DEFAULT_PLAN_SUPPLIER)
     ? suppliers
@@ -1078,6 +1107,8 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
     modemIds,
     globalSimTypes,
     simProfileIds,
+    sessionIps,
+    sessionApns,
   };
   filterOptionsCache = { at: Date.now(), value };
   return value;

@@ -25,8 +25,14 @@ export async function GET(request: Request) {
     globalSimType: url.searchParams.get("globalSim") ?? "",
     simProfileId: url.searchParams.get("simProfile") ?? "",
     inSession: inSessionRaw === "yes" || inSessionRaw === "no" ? inSessionRaw : "",
+    sessionIp: url.searchParams.get("sessionIp") ?? "",
+    sessionApn: url.searchParams.get("sessionApn") ?? "",
     dateField:
-      dateFieldRaw === "added" || dateFieldRaw === "activated" || dateFieldRaw === "updated"
+      dateFieldRaw === "added" ||
+      dateFieldRaw === "activated" ||
+      dateFieldRaw === "updated" ||
+      dateFieldRaw === "session_started" ||
+      dateFieldRaw === "session_ended"
         ? dateFieldRaw
         : "",
     dateFrom: url.searchParams.get("dateFrom") ?? "",

@@ -34,6 +34,8 @@ function snapshotFilterParams(filter: CcDeviceFilter): URLSearchParams {
   if (filter.globalSimType) sp.set("globalSim", filter.globalSimType);
   if (filter.simProfileId) sp.set("simProfile", filter.simProfileId);
   if (filter.inSession) sp.set("inSession", filter.inSession);
+  if (filter.sessionIp) sp.set("sessionIp", filter.sessionIp);
+  if (filter.sessionApn) sp.set("sessionApn", filter.sessionApn);
   if (filter.dateField) sp.set("dateField", filter.dateField);
   if (filter.dateFrom) sp.set("dateFrom", filter.dateFrom);
   if (filter.dateTo) sp.set("dateTo", filter.dateTo);
@@ -83,6 +85,41 @@ function FilterSelect({
   );
 }
 
+/** Text input with suggestion list — type letters to narrow matches. */
+function FilterSuggest({
+  name,
+  label,
+  value,
+  options,
+  placeholder,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+}) {
+  const listId = `${name}-suggest`;
+  return (
+    <label className="block text-xs font-medium text-quiet">
+      {label}
+      <input
+        name={name}
+        list={listId}
+        defaultValue={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
+      />
+      <datalist id={listId}>
+        {options.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+    </label>
+  );
+}
+
 export default async function CcSnapshotPage({
   searchParams,
 }: {
@@ -101,6 +138,8 @@ export default async function CcSnapshotPage({
         globalSim?: string;
         simProfile?: string;
         inSession?: string;
+        sessionIp?: string;
+        sessionApn?: string;
         dateField?: string;
         dateFrom?: string;
         dateTo?: string;
@@ -119,6 +158,8 @@ export default async function CcSnapshotPage({
         globalSim?: string;
         simProfile?: string;
         inSession?: string;
+        sessionIp?: string;
+        sessionApn?: string;
         dateField?: string;
         dateFrom?: string;
         dateTo?: string;
@@ -139,8 +180,14 @@ export default async function CcSnapshotPage({
     globalSimType: params.globalSim,
     simProfileId: params.simProfile,
     inSession: params.inSession === "yes" || params.inSession === "no" ? params.inSession : "",
+    sessionIp: params.sessionIp,
+    sessionApn: params.sessionApn,
     dateField:
-      params.dateField === "added" || params.dateField === "activated" || params.dateField === "updated"
+      params.dateField === "added" ||
+      params.dateField === "activated" ||
+      params.dateField === "updated" ||
+      params.dateField === "session_started" ||
+      params.dateField === "session_ended"
         ? params.dateField
         : "",
     dateFrom: params.dateFrom,
@@ -305,6 +352,8 @@ export default async function CcSnapshotPage({
               <option value="added">Added</option>
               <option value="activated">Activated</option>
               <option value="updated">Updated</option>
+              <option value="session_started">Session started</option>
+              <option value="session_ended">Session ended</option>
             </select>
           </label>
           <label className="block text-xs font-medium text-quiet">
@@ -354,6 +403,20 @@ export default async function CcSnapshotPage({
             allLabel="All"
           />
           <FilterSelect
+            name="sessionIp"
+            label="Session IP"
+            value={filter.sessionIp ?? ""}
+            options={options.sessionIps}
+            allLabel="All session IPs"
+          />
+          <FilterSelect
+            name="sessionApn"
+            label="APN"
+            value={filter.sessionApn ?? ""}
+            options={options.sessionApns}
+            allLabel="All APNs"
+          />
+          <FilterSelect
             name="ratePlan"
             label="Rate plan"
             value={filter.ratePlan ?? ""}
@@ -374,12 +437,12 @@ export default async function CcSnapshotPage({
             options={options.customers}
             allLabel="All CC customers"
           />
-          <FilterSelect
+          <FilterSuggest
             name="endCustomer"
             label="End customer"
             value={filter.endCustomer ?? ""}
             options={options.endCustomers}
-            allLabel="All end customers"
+            placeholder="Type to filter…"
           />
           <FilterSelect
             name="accountId"
