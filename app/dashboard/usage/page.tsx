@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { SendUsageDigestButton } from "@/components/portal/send-usage-digest-button";
+import {
+  getAlertSetting,
+  PLATFORM_ALERT_SCOPE,
+  SUGGESTED_ALERT_THRESHOLD_PCT,
+} from "@/lib/portal/alert-settings";
 import { requirePortal } from "@/lib/portal/guard";
 import { listAudit } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
-import {
-  SIM_ALLOWANCE_ALERT_PCT,
-  listSimModemUsage,
-  type UsageAllowanceBasis,
-} from "@/lib/portal/sim-usage";
+import { listSimModemUsage, type UsageAllowanceBasis } from "@/lib/portal/sim-usage";
 import { loadTenant } from "@/lib/portal/tenant";
 import { formatAuDateTime } from "@/lib/portal/time";
 
@@ -25,13 +26,21 @@ export default async function UsagePage({
   const tenant = basis === "modem" ? await loadTenant(ctx.tenantId) : null;
   const customerScope = tenant?.ccCustomer ?? "";
 
+  const alertKind = basis === "rate_plan" ? "pool" : "usage";
+  const alertScope = basis === "rate_plan" ? PLATFORM_ALERT_SCOPE : ctx.tenantId;
+  const alertSetting = can(ctx.role, "alerts.manage")
+    ? await getAlertSetting(alertScope, alertKind)
+    : null;
+  /** Highlight / filter band: saved Alerts threshold, else UI suggestion only. */
+  const highlightPct = alertSetting?.thresholdPct ?? SUGGESTED_ALERT_THRESHOLD_PCT;
+
   const [sims, audit] = await Promise.all([
     can(ctx.role, "pool.view")
       ? listSimModemUsage({
           basis,
           customer: customerScope,
           q,
-          minPct: alertsOnly ? SIM_ALLOWANCE_ALERT_PCT : undefined,
+          minPct: alertsOnly ? highlightPct : undefined,
           limit: 500,
         })
       : Promise.resolve([]),
@@ -39,7 +48,7 @@ export default async function UsagePage({
   ]);
 
   const alertCount = sims.filter(
-    (sim) => sim.pct != null && sim.pct >= SIM_ALLOWANCE_ALERT_PCT,
+    (sim) => sim.pct != null && sim.pct >= highlightPct,
   ).length;
 
   return (
@@ -49,12 +58,13 @@ export default async function UsagePage({
           <h1 className="text-3xl font-semibold">Usage & alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
-              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily email is the Pools digest (rate plans ≥"
-              : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Daily email covers Pools (modem_ID) and this Usage list when any row is ≥"}
-            {SIM_ALLOWANCE_ALERT_PCT}%
-            {basis === "rate_plan"
-              ? ") to Jerry Qiu near Sydney midnight — not the per-SIM Usage list."
-              : " (reseller admins)."}
+              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily digests use "
+              : "Reseller: per SIM, CTD MB ÷ modem_ID allowance. Daily digests use "}
+            <Link href="/dashboard/alerts" className="text-accent">
+              Alerts
+            </Link>
+            {" "}
+            recipients and thresholds (off until configured).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -89,7 +99,7 @@ export default async function UsagePage({
             />
             <label className="flex items-center gap-2 text-sm text-quiet">
               <input type="checkbox" name="alert" value="1" defaultChecked={alertsOnly} />
-              ≥{SIM_ALLOWANCE_ALERT_PCT}% only
+              ≥{highlightPct}% only
             </label>
             <button
               type="submit"
@@ -103,10 +113,10 @@ export default async function UsagePage({
             {alertCount > 0 ? (
               <span className="text-warn">
                 {alertCount.toLocaleString("en-AU")} SIM{alertCount === 1 ? "" : "s"} at ≥
-                {SIM_ALLOWANCE_ALERT_PCT}%
+                {highlightPct}%
               </span>
             ) : (
-              <span>No SIMs at ≥{SIM_ALLOWANCE_ALERT_PCT}% in this view.</span>
+              <span>No SIMs at ≥{highlightPct}% in this view.</span>
             )}
             {" · "}
             Showing {sims.length.toLocaleString("en-AU")} row{sims.length === 1 ? "" : "s"}
@@ -131,7 +141,7 @@ export default async function UsagePage({
               </thead>
               <tbody>
                 {sims.map((sim) => {
-                  const hot = sim.pct != null && sim.pct >= SIM_ALLOWANCE_ALERT_PCT;
+                  const hot = sim.pct != null && sim.pct >= highlightPct;
                   const over = sim.pct != null && sim.pct >= 100;
                   return (
                     <tr key={sim.iccid} className="border-t border-line">
