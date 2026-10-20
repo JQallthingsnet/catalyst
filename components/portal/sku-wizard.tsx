@@ -46,12 +46,12 @@ export function SkuWizard({ sku }: { sku?: SimSku }) {
 
   return (
     <WizardFrame
-      title={editing ? "Edit SKU" : "Create SKU"}
+      title={editing ? "Edit SIM type" : "Create SIM type"}
       steps={["Name", "Product", "Confirm"]}
       step={step}
       summary={
         <>
-          <p>{name || "SKU name"}</p>
+          <p>{name || "SIM type name"}</p>
           <p>{formFactor || "Form factor"}</p>
           <p>
             {tech || "Tech"} · {region || "Region"}
@@ -62,11 +62,11 @@ export function SkuWizard({ sku }: { sku?: SimSku }) {
     >
       {step === 0 ? (
         <label className="block text-sm">
-          SKU name
+          SIM type name
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. Nano SIM LTE-M AU"
+            placeholder="e.g. Nano, eSIM, MFF2 Industrial"
             className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
           />
         </label>
@@ -113,8 +113,8 @@ export function SkuWizard({ sku }: { sku?: SimSku }) {
       ) : null}
       {step === 2 ? (
         <p className="text-sm leading-6 text-quiet">
-          This is a commercial SKU (plastic, industrial, eSIM), not a Control Center rate plan. Sell stock and Order
-          SIMs both use this list.
+          This is a commercial SIM type (plastic, industrial, eSIM), not a Control Center rate plan. Sell stock and
+          Order SIMs both use this list.
         </p>
       ) : null}
       {error ? <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
@@ -124,7 +124,7 @@ export function SkuWizard({ sku }: { sku?: SimSku }) {
           if (step < 2) setStep(step + 1);
           else void submit();
         }}
-        nextLabel={step < 2 ? "Continue" : editing ? "Save SKU" : "Create SKU"}
+        nextLabel={step < 2 ? "Continue" : editing ? "Save SIM type" : "Create SIM type"}
         busy={busy}
         disabled={!name.trim() || (step >= 1 && (!formFactor.trim() || !tech.trim() || !region.trim()))}
       />

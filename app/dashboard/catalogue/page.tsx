@@ -12,21 +12,21 @@ export default async function CataloguePage() {
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Catalogue</h1>
           <p className="mt-2 text-sm text-quiet">
-            SIM products ATN sells. Create, edit, deactivate, or delete SKUs here. Sell stock and Order SIMs only use
-            active items.
+            SIM types ATN sells, e.g.: eSIM, Nano, MFF2 Industrial etc. Create, edit, deactivate, or delete SIM type
+            here. Sell stock and Order SIMs only use active items.
           </p>
         </div>
         <Link
           href="/dashboard/catalogue/new"
           className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
         >
-          Create SKU
+          Create SIM type
         </Link>
       </div>
 
       <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(16rem,20rem))] gap-4">
         {skus.length === 0 ? (
-          <p className="text-sm text-quiet">No SKUs yet. Create the nano / MFF2 / eSIM products you actually sell.</p>
+          <p className="text-sm text-quiet">No SIM types yet. Create eSIM, Nano, MFF2 Industrial, etc.</p>
         ) : null}
         {skus.map((sku) => (
           <Link
