@@ -90,13 +90,18 @@ export function CcInventoryTable({
             <th className="px-3 py-2.5">SIM status</th>
             <th className="px-3 py-2.5">Rate plan</th>
             <th className="px-3 py-2.5">Communication plan</th>
-            <th className="px-3 py-2.5">Customer</th>
+            <th className="px-3 py-2.5">CC customer</th>
+            <th className="px-3 py-2.5">End customer</th>
             <th className="px-3 py-2.5">Account ID</th>
             <th className="px-3 py-2.5">Device ID</th>
             <th className="px-3 py-2.5">Modem ID</th>
             <th className="px-3 py-2.5">Fixed IP</th>
             <th className="px-3 py-2.5">Cycle to date (MB)</th>
             <th className="px-3 py-2.5">In session</th>
+            <th className="px-3 py-2.5">Session started</th>
+            <th className="px-3 py-2.5">Session ended</th>
+            <th className="px-3 py-2.5">Session IP</th>
+            <th className="px-3 py-2.5">APN</th>
             <th className="px-3 py-2.5">Global SIM</th>
             <th className="px-3 py-2.5">SIM profile</th>
             <th className="px-3 py-2.5">eUICCID</th>
@@ -112,10 +117,6 @@ export function CcInventoryTable({
                   .map(([key, value]) => `${key}=${value}`)
                   .join(" · ")
               : "";
-            const customer =
-              device.customer && device.endConsumerId
-                ? `${device.customer} · End consumer ${device.endConsumerId}`
-                : device.customer ?? "";
             return (
               <tr key={device.iccid} className="border-t border-line">
                 <td className="whitespace-nowrap px-3 py-2.5">{device.supplier}</td>
@@ -130,7 +131,15 @@ export function CcInventoryTable({
                 <td className="whitespace-nowrap px-3 py-2.5">{device.status}</td>
                 <WrapCell value={device.ratePlan ?? ""} className="max-w-56" />
                 <WrapCell value={device.communicationPlan ?? ""} className="max-w-72" />
-                <WrapCell value={customer} className="max-w-40" />
+                <WrapCell
+                  value={
+                    device.customer && device.endConsumerId
+                      ? `${device.customer} · ${device.endConsumerId}`
+                      : device.customer ?? ""
+                  }
+                  className="max-w-40"
+                />
+                <WrapCell value={device.endCustomer ?? ""} className="max-w-40" />
                 <TextCell value={device.accountId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.deviceId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.modemId ?? ""} mono className="max-w-40" />
@@ -145,6 +154,10 @@ export function CcInventoryTable({
                 <td className="whitespace-nowrap px-3 py-2.5">
                   {device.inSession == null ? "—" : device.inSession ? "Yes" : "No"}
                 </td>
+                <DateCell value={device.sessionStartedAt} />
+                <DateCell value={device.sessionEndedAt} />
+                <TextCell value={device.sessionIp ?? ""} mono className="max-w-36" />
+                <TextCell value={device.sessionApn ?? ""} mono className="max-w-32" />
                 <TextCell value={device.globalSimType ?? ""} className="max-w-32" />
                 <TextCell value={device.simProfileId ?? ""} mono className="max-w-32" />
                 <TextCell value={device.euiccid ?? ""} mono className="max-w-40" />

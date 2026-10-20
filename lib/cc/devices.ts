@@ -90,8 +90,14 @@ export type CcDevice = {
   imei: string | null;
   customer: string | null;
   endConsumerId: string | null;
+  /** Portal customer name (reseller → end customer assign). */
+  endCustomer: string | null;
   ctdUsageMb: number | null;
   inSession: boolean | null;
+  sessionStartedAt: string | null;
+  sessionEndedAt: string | null;
+  sessionIp: string | null;
+  sessionApn: string | null;
   dateAdded: string | null;
   dateActivated: string | null;
   dateUpdated: string | null;
@@ -180,6 +186,33 @@ function isPresent(value: string | null | undefined): boolean {
 
 function sessionActive(started: string | null | undefined, ended: string | null | undefined): boolean {
   return isPresent(started) && !isPresent(ended);
+}
+
+/** null = soft-fail (keep prior session columns); otherwise write full sessionInfo. */
+type SessionPatch =
+  | null
+  | {
+      inSession: 0 | 1;
+      started: string | null;
+      ended: string | null;
+      ip: string | null;
+      apn: string | null;
+    };
+
+function sessionPatchFromInfo(
+  session: Awaited<ReturnType<typeof fetchJasperSessionInfo>>,
+): SessionPatch {
+  if (session == null) {
+    // 404 / empty → not in session; clear detail fields.
+    return { inSession: 0, started: null, ended: null, ip: null, apn: null };
+  }
+  return {
+    inSession: sessionActive(session.dateSessionStarted, session.dateSessionEnded) ? 1 : 0,
+    started: textOrNull(session.dateSessionStarted),
+    ended: textOrNull(session.dateSessionEnded),
+    ip: textOrNull(session.ipAddress),
+    apn: textOrNull(session.apn),
+  };
 }
 
 export function mapCcStatus(status: string): SimState | null {
@@ -622,8 +655,9 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
 
 const CC_DEVICE_COLUMNS = `iccid, IFNULL(NULLIF(TRIM(supplier), ''), '${DEFAULT_PLAN_SUPPLIER}') AS supplier,
               status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, in_session,
+              session_started_at, session_ended_at, session_ip, session_apn,
               date_added, date_activated, polled_at, details_polled_at,
-              imei, customer, end_consumer_id, date_updated, date_shipped, account_id,
+              imei, customer, end_consumer_id, end_customer, date_updated, date_shipped, account_id,
               fixed_ip_address, fixed_ipv6_address, sim_notes, device_id, modem_id,
               global_sim_type, mec, euiccid, sim_profile_id, custom_fields`;
 
@@ -637,6 +671,10 @@ type CcDeviceRow = {
   msisdn: string | null;
   ctd_usage_mb: number | null;
   in_session: number | null;
+  session_started_at: string | null;
+  session_ended_at: string | null;
+  session_ip: string | null;
+  session_apn: string | null;
   date_added: string | null;
   date_activated: string | null;
   polled_at: string;
@@ -644,6 +682,7 @@ type CcDeviceRow = {
   imei: string | null;
   customer: string | null;
   end_consumer_id: string | null;
+  end_customer: string | null;
   date_updated: string | null;
   date_shipped: string | null;
   account_id: string | null;
@@ -687,8 +726,13 @@ function mapCcDevice(row: CcDeviceRow): CcDevice {
     imei: row.imei,
     customer: row.customer,
     endConsumerId: row.end_consumer_id,
+    endCustomer: row.end_customer,
     ctdUsageMb: row.ctd_usage_mb,
     inSession: row.in_session == null ? null : Boolean(row.in_session),
+    sessionStartedAt: row.session_started_at,
+    sessionEndedAt: row.session_ended_at,
+    sessionIp: row.session_ip,
+    sessionApn: row.session_apn,
     dateAdded: row.date_added,
     dateActivated: row.date_activated,
     dateUpdated: row.date_updated,
@@ -732,6 +776,7 @@ export type CcDeviceFilter = {
   ratePlan?: string;
   communicationPlan?: string;
   customer?: string;
+  endCustomer?: string;
   accountId?: string;
   modemId?: string;
   globalSimType?: string;
@@ -748,6 +793,7 @@ export type CcFilterOptions = {
   ratePlans: string[];
   communicationPlans: string[];
   customers: string[];
+  endCustomers: string[];
   accountIds: string[];
   modemIds: string[];
   globalSimTypes: string[];
@@ -779,6 +825,7 @@ export function normalizeCcFilter(input: string | CcDeviceFilter = {}): CcDevice
     ratePlan: clipFilter(input.ratePlan),
     communicationPlan: clipFilter(input.communicationPlan),
     customer: clipFilter(input.customer),
+    endCustomer: clipFilter(input.endCustomer),
     accountId: clipFilter(input.accountId),
     modemId: clipFilter(input.modemId),
     globalSimType: clipFilter(input.globalSimType),
@@ -799,6 +846,7 @@ export function ccFilterActive(filter: CcDeviceFilter): boolean {
       normalized.ratePlan ||
       normalized.communicationPlan ||
       normalized.customer ||
+      normalized.endCustomer ||
       normalized.accountId ||
       normalized.modemId ||
       normalized.globalSimType ||
@@ -816,14 +864,15 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
   if (normalized.query) {
     clauses.push(
       `(iccid LIKE ? OR IFNULL(imsi,'') LIKE ? OR IFNULL(msisdn,'') LIKE ? OR IFNULL(imei,'') LIKE ?
-        OR IFNULL(customer,'') LIKE ? OR IFNULL(account_id,'') LIKE ? OR IFNULL(device_id,'') LIKE ?
-        OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ? OR IFNULL(modem_id,'') LIKE ?
-        OR IFNULL(supplier,'') LIKE ? OR IFNULL(sim_notes,'') LIKE ? OR IFNULL(custom_fields,'') LIKE ?)`,
+        OR IFNULL(customer,'') LIKE ? OR IFNULL(end_customer,'') LIKE ? OR IFNULL(account_id,'') LIKE ?
+        OR IFNULL(device_id,'') LIKE ? OR IFNULL(euiccid,'') LIKE ? OR IFNULL(sim_profile_id,'') LIKE ?
+        OR IFNULL(modem_id,'') LIKE ? OR IFNULL(supplier,'') LIKE ? OR IFNULL(sim_notes,'') LIKE ?
+        OR IFNULL(custom_fields,'') LIKE ?)`,
     );
     const q = normalized.query;
     const digits = `%${q.replace(/\s/g, "")}%`;
     const text = `%${q}%`;
-    binds.push(digits, text, text, text, text, text, text, text, text, text, text, text, text);
+    binds.push(digits, text, text, text, text, text, text, text, text, text, text, text, text, text);
   }
   if (normalized.supplier) {
     clauses.push("IFNULL(NULLIF(TRIM(supplier), ''), ?) = ?");
@@ -844,6 +893,10 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
   if (normalized.customer) {
     clauses.push("customer = ?");
     binds.push(normalized.customer);
+  }
+  if (normalized.endCustomer) {
+    clauses.push("end_customer = ?");
+    binds.push(normalized.endCustomer);
   }
   if (normalized.accountId) {
     clauses.push("account_id = ?");
@@ -891,6 +944,52 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
   };
 }
 
+/** Write portal end-customer name onto the CC snapshot (reseller assign). */
+export async function setCcEndCustomers(iccids: string[], endCustomer: string | null): Promise<void> {
+  const cleaned = [...new Set(iccids.map((value) => value.replace(/\s/g, "")).filter(Boolean))];
+  if (cleaned.length === 0) return;
+  const name = endCustomer?.trim() || null;
+  const db = getDB();
+  const statements = cleaned.map((iccid) =>
+    db.prepare(`UPDATE cc_devices SET end_customer = ? WHERE iccid = ?`).bind(name, iccid),
+  );
+  for (let i = 0; i < statements.length; i += 40) {
+    await db.batch(statements.slice(i, i + 40));
+  }
+  invalidateCcFilterOptionsCache();
+}
+
+/** Overlay live assign names from sims → customers onto listed CC rows. */
+async function attachLiveEndCustomers(devices: CcDevice[]): Promise<CcDevice[]> {
+  if (devices.length === 0) return devices;
+  const db = getDB();
+  const byIccid = new Map<string, string>();
+  const iccids = devices.map((device) => device.iccid);
+  for (let i = 0; i < iccids.length; i += 80) {
+    const chunk = iccids.slice(i, i + 80);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = await db
+      .prepare(
+        `SELECT s.iccid AS iccid, c.name AS name
+         FROM sims s
+         INNER JOIN customers c ON c.id = s.customer_id
+         WHERE s.iccid IN (${placeholders})
+           AND s.customer_id IS NOT NULL`,
+      )
+      .bind(...chunk)
+      .all<{ iccid: string; name: string }>();
+    for (const row of rows.results ?? []) {
+      const name = row.name?.trim();
+      if (name) byIccid.set(row.iccid, name);
+    }
+  }
+  if (byIccid.size === 0) return devices;
+  return devices.map((device) => ({
+    ...device,
+    endCustomer: byIccid.get(device.iccid) ?? device.endCustomer,
+  }));
+}
+
 export async function listCcDevices(
   queryOrFilter: string | CcDeviceFilter = "",
   limit = 50,
@@ -909,7 +1008,7 @@ export async function listCcDevices(
     )
     .bind(...binds, safeLimit, safeOffset)
     .all<CcDeviceRow>();
-  return (rows.results ?? []).map(mapCcDevice);
+  return attachLiveEndCustomers((rows.results ?? []).map(mapCcDevice));
 }
 
 export async function countCcDevices(queryOrFilter: string | CcDeviceFilter = ""): Promise<number> {
@@ -942,18 +1041,29 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
   if (filterOptionsCache && Date.now() - filterOptionsCache.at < FILTER_OPTIONS_TTL_MS) {
     return filterOptionsCache.value;
   }
-  const [suppliers, statuses, ratePlans, communicationPlans, customers, accountIds, modemIds, globalSimTypes, simProfileIds] =
-    await Promise.all([
-      distinctCcValues("supplier"),
-      distinctCcValues("status"),
-      distinctCcValues("rate_plan"),
-      distinctCcValues("communication_plan"),
-      distinctCcValues("customer"),
-      distinctCcValues("account_id"),
-      distinctCcValues("modem_id"),
-      distinctCcValues("global_sim_type"),
-      distinctCcValues("sim_profile_id"),
-    ]);
+  const [
+    suppliers,
+    statuses,
+    ratePlans,
+    communicationPlans,
+    customers,
+    endCustomers,
+    accountIds,
+    modemIds,
+    globalSimTypes,
+    simProfileIds,
+  ] = await Promise.all([
+    distinctCcValues("supplier"),
+    distinctCcValues("status"),
+    distinctCcValues("rate_plan"),
+    distinctCcValues("communication_plan"),
+    distinctCcValues("customer"),
+    distinctCcValues("end_customer"),
+    distinctCcValues("account_id"),
+    distinctCcValues("modem_id"),
+    distinctCcValues("global_sim_type"),
+    distinctCcValues("sim_profile_id"),
+  ]);
   const listedSuppliers = suppliers.includes(DEFAULT_PLAN_SUPPLIER)
     ? suppliers
     : [DEFAULT_PLAN_SUPPLIER, ...suppliers];
@@ -963,6 +1073,7 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
     ratePlans,
     communicationPlans,
     customers,
+    endCustomers,
     accountIds,
     modemIds,
     globalSimTypes,
@@ -1014,7 +1125,7 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
               SUM(CASE WHEN details_polled_at IS NULL THEN 1 ELSE 0 END) as never_enriched,
               SUM(CASE WHEN in_session IS NOT NULL THEN 1 ELSE 0 END) as session_known,
               SUM(CASE WHEN in_session IS NULL THEN 1 ELSE 0 END) as session_unknown,
-              -- CTD freshness = polled_at (updated by /ctdUsages only; sessionInfo paused)
+              -- CTD freshness = polled_at (advanced on CTD enrich; sessionInfo soft-fails separately)
               SUM(CASE WHEN polled_at >= ? THEN 1 ELSE 0 END) as session_fresh_24h,
               SUM(CASE WHEN polled_at < ? AND polled_at >= ? THEN 1 ELSE 0 END) as session_stale_24_48h,
               SUM(CASE WHEN polled_at IS NULL OR polled_at < ? THEN 1 ELSE 0 END) as session_older_48h,
@@ -1314,8 +1425,8 @@ async function persistDeviceEnrichment(
   iccid: string,
   details: JasperDevice | null,
   usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
-  /** null = leave prior in_session (sessionInfo soft-failed). */
-  inSession: 0 | 1 | null,
+  /** null = leave prior session columns (sessionInfo soft-failed). */
+  session: SessionPatch,
 ): Promise<void> {
   const now = isoNow();
   const status = details?.status ?? usage?.status ?? "";
@@ -1326,6 +1437,7 @@ async function persistDeviceEnrichment(
   const usageMb = bytesToMb(usage?.ctdDataUsage);
   const customFields = details ? packCustomFields(details) : null;
   const detailsJson = details ? JSON.stringify(details) : null;
+  const applySession = session ? 1 : 0;
 
   await getDB()
     .prepare(
@@ -1339,7 +1451,11 @@ async function persistDeviceEnrichment(
            customer = COALESCE(?, customer),
            end_consumer_id = COALESCE(?, end_consumer_id),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
-           in_session = CASE WHEN ? IS NULL THEN in_session ELSE ? END,
+           in_session = CASE WHEN ? = 0 THEN in_session ELSE ? END,
+           session_started_at = CASE WHEN ? = 0 THEN session_started_at ELSE ? END,
+           session_ended_at = CASE WHEN ? = 0 THEN session_ended_at ELSE ? END,
+           session_ip = CASE WHEN ? = 0 THEN session_ip ELSE ? END,
+           session_apn = CASE WHEN ? = 0 THEN session_apn ELSE ? END,
            date_added = COALESCE(?, date_added),
            date_activated = COALESCE(?, date_activated),
            date_updated = COALESCE(?, date_updated),
@@ -1371,8 +1487,16 @@ async function persistDeviceEnrichment(
       textOrNull(details?.customer),
       textOrNull(details?.endConsumerId),
       usageMb,
-      inSession,
-      inSession,
+      applySession,
+      session?.inSession ?? 0,
+      applySession,
+      session?.started ?? null,
+      applySession,
+      session?.ended ?? null,
+      applySession,
+      session?.ip ?? null,
+      applySession,
+      session?.apn ?? null,
       textOrNull(details?.dateAdded),
       textOrNull(details?.dateActivated),
       textOrNull(details?.dateUpdated),
@@ -1418,7 +1542,7 @@ async function persistDeviceEnrichment(
 function usageRefreshStatement(
   iccid: string,
   usage: Awaited<ReturnType<typeof fetchJasperCtdUsage>>,
-  inSession: 0 | 1 | null,
+  session: SessionPatch,
   polledAt: string,
 ) {
   const status = usage?.status ?? "";
@@ -1427,6 +1551,7 @@ function usageRefreshStatement(
   const imsi = textOrNull(usage?.imsi);
   const msisdn = textOrNull(usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
+  const applySession = session ? 1 : 0;
 
   // Usage ticks skip sims overlay — saves a D1 write per SIM. CC snapshot / pools
   // read cc_devices; full-details enrich still overlays warehouse sims.
@@ -1439,7 +1564,11 @@ function usageRefreshStatement(
            imsi = COALESCE(?, imsi),
            msisdn = COALESCE(?, msisdn),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
-           in_session = CASE WHEN ? IS NULL THEN in_session ELSE ? END,
+           in_session = CASE WHEN ? = 0 THEN in_session ELSE ? END,
+           session_started_at = CASE WHEN ? = 0 THEN session_started_at ELSE ? END,
+           session_ended_at = CASE WHEN ? = 0 THEN session_ended_at ELSE ? END,
+           session_ip = CASE WHEN ? = 0 THEN session_ip ELSE ? END,
+           session_apn = CASE WHEN ? = 0 THEN session_apn ELSE ? END,
            polled_at = ?
        WHERE iccid = ?`,
     )
@@ -1451,8 +1580,16 @@ function usageRefreshStatement(
       imsi,
       msisdn,
       usageMb,
-      inSession,
-      inSession,
+      applySession,
+      session?.inSession ?? 0,
+      applySession,
+      session?.started ?? null,
+      applySession,
+      session?.ended ?? null,
+      applySession,
+      session?.ip ?? null,
+      applySession,
+      session?.apn ?? null,
       polledAt,
       iccid,
     );
@@ -1471,18 +1608,13 @@ async function enrichFullDetailsBatch(
       if (Date.now() >= input.deadline) return enriched;
       if (!jasperHasBudget(2)) return enriched;
       const usage = await fetchJasperCtdUsage(iccid);
-      let inSession: 0 | 1 | null = null;
+      let session: SessionPatch = null;
       try {
-        const session = await fetchJasperSessionInfo(iccid);
-        inSession = session
-          ? sessionActive(session.dateSessionStarted, session.dateSessionEnded)
-            ? 1
-            : 0
-          : 0;
+        session = sessionPatchFromInfo(await fetchJasperSessionInfo(iccid));
       } catch (sessionErr) {
         if (!(sessionErr instanceof CcRateLimitError)) throw sessionErr;
       }
-      await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, inSession);
+      await persistDeviceEnrichment(iccid, detailsMap.get(iccid) ?? null, usage, session);
       input.done.add(iccid);
       enriched += 1;
       if (enriched % 10 === 0) await heartbeatLock();
@@ -1511,19 +1643,14 @@ async function enrichUsageBatch(
     if (!jasperHasBudget(2)) return enriched;
     try {
       const usage = await fetchJasperCtdUsage(iccid);
-      let inSession: 0 | 1 | null = null;
+      let session: SessionPatch = null;
       try {
-        const session = await fetchJasperSessionInfo(iccid);
-        inSession = session
-          ? sessionActive(session.dateSessionStarted, session.dateSessionEnded)
-            ? 1
-            : 0
-          : 0;
+        session = sessionPatchFromInfo(await fetchJasperSessionInfo(iccid));
       } catch (sessionErr) {
         if (!(sessionErr instanceof CcRateLimitError)) throw sessionErr;
-        // Keep prior in_session; CTD still advances polled_at.
+        // Keep prior session columns; CTD still advances polled_at.
       }
-      await usageRefreshStatement(iccid, usage, inSession, isoNow()).run();
+      await usageRefreshStatement(iccid, usage, session, isoNow()).run();
       input.done.add(iccid);
       enriched += 1;
       if (enriched % 50 === 0) await heartbeatLock();
@@ -1946,18 +2073,13 @@ export async function importCcIccids(iccids: string[]): Promise<CcImportResult> 
       try {
         await persistDevices([details], isoNow());
         const usage = await fetchJasperCtdUsage(iccid);
-        let inSession: 0 | 1 | null = null;
+        let session: SessionPatch = null;
         try {
-          const session = await fetchJasperSessionInfo(iccid);
-          inSession = session
-            ? sessionActive(session.dateSessionStarted, session.dateSessionEnded)
-              ? 1
-              : 0
-            : 0;
+          session = sessionPatchFromInfo(await fetchJasperSessionInfo(iccid));
         } catch (sessionErr) {
           if (!(sessionErr instanceof CcRateLimitError)) throw sessionErr;
         }
-        await persistDeviceEnrichment(iccid, details, usage, inSession);
+        await persistDeviceEnrichment(iccid, details, usage, session);
         imported += 1;
       } catch (err) {
         if (err instanceof CcRateLimitError || err instanceof CcBudgetError) {

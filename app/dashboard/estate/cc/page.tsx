@@ -28,6 +28,7 @@ function snapshotFilterParams(filter: CcDeviceFilter): URLSearchParams {
   if (filter.ratePlan) sp.set("ratePlan", filter.ratePlan);
   if (filter.communicationPlan) sp.set("commPlan", filter.communicationPlan);
   if (filter.customer) sp.set("customer", filter.customer);
+  if (filter.endCustomer) sp.set("endCustomer", filter.endCustomer);
   if (filter.accountId) sp.set("accountId", filter.accountId);
   if (filter.modemId) sp.set("modemId", filter.modemId);
   if (filter.globalSimType) sp.set("globalSim", filter.globalSimType);
@@ -94,6 +95,7 @@ export default async function CcSnapshotPage({
         ratePlan?: string;
         commPlan?: string;
         customer?: string;
+        endCustomer?: string;
         accountId?: string;
         modemId?: string;
         globalSim?: string;
@@ -111,6 +113,7 @@ export default async function CcSnapshotPage({
         ratePlan?: string;
         commPlan?: string;
         customer?: string;
+        endCustomer?: string;
         accountId?: string;
         modemId?: string;
         globalSim?: string;
@@ -130,6 +133,7 @@ export default async function CcSnapshotPage({
     ratePlan: params.ratePlan,
     communicationPlan: params.commPlan,
     customer: params.customer,
+    endCustomer: params.endCustomer,
     accountId: params.accountId,
     modemId: params.modemId,
     globalSimType: params.globalSim,
@@ -365,10 +369,17 @@ export default async function CcSnapshotPage({
           />
           <FilterSelect
             name="customer"
-            label="Customer"
+            label="CC customer"
             value={filter.customer ?? ""}
             options={options.customers}
-            allLabel="All customers"
+            allLabel="All CC customers"
+          />
+          <FilterSelect
+            name="endCustomer"
+            label="End customer"
+            value={filter.endCustomer ?? ""}
+            options={options.endCustomers}
+            allLabel="All end customers"
           />
           <FilterSelect
             name="accountId"

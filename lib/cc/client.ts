@@ -121,6 +121,7 @@ export type JasperSessionInfo = {
   dateSessionStarted?: string | null;
   dateSessionEnded?: string | null;
   ipAddress?: string | null;
+  apn?: string | null;
 };
 
 export function jasperConfigured(): boolean {

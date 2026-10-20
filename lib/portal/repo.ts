@@ -1,7 +1,11 @@
 import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { runCcMutation } from "@/lib/cc/adapter";
-import { listCcDevicesForCustomer, materializeWarehouseForCcCustomer } from "@/lib/cc/devices";
+import {
+  listCcDevicesForCustomer,
+  materializeWarehouseForCcCustomer,
+  setCcEndCustomers,
+} from "@/lib/cc/devices";
 import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
 import { getSimSku, listResellerSkus, listSimSkus, tenantHasSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
@@ -1033,6 +1037,8 @@ export async function assignSims(
       .run();
     if ((result.meta.changes ?? 0) === 0) throw new Error(`SIM ${iccid} is not in this tenant.`);
   }
+
+  await setCcEndCustomers(iccids, customer.name);
 
   await writeAudit(
     tenantId,

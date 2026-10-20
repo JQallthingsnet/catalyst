@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     ratePlan: url.searchParams.get("ratePlan") ?? "",
     communicationPlan: url.searchParams.get("commPlan") ?? "",
     customer: url.searchParams.get("customer") ?? "",
+    endCustomer: url.searchParams.get("endCustomer") ?? "",
     accountId: url.searchParams.get("accountId") ?? "",
     modemId: url.searchParams.get("modemId") ?? "",
     globalSimType: url.searchParams.get("globalSim") ?? "",
