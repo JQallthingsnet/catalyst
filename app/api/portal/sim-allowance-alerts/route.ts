@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import { notifySimAllowanceAlerts } from "@/lib/portal/sim-usage";
 
-/** Super admin: send (or resend) today's ≥80% digests (Pools + reseller Pools/Usage). */
+/** Super admin: send (or resend) today's digests using Alerts settings. */
 export async function POST(request: Request) {
   const ctx = await requirePortalApi();
   if (isResponse(ctx)) return ctx;
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => ({}))) as { force?: boolean };
-  const result = await notifySimAllowanceAlerts(undefined, { force: body.force !== false });
+  const result = await notifySimAllowanceAlerts({ force: body.force !== false });
   if (result.error) {
     return NextResponse.json(result, { status: 502 });
   }
