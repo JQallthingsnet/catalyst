@@ -131,27 +131,14 @@ export default async function DashboardPage() {
       <div className="mt-8 grid gap-4 lg:grid-cols-5 lg:items-start">
         <section className={showPools ? "lg:col-span-3" : "lg:col-span-5"}>
           {showPools ? (
-            <>
-              <div className="mb-3">
-                <h2 className="text-lg font-semibold">Data usage by modem_ID</h2>
-                <p className="mt-1 text-xs text-quiet">
-                  Same CTD plot as{" "}
-                  <Link href="/dashboard/pools" className="text-accent">
-                    Pools
-                  </Link>
-                  {" — "}
-                  top 10 modem_IDs by usage (add more from the chart).
-                </p>
-              </div>
-              <PoolsDashboard
-                initialRows={poolRows}
-                canEdit={false}
-                scopedCustomer={poolScope?.unrestricted ? null : poolScope?.exactCustomer || null}
-                platformView={Boolean(poolScope?.unrestricted)}
-                groupBy="modem"
-                mode="chart"
-              />
-            </>
+            <PoolsDashboard
+              initialRows={poolRows}
+              canEdit={false}
+              scopedCustomer={poolScope?.unrestricted ? null : poolScope?.exactCustomer || null}
+              platformView={Boolean(poolScope?.unrestricted)}
+              groupBy="modem"
+              mode="chart"
+            />
           ) : null}
         </section>
 
