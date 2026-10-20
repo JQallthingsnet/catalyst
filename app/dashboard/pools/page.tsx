@@ -3,10 +3,8 @@ import { requirePrivilege } from "@/lib/portal/guard";
 import { resolvePoolCustomerScope } from "@/lib/portal/pool-scope";
 import {
   listPoolModemLatest,
-  listPoolRatePlanLatest,
   snapshotPoolCustomerDailyIfNeeded,
   toPoolEntityFromModem,
-  toPoolEntityFromRatePlan,
 } from "@/lib/portal/pools";
 import { can } from "@/lib/portal/role-model";
 
@@ -22,14 +20,13 @@ export default async function PoolsPage({
   // One point per Sydney calendar day; first visit/cron after midnight creates today's row.
   await snapshotPoolCustomerDailyIfNeeded();
 
-  const rows = platformView
-    ? (await listPoolRatePlanLatest({ q: params.q ?? "" })).map(toPoolEntityFromRatePlan)
-    : (
-        await listPoolModemLatest({
-          q: params.q ?? "",
-          exactCustomer: scope.exactCustomer,
-        })
-      ).map(toPoolEntityFromModem);
+  // Always group by modem_ID (platform = all customers; reseller = bound CC customer).
+  const rows = (
+    await listPoolModemLatest({
+      q: params.q ?? "",
+      exactCustomer: platformView ? undefined : scope.exactCustomer,
+    })
+  ).map(toPoolEntityFromModem);
 
   return (
     <PoolsDashboard
@@ -37,7 +34,7 @@ export default async function PoolsPage({
       canEdit={can(ctx.role, "pool.create")}
       scopedCustomer={platformView ? null : scope.exactCustomer || null}
       platformView={platformView}
-      groupBy={platformView ? "rate_plan" : "modem"}
+      groupBy="modem"
     />
   );
 }

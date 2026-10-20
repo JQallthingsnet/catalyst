@@ -1,8 +1,16 @@
 import Link from "next/link";
+import { PoolsDashboard } from "@/components/portal/pools-dashboard";
 import { TenantDirectory } from "@/components/portal/tenant-directory";
 import { ccInventorySummary } from "@/lib/cc/devices";
 import { requirePortal } from "@/lib/portal/guard";
+import { resolvePoolCustomerScope } from "@/lib/portal/pool-scope";
+import {
+  listPoolModemLatest,
+  snapshotPoolCustomerDailyIfNeeded,
+  toPoolEntityFromModem,
+} from "@/lib/portal/pools";
 import { dashboardSummary } from "@/lib/portal/repo";
+import { can } from "@/lib/portal/role-model";
 import { excludeHomeTenant, listPlatformTenants } from "@/lib/portal/tenant";
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -17,7 +25,8 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
 
 export default async function DashboardPage() {
   const ctx = await requirePortal();
-  const [data, tenants, ccSummary] = await Promise.all([
+  const showPools = can(ctx.role, "pool.view");
+  const [data, tenants, ccSummary, poolScope] = await Promise.all([
     dashboardSummary(ctx.tenantId),
     ctx.isSuperAdmin && ctx.role === "super_admin" ? listPlatformTenants(true) : Promise.resolve([]),
     ctx.isSuperAdmin && ctx.role === "super_admin"
@@ -38,10 +47,21 @@ export default async function DashboardPage() {
           detailsOlder14d: 0,
           usageMb: 0,
         }),
+    showPools ? resolvePoolCustomerScope(ctx) : Promise.resolve(null),
   ]);
+
+  let poolRows: ReturnType<typeof toPoolEntityFromModem>[] = [];
+  if (showPools && poolScope) {
+    await snapshotPoolCustomerDailyIfNeeded();
+    poolRows = (
+      await listPoolModemLatest({
+        exactCustomer: poolScope.unrestricted ? undefined : poolScope.exactCustomer,
+      })
+    ).map(toPoolEntityFromModem);
+  }
+
   const resellers = excludeHomeTenant(tenants, ctx.homeTenantId);
   const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
-  const maxMb = Math.max(...data.usage.map((row) => row.mb), 1);
 
   return (
     <div>
@@ -50,23 +70,7 @@ export default async function DashboardPage() {
         <h1 className="mt-1 text-3xl font-semibold">Dashboard</h1>
       </div>
 
-      {resellers.length > 0 || onPlatform ? (
-        <div className="mt-6 space-y-3">
-          <TenantDirectory tenants={resellers} currentId={ctx.tenantId} />
-          <p className="text-sm text-quiet">
-            See every customer and warehouse, or{" "}
-            <Link href="/dashboard/estate" className="text-accent">
-              open Estate
-            </Link>
-            .{" "}
-            <Link href="/dashboard/estate/allocate" className="text-accent">
-              Sell stock
-            </Link>{" "}
-            to put SIMs in a reseller warehouse.
-          </p>
-        </div>
-      ) : null}
-
+      {/* 1. Snapshot / tenant health */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {onPlatform ? (
           <>
@@ -75,7 +79,7 @@ export default async function DashboardPage() {
             <Kpi
               label="In session"
               value={ccSummary.inSession.toLocaleString("en-AU")}
-              hint={`<24h ${ccSummary.sessionFresh24h.toLocaleString("en-AU")} · >48h ${ccSummary.sessionOlder48h.toLocaleString("en-AU")} · unknown ${ccSummary.sessionUnknown.toLocaleString("en-AU")}`}
+              hint={`CTD <24h ${ccSummary.sessionFresh24h.toLocaleString("en-AU")} · >48h ${ccSummary.sessionOlder48h.toLocaleString("en-AU")}`}
             />
             <Kpi
               label="Details enriched"
@@ -83,7 +87,7 @@ export default async function DashboardPage() {
               hint={
                 ccSummary.neverEnriched > 0
                   ? `${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >14d ${ccSummary.detailsOlder14d.toLocaleString("en-AU")}`
-                  : `<7d ${ccSummary.detailsFresh7d.toLocaleString("en-AU")} · 7–14d ${ccSummary.detailsStale7to14d.toLocaleString("en-AU")} · >14d ${ccSummary.detailsOlder14d.toLocaleString("en-AU")}`
+                  : `<7d ${ccSummary.detailsFresh7d.toLocaleString("en-AU")} · 7–14d ${ccSummary.detailsStale7to14d.toLocaleString("en-AU")}`
               }
             />
           </>
@@ -96,43 +100,78 @@ export default async function DashboardPage() {
           </>
         )}
       </div>
+      {onPlatform ? (
+        <p className="mt-2 text-sm text-quiet">
+          CC health from the Jasper snapshot — open{" "}
+          <Link href="/dashboard/estate/cc" className="text-accent">
+            CC snapshot
+          </Link>{" "}
+          for sync and inventory.
+        </p>
+      ) : null}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-5">
-        <article className="rounded-card border border-line bg-panel p-5 lg:col-span-3">
-          <h2 className="text-lg font-semibold">Usage 7 days</h2>
-          <div className="mt-4 flex h-48 items-end gap-2">
-            {data.usage.length === 0 ? (
-              <p className="text-sm text-quiet">No usage yet. Control Center is source of rated usage.</p>
-            ) : (
-              data.usage.map((row) => (
-                <div key={row.day} className="flex flex-1 flex-col items-center gap-2">
-                  <div
-                    className="w-full rounded-t-lg bg-accent/80"
-                    style={{ height: `${Math.max(8, (row.mb / maxMb) * 100)}%` }}
-                    title={`${row.mb} MB`}
-                  />
-                  <span className="text-[10px] text-quiet">{row.day.slice(5)}</span>
-                </div>
-              ))
-            )}
+      {/* 2. Pools CTD by modem_ID */}
+      {showPools ? (
+        <section className="mt-8">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold">Data usage by modem_ID</h2>
+              <p className="mt-1 text-xs text-quiet">
+                Same CTD plot as{" "}
+                <Link href="/dashboard/pools" className="text-accent">
+                  Pools
+                </Link>
+                {" — "}
+                top 10 modem_IDs by usage (add more from the chart).
+              </p>
+            </div>
           </div>
-        </article>
-        <article className="rounded-card border border-line bg-panel p-5 lg:col-span-2">
-          <h2 className="text-lg font-semibold">Activity</h2>
-          <ul className="mt-4 space-y-3">
-            {data.activity.length === 0 ? (
-              <li className="text-sm text-quiet">No activity yet.</li>
-            ) : (
-              data.activity.map((item) => (
-                <li key={item.id} className="border-b border-line pb-3 text-sm last:border-0">
-                  <p className="text-ink">{item.detail}</p>
-                  <p className="mt-1 text-xs text-quiet">{new Date(item.createdAt).toLocaleString("en-AU")}</p>
-                </li>
-              ))
-            )}
-          </ul>
-        </article>
-      </div>
+          <PoolsDashboard
+            initialRows={poolRows}
+            canEdit={false}
+            scopedCustomer={poolScope?.unrestricted ? null : poolScope?.exactCustomer || null}
+            platformView={Boolean(poolScope?.unrestricted)}
+            groupBy="modem"
+            mode="chart"
+          />
+        </section>
+      ) : null}
+
+      {/* 3. Organisations (platform) */}
+      {resellers.length > 0 || onPlatform ? (
+        <div className="mt-8 space-y-3">
+          <TenantDirectory tenants={resellers} currentId={ctx.tenantId} />
+          <p className="text-sm text-quiet">
+            See every customer and warehouse on{" "}
+            <Link href="/dashboard/estate" className="text-accent">
+              Estate
+            </Link>
+            , or{" "}
+            <Link href="/dashboard/estate/allocate" className="text-accent">
+              sell stock
+            </Link>{" "}
+            into a reseller warehouse.
+          </p>
+        </div>
+      ) : null}
+
+      {/* 4. Audit trail */}
+      <article className="mt-8 max-w-xl rounded-card border border-line bg-panel p-5">
+        <h2 className="text-lg font-semibold">Recent activity</h2>
+        <p className="mt-1 text-xs text-quiet">Audit log for this organisation (creates, deletes, assigns).</p>
+        <ul className="mt-4 space-y-3">
+          {data.activity.length === 0 ? (
+            <li className="text-sm text-quiet">No activity yet.</li>
+          ) : (
+            data.activity.map((item) => (
+              <li key={item.id} className="border-b border-line pb-3 text-sm last:border-0">
+                <p className="text-ink">{item.detail}</p>
+                <p className="mt-1 text-xs text-quiet">{new Date(item.createdAt).toLocaleString("en-AU")}</p>
+              </li>
+            ))
+          )}
+        </ul>
+      </article>
     </div>
   );
 }

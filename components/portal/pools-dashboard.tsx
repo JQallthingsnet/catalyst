@@ -14,6 +14,7 @@ export type PoolLatestRow = {
   modemCount: number;
   simCount: number;
   pct: number;
+  customer?: string | null;
 };
 
 export type PoolSeriesPoint = {
@@ -427,14 +428,17 @@ export function PoolsDashboard({
   canEdit,
   scopedCustomer = null,
   platformView = true,
-  groupBy = "customer",
+  groupBy = "modem",
+  mode = "full",
 }: {
   initialRows: PoolLatestRow[];
   canEdit: boolean;
   scopedCustomer?: string | null;
   platformView?: boolean;
-  /** Super admin → rate_plan; reseller → modem. */
+  /** Pools plot groups by modem_ID (customer SIM groups). */
   groupBy?: PoolGroupBy;
+  /** `chart` = embeddable CTD plot only (e.g. Dashboard). */
+  mode?: "full" | "chart";
 }) {
   const entityLabel =
     groupBy === "rate_plan" ? "Rate plan" : groupBy === "modem" ? "modem_ID" : "CC customer";
@@ -495,11 +499,49 @@ export function PoolsDashboard({
     const q = filterQ.trim().toLowerCase();
     const rows = [...initialRows].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
     if (!q) return rows;
-    return rows.filter((row) => row.name.toLowerCase().includes(q));
+    return rows.filter(
+      (row) =>
+        row.name.toLowerCase().includes(q) ||
+        (row.customer ?? "").toLowerCase().includes(q),
+    );
   }, [filterQ, initialRows]);
 
   function addToPlot(name: string) {
     setPlotted((current) => (current.includes(name) ? current : [...current, name]));
+  }
+
+  const chart = (
+    <MultiEntityChart
+      plotted={plotted}
+      seriesByName={seriesByName}
+      latestByName={latestByName}
+      busy={seriesBusy}
+      allowPick
+      entityLabel={entityLabel}
+      onRemove={(name) => setPlotted((current) => current.filter((c) => c !== name))}
+      onOpenPicker={() => setPickerOpen(true)}
+    />
+  );
+
+  const picker = (
+    <EntityPickerDialog
+      open={pickerOpen}
+      rows={initialRows}
+      selected={plotted}
+      entityLabel={entityLabel}
+      onClose={() => setPickerOpen(false)}
+      onApply={setPlotted}
+    />
+  );
+
+  if (mode === "chart") {
+    return (
+      <div>
+        {message ? <p className="mb-3 text-sm text-quiet">{message}</p> : null}
+        {chart}
+        {picker}
+      </div>
+    );
   }
 
   return (
@@ -508,15 +550,17 @@ export function PoolsDashboard({
         <div>
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">
-            {groupBy === "rate_plan"
-              ? "Grouped by Jasper/CC rate plan: daily Σ CTD MB and Σ rate plan allowance across SIMs on that plan (one point per Sydney calendar day)."
+            {groupBy === "modem" && platformView
+              ? "Grouped by customer modem_ID: daily Σ CTD MB and Σ modem_ID allowance across SIMs with that ID (one point per Sydney calendar day)."
               : groupBy === "modem" && scopedCustomer
                 ? `Grouped by modem_ID for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ modem_ID allowance across SIMs with that ID (one point per Sydney calendar day).`
                 : groupBy === "modem"
                   ? "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see modem_ID pools."
-                  : scopedCustomer
-                    ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and modem_ID allowance (one point per Sydney calendar day, auto-saved).`
-                    : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
+                  : groupBy === "rate_plan"
+                    ? "Grouped by Jasper/CC rate plan: daily Σ CTD MB and Σ rate plan allowance across SIMs on that plan (one point per Sydney calendar day)."
+                    : scopedCustomer
+                      ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and modem_ID allowance (one point per Sydney calendar day, auto-saved).`
+                      : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
           </p>
         </div>
         {canEdit && platformView ? (
@@ -541,18 +585,7 @@ export function PoolsDashboard({
 
       {message ? <p className="mt-3 text-sm text-quiet">{message}</p> : null}
 
-      <div className="mt-6">
-        <MultiEntityChart
-          plotted={plotted}
-          seriesByName={seriesByName}
-          latestByName={latestByName}
-          busy={seriesBusy}
-          allowPick
-          entityLabel={entityLabel}
-          onRemove={(name) => setPlotted((current) => current.filter((c) => c !== name))}
-          onOpenPicker={() => setPickerOpen(true)}
-        />
-      </div>
+      <div className="mt-6">{chart}</div>
 
       <form
         className="mt-6"
@@ -563,7 +596,11 @@ export function PoolsDashboard({
         <input
           value={filterQ}
           onChange={(event) => setFilterQ(event.target.value)}
-          placeholder={`Filter ${entityLabel.toLowerCase()}`}
+          placeholder={
+            groupBy === "modem"
+              ? "Filter modem_ID or customer"
+              : `Filter ${entityLabel.toLowerCase()}`
+          }
           className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent"
         />
       </form>
@@ -573,6 +610,7 @@ export function PoolsDashboard({
           <thead className="text-quiet">
             <tr>
               <th className="px-4 py-3">{entityLabel}</th>
+              {groupBy === "modem" ? <th className="px-4 py-3">Customer</th> : null}
               <th className="px-4 py-3">Day</th>
               <th className="px-4 py-3">CTD MB</th>
               <th className="px-4 py-3">{allowanceLabel}</th>
@@ -594,9 +632,12 @@ export function PoolsDashboard({
                           style={{ background: colorFor(row.name, plotted) }}
                         />
                       ) : null}
-                      {row.name}
+                      <span className="font-mono text-xs">{row.name}</span>
                     </span>
                   </td>
+                  {groupBy === "modem" ? (
+                    <td className="px-4 py-3 text-quiet">{row.customer || "—"}</td>
+                  ) : null}
                   <td className="px-4 py-3 font-mono text-xs">{row.day}</td>
                   <td className="px-4 py-3">
                     {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
@@ -640,14 +681,7 @@ export function PoolsDashboard({
         </table>
       </div>
 
-      <EntityPickerDialog
-        open={pickerOpen}
-        rows={initialRows}
-        selected={plotted}
-        entityLabel={entityLabel}
-        onClose={() => setPickerOpen(false)}
-        onApply={setPlotted}
-      />
+      {picker}
       {platformView ? (
         <>
           <RatePlanAllowancesDialog

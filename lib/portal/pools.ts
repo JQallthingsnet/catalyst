@@ -67,6 +67,8 @@ export type PoolEntityLatest = {
   modemCount: number;
   simCount: number;
   pct: number;
+  /** CC customer when grouping by modem_ID. */
+  customer?: string | null;
 };
 
 /** Distinct modem_IDs from CC snapshot with optional manual allowance. */
@@ -796,6 +798,7 @@ export function toPoolEntityFromModem(row: PoolModemLatest): PoolEntityLatest {
     modemCount: row.simCount,
     simCount: row.simCount,
     pct: row.pct,
+    customer: row.customer,
   };
 }
 

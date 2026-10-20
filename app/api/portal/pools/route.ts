@@ -7,14 +7,11 @@ import {
   listModemAllowances,
   listPoolModemLatest,
   listPoolModemSeries,
-  listPoolRatePlanLatest,
-  listPoolRatePlanSeries,
   listRatePlanAllowances,
   setModemAllowance,
   setRatePlanAllowance,
   snapshotPoolCustomerDaily,
   toPoolEntityFromModem,
-  toPoolEntityFromRatePlan,
 } from "@/lib/portal/pools";
 
 export async function GET(request: Request) {
@@ -52,24 +49,10 @@ export async function GET(request: Request) {
       .split(",")
       .map((c) => c.trim())
       .filter(Boolean);
-    if (platformView) {
-      const series = await listPoolRatePlanSeries({
-        ratePlans: keys.length ? keys : undefined,
-        fromDay: url.searchParams.get("from") ?? undefined,
-        toDay: url.searchParams.get("to") ?? undefined,
-      });
-      return NextResponse.json({
-        series: series.map((point) => ({
-          name: point.ratePlan,
-          day: point.day,
-          ctdUsageMb: point.ctdUsageMb,
-          allowanceMb: point.allowanceMb,
-        })),
-      });
-    }
+    // Platform + reseller both plot by modem_ID (reseller scoped to bound CC customer).
     const series = await listPoolModemSeries({
       modemIds: keys.length ? keys : undefined,
-      exactCustomer: scope.exactCustomer,
+      exactCustomer: platformView ? undefined : scope.exactCustomer,
       fromDay: url.searchParams.get("from") ?? undefined,
       toDay: url.searchParams.get("to") ?? undefined,
     });
@@ -83,16 +66,11 @@ export async function GET(request: Request) {
     });
   }
 
-  if (platformView) {
-    return NextResponse.json({
-      rows: (await listPoolRatePlanLatest({ q })).map(toPoolEntityFromRatePlan),
-    });
-  }
   return NextResponse.json({
     rows: (
       await listPoolModemLatest({
         q,
-        exactCustomer: scope.exactCustomer,
+        exactCustomer: platformView ? undefined : scope.exactCustomer,
       })
     ).map(toPoolEntityFromModem),
   });
