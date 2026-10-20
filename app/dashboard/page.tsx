@@ -143,7 +143,14 @@ export default async function DashboardPage() {
         </section>
 
         <article className="flex h-full min-h-0 flex-col rounded-card border border-line bg-panel p-5 lg:col-span-2">
-          <h2 className="shrink-0 text-lg font-semibold">Recent activity</h2>
+          <div className="flex shrink-0 items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold">Recent activity</h2>
+            {can(ctx.role, "audit.view") ? (
+              <Link href="/dashboard/logs" className="text-xs text-accent hover:underline">
+                View all
+              </Link>
+            ) : null}
+          </div>
           <p className="mt-1 shrink-0 text-xs text-quiet">
             Audit log for this organisation (creates, deletes, assigns).
           </p>

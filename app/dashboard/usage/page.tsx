@@ -181,21 +181,28 @@ export default async function UsagePage({
         </p>
       )}
 
-      <div className="mt-8">
-        <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
-        <p className="mt-1 text-xs text-quiet">Portal audit log for this organisation (not the Plan changes book).</p>
-        <ul className="mt-3 space-y-2 text-sm">
-          {audit.slice(0, 12).map((item) => (
-            <li key={item.id} className="rounded-card border border-line bg-panel px-4 py-3">
-              <p className="text-xs text-quiet">{formatAuDateTime(item.createdAt)}</p>
-              <p className="mt-1 text-ink">{item.detail}</p>
-            </li>
-          ))}
-          {audit.length === 0 ? (
-            <li className="rounded-card border border-line bg-panel px-4 py-8 text-quiet">No activity yet.</li>
-          ) : null}
-        </ul>
-      </div>
+      {can(ctx.role, "audit.view") ? (
+        <div className="mt-8">
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
+            <Link href="/dashboard/logs" className="text-xs text-accent hover:underline">
+              View all logs
+            </Link>
+          </div>
+          <p className="mt-1 text-xs text-quiet">Portal audit log for this organisation (not the Plan changes book).</p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {audit.slice(0, 12).map((item) => (
+              <li key={item.id} className="rounded-card border border-line bg-panel px-4 py-3">
+                <p className="text-xs text-quiet">{formatAuDateTime(item.createdAt)}</p>
+                <p className="mt-1 text-ink">{item.detail}</p>
+              </li>
+            ))}
+            {audit.length === 0 ? (
+              <li className="rounded-card border border-line bg-panel px-4 py-8 text-quiet">No activity yet.</li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }
