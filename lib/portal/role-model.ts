@@ -20,6 +20,7 @@ export type Privilege =
   | "lifecycle"
   | "rate_plan.change"
   | "audit.view"
+  | "alerts.manage"
   | "settings"
   | "invite.operator"
   | "invite.reseller_admin"
@@ -43,6 +44,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "lifecycle",
     "rate_plan.change",
     "audit.view",
+    "alerts.manage",
     "settings",
     "invite.operator",
     "invite.reseller_admin",
@@ -59,6 +61,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "lifecycle",
     "rate_plan.change",
     "audit.view",
+    "alerts.manage",
     "settings",
     "invite.operator",
     "contract.view",
@@ -74,6 +77,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/estate/cc", label: "CC snapshot" },
     { href: "/dashboard/pools", label: "Pools" },
     { href: "/dashboard/usage", label: "Usage" },
+    { href: "/dashboard/alerts", label: "Alerts" },
     { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
     { href: "/dashboard/contracts", label: "Contract" },
     { href: "/dashboard/catalogue", label: "Catalogue" },
@@ -89,6 +93,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/pools", label: "Pools" },
     { href: "/dashboard/usage", label: "Usage" },
+    { href: "/dashboard/alerts", label: "Alerts" },
     { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
     { href: "/dashboard/contracts", label: "Contract" },
     { href: "/dashboard/plans", label: "Plans" },

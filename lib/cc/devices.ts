@@ -28,14 +28,14 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — 5 min cron; CTD @ ~2/s fits well under this.
+ * Auto poll wall budget — 15 min cron; CTD @ ~2/s fits well under this.
  */
 const AUTO_BUDGET_MS = 3 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
  * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1).
  * CTD + sessionInfo = 2 calls/SIM; leave headroom for list/lock/D1/details drip.
- * 5 min × ~20 SIMs ≈ ~5760 CTD refreshes/day until Paid.
+ * 15 min × ~20 SIMs ≈ ~1920 CTD refreshes/day until Paid.
  */
 const JASPER_CALLS_AUTO = 40;
 /**
@@ -68,7 +68,7 @@ const AUTO_DETAILS_PER_TICK = 1;
  * Work oldest `polled_at` first so >24h / >48h drain first.
  */
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
-/** Hold the D1 lock for the tick budget + small buffer; well under 5 min cron gap. */
+/** Hold the D1 lock for the tick budget + small buffer; well under 15 min cron gap. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 /**
  * After a tick that rate-limits with 0 SIMs refreshed, skip auto-poll for this long.

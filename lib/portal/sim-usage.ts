@@ -1,13 +1,10 @@
 import { sendSystemEmail } from "@/lib/auth/email";
 import { getDB } from "@/lib/env";
+import { getAlertSetting, PLATFORM_ALERT_SCOPE } from "@/lib/portal/alert-settings";
 import { listPoolModemLatest, listPoolRatePlanLatest } from "@/lib/portal/pools";
 import { listCcCustomerBindings } from "@/lib/portal/tenant";
 import { sydneyDayKey } from "@/lib/portal/time";
 
-export const SIM_ALLOWANCE_ALERT_PCT = 80;
-
-/** Platform (super admin) daily pools digest. */
-const SUPER_ADMIN_ALERT_TO = ["jerry.qiu@allthingsnet.io"];
 
 /** Sentinel ICCID prefixes: one row per digest kind × scope × Sydney day. */
 const DIGEST_POOLS_RATE_PLAN = "__digest_pools_rp__";
@@ -124,18 +121,6 @@ type PoolBreachRow = {
   pct: number;
   simCount: number;
 };
-
-async function listResellerAdminEmails(tenantId: string): Promise<string[]> {
-  const rows = await getDB()
-    .prepare(
-      `SELECT email FROM tenant_members
-       WHERE tenant_id = ? AND role = 'reseller_admin'
-       ORDER BY email COLLATE NOCASE`,
-    )
-    .bind(tenantId)
-    .all<{ email: string }>();
-  return [...new Set((rows.results ?? []).map((row) => row.email.trim().toLowerCase()).filter(Boolean))];
-}
 
 async function digestAlreadySent(marker: string, day: string, threshold: number): Promise<boolean> {
   const row = await getDB()
@@ -421,10 +406,14 @@ async function sendPoolsRatePlanDigest(input: {
   day: string;
   threshold: number;
   force: boolean;
+  recipients: string[];
 }): Promise<DigestAttempt> {
   const marker = DIGEST_POOLS_RATE_PLAN;
   if (!input.force && (await digestAlreadySent(marker, input.day, input.threshold))) {
     return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "already_sent_today" };
+  }
+  if (input.recipients.length === 0) {
+    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_recipients" };
   }
 
   const breaches = (await listPoolRatePlanLatest())
@@ -454,7 +443,7 @@ async function sendPoolsRatePlanDigest(input: {
     audience: "super",
   });
 
-  const emailed = await sendAlertHtml(SUPER_ADMIN_ALERT_TO, subject, html);
+  const emailed = await sendAlertHtml(input.recipients, subject, html);
   if (!emailed) {
     return {
       checked: breaches.length,
@@ -466,7 +455,7 @@ async function sendPoolsRatePlanDigest(input: {
 
   await markDigestSent(marker, input.day, input.threshold, "rate_plan");
   console.log(
-    `[sim-usage] pools rate-plan digest emailed: ${breaches.length} ≥${input.threshold}% → ${SUPER_ADMIN_ALERT_TO.join(",")}`,
+    `[sim-usage] pools rate-plan digest emailed: ${breaches.length} ≥${input.threshold}% → ${input.recipients.join(",")}`,
   );
   return { checked: breaches.length, newlyAlerted: breaches.length, emailed: true };
 }
@@ -580,14 +569,11 @@ async function sendUsageModemDigest(input: {
 }
 
 /**
- * Daily ≥80% digests (once per Sydney day unless force):
- * - Super admin → Pools by rate plan (jerry.qiu@allthingsnet.io)
- * - Each bound reseller → Pools by modem_ID + Usage per SIM (reseller_admin emails)
+ * Daily digests (once per Sydney day unless force), using Alerts settings:
+ * - Super admin → Pools by rate plan (platform pool recipients + threshold)
+ * - Each bound reseller → Pools by modem_ID + Usage per SIM (tenant pool/usage settings)
  */
-export async function notifySimAllowanceAlerts(
-  threshold = SIM_ALLOWANCE_ALERT_PCT,
-  opts?: { force?: boolean },
-): Promise<{
+export async function notifySimAllowanceAlerts(opts?: { force?: boolean }): Promise<{
   checked: number;
   newlyAlerted: number;
   emailed: boolean;
@@ -603,7 +589,7 @@ export async function notifySimAllowanceAlerts(
     await db
       .prepare(
         `DELETE FROM sim_allowance_alerts
-         WHERE day = ? AND threshold = ?
+         WHERE day = ?
            AND (
              iccid = ?
              OR iccid = ?
@@ -613,7 +599,6 @@ export async function notifySimAllowanceAlerts(
       )
       .bind(
         day,
-        threshold,
         LEGACY_DAILY_DIGEST_MARKER,
         DIGEST_POOLS_RATE_PLAN,
         `${DIGEST_POOLS_MODEM_PREFIX}%`,
@@ -636,35 +621,54 @@ export async function notifySimAllowanceAlerts(
     if (result.skipReason) skipReasons.add(result.skipReason);
   };
 
-  fold(await sendPoolsRatePlanDigest({ day, threshold, force }));
+  const platformPool = await getAlertSetting(PLATFORM_ALERT_SCOPE, "pool");
+  if (platformPool.thresholdPct != null && platformPool.recipients.length > 0) {
+    fold(
+      await sendPoolsRatePlanDigest({
+        day,
+        threshold: platformPool.thresholdPct,
+        force,
+        recipients: platformPool.recipients,
+      }),
+    );
+  } else {
+    skipReasons.add("no_recipients");
+  }
 
   const bindings = await listCcCustomerBindings();
   for (const binding of bindings) {
-    const recipients = await listResellerAdminEmails(binding.tenantId);
-    if (recipients.length === 0) {
+    const [poolSettings, usageSettings] = await Promise.all([
+      getAlertSetting(binding.tenantId, "pool"),
+      getAlertSetting(binding.tenantId, "usage"),
+    ]);
+    if (poolSettings.thresholdPct != null && poolSettings.recipients.length > 0) {
+      fold(
+        await sendPoolsModemDigest({
+          day,
+          threshold: poolSettings.thresholdPct,
+          force,
+          tenantId: binding.tenantId,
+          customer: binding.ccCustomer,
+          recipients: poolSettings.recipients,
+        }),
+      );
+    } else {
       skipReasons.add("no_recipients");
-      continue;
     }
-    fold(
-      await sendPoolsModemDigest({
-        day,
-        threshold,
-        force,
-        tenantId: binding.tenantId,
-        customer: binding.ccCustomer,
-        recipients,
-      }),
-    );
-    fold(
-      await sendUsageModemDigest({
-        day,
-        threshold,
-        force,
-        tenantId: binding.tenantId,
-        customer: binding.ccCustomer,
-        recipients,
-      }),
-    );
+    if (usageSettings.thresholdPct != null && usageSettings.recipients.length > 0) {
+      fold(
+        await sendUsageModemDigest({
+          day,
+          threshold: usageSettings.thresholdPct,
+          force,
+          tenantId: binding.tenantId,
+          customer: binding.ccCustomer,
+          recipients: usageSettings.recipients,
+        }),
+      );
+    } else {
+      skipReasons.add("no_recipients");
+    }
   }
 
   if (emailed) {
