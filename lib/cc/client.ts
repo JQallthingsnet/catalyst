@@ -217,7 +217,12 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
         const { message, body } = await readJasperError(res);
         if (isJasperSoftRateLimit(res.status, body, message)) {
           attempt += 1;
-          if (attempt > MAX_429_RETRIES) throw new CcRateLimitError(message);
+          if (attempt > MAX_429_RETRIES) {
+            // Enrich endpoints allow 404 → treat exhausted soft-limits as empty
+            // rather than aborting the whole tick at 0 SIMs (sessionInfo is flaky).
+            if (allow404) return null;
+            throw new CcRateLimitError(message);
+          }
           const delayMs = Math.min(30_000, 2_000 * 2 ** (attempt - 1));
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           lastCallAt = Date.now();

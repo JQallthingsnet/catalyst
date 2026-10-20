@@ -1503,9 +1503,16 @@ async function enrichSessionOnlyBatch(
     if (Date.now() >= input.deadline) return enriched;
     if (!jasperHasBudget(2)) return enriched;
     try {
-      // Sequential CTD then session — Optus often 500/30000001 under concurrent burst.
+      // Sequential CTD then session. Persist after CTD even if sessionInfo is flaky
+      // (null session ⇒ not in session) so polled_at still advances.
       const usage = await fetchJasperCtdUsage(iccid);
-      const session = await fetchJasperSessionInfo(iccid);
+      let session: Awaited<ReturnType<typeof fetchJasperSessionInfo>> = null;
+      try {
+        session = await fetchJasperSessionInfo(iccid);
+      } catch (sessionErr) {
+        if (!(sessionErr instanceof CcRateLimitError)) throw sessionErr;
+        // Keep CTD progress; session stays unknown/false for this tick.
+      }
       await sessionRefreshStatement(iccid, usage, session, isoNow()).run();
       input.done.add(iccid);
       enriched += 1;
