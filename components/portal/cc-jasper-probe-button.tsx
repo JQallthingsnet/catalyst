@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useId, useRef, useState } from "react";
 
 type ProbeResult = {
   kind: string;
@@ -22,8 +21,6 @@ type CtdBody = {
   ctdSessionCount?: number;
   msisdn?: string;
   imei?: string;
-  errorMessage?: string;
-  errorCode?: string | number;
 };
 
 type SessionBody = {
@@ -31,8 +28,6 @@ type SessionBody = {
   dateSessionEnded?: string | null;
   ipAddress?: string | null;
   apn?: string | null;
-  errorMessage?: string;
-  errorCode?: string | number;
 };
 
 function asRecord(body: unknown): Record<string, unknown> | null {
@@ -159,7 +154,7 @@ function ProbeCard({ result }: { result: ProbeResult }) {
         {showRaw ? "Hide raw JSON" : "Show raw JSON"}
       </button>
       {showRaw ? (
-        <pre className="mt-2 max-h-48 overflow-auto rounded-xl border border-line bg-panel p-2 text-left text-[11px] text-ink">
+        <pre className="mt-2 max-h-40 overflow-auto rounded-xl border border-line bg-panel p-2 text-left text-[11px] text-ink">
           {JSON.stringify(result.body ?? result.rawText, null, 2)}
         </pre>
       ) : null}
@@ -167,16 +162,33 @@ function ProbeCard({ result }: { result: ProbeResult }) {
   );
 }
 
-/** Super admin: CTD + sessionInfo probe with structured results. */
+/** Super admin: CTD + sessionInfo probe in a modal dialog. */
 export function CcJasperProbeButton() {
-  const [mounted, setMounted] = useState(false);
+  const titleId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [iccid, setIccid] = useState("");
   const [results, setResults] = useState<ProbeResult[]>([]);
   const [error, setError] = useState("");
 
-  useEffect(() => setMounted(true), []);
+  function close() {
+    if (busy) return;
+    setOpen(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const t = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.clearTimeout(t);
+    };
+  }, [open, busy]);
 
   async function probeOne(kind: "ctd" | "session", probeIccid?: string): Promise<ProbeResult> {
     const res = await fetch("/api/portal/cc-probe", {
@@ -226,81 +238,103 @@ export function CcJasperProbeButton() {
     }
   }
 
-  const slot = mounted ? document.getElementById("cc-probe-panel") : null;
   const probedIccid = results[0]?.iccid || iccid.replace(/\s/g, "") || null;
-
-  const panel =
-    open && slot
-      ? createPortal(
-          <div className="mt-4 rounded-card border border-line bg-panel p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-ink">Jasper probe</p>
-                <p className="mt-1 text-sm text-quiet">
-                  Raw Control Center GETs — CTD for usage, sessionInfo for live session (flaky on this account).
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="text-sm text-quiet hover:text-ink"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="ICCID (optional — blank = oldest in D1)"
-                value={iccid}
-                onChange={(e) => setIccid(e.target.value)}
-                disabled={busy}
-                className="min-w-0 flex-1 rounded-card border border-line bg-canvas px-3 py-2 font-mono text-sm text-ink placeholder:font-sans placeholder:text-quiet disabled:opacity-40"
-              />
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void probe()}
-                className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent disabled:opacity-40"
-              >
-                {busy ? "Probing…" : "Run probe"}
-              </button>
-            </div>
-
-            {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
-
-            {probedIccid && results.length > 0 ? (
-              <p className="mt-4 text-xs text-quiet">
-                ICCID <span className="font-mono text-ink">{probedIccid}</span>
-              </p>
-            ) : null}
-
-            {results.length > 0 ? (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {results.map((result) => (
-                  <ProbeCard key={result.kind} result={result} />
-                ))}
-              </div>
-            ) : null}
-          </div>,
-          slot,
-        )
-      : null;
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen(true);
+          setError("");
+        }}
         className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
       >
-        {open ? "Probe Jasper ▴" : "Probe Jasper"}
+        Probe Jasper
       </button>
-      {panel}
+
+      {open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
+          <button
+            type="button"
+            aria-label="Close dialog"
+            className="absolute inset-0 bg-canvas/70 backdrop-blur-sm"
+            disabled={busy}
+            onClick={close}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="relative z-10 flex max-h-[min(90vh,52rem)] w-full max-w-3xl flex-col overflow-hidden rounded-card border border-line bg-panel shadow-xl"
+          >
+            <div className="shrink-0 border-b border-line px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 id={titleId} className="text-lg font-semibold text-ink">
+                    Jasper probe
+                  </h2>
+                  <p className="mt-1 text-sm text-quiet">
+                    Raw Control Center GETs — CTD for usage, sessionInfo for live session.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={close}
+                  className="text-sm text-quiet hover:text-ink disabled:opacity-40"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="ICCID (optional — blank = oldest in D1)"
+                  value={iccid}
+                  onChange={(e) => setIccid(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !busy) void probe();
+                  }}
+                  disabled={busy}
+                  className="min-w-0 flex-1 rounded-card border border-line bg-canvas px-3 py-2 font-mono text-sm text-ink placeholder:font-sans placeholder:text-quiet disabled:opacity-40"
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void probe()}
+                  className="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink hover:opacity-90 disabled:opacity-40"
+                >
+                  {busy ? "Probing…" : "Run probe"}
+                </button>
+              </div>
+              {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {probedIccid && results.length > 0 ? (
+                <p className="mb-3 text-xs text-quiet">
+                  ICCID <span className="font-mono text-ink">{probedIccid}</span>
+                </p>
+              ) : (
+                <p className="text-sm text-quiet">Enter an ICCID (or leave blank) and run the probe.</p>
+              )}
+              {results.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {results.map((result) => (
+                    <ProbeCard key={result.kind} result={result} />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

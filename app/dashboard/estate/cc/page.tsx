@@ -184,7 +184,6 @@ export default async function CcSnapshotPage({
         </div>
       </div>
 
-      <div id="cc-probe-panel" />
       <div id="cc-sync-progress" />
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -240,7 +239,7 @@ export default async function CcSnapshotPage({
               &gt;48h {summary.sessionOlder48h.toLocaleString("en-AU")}
             </span>
           </p>
-          <p className="mt-3 text-sm text-quiet">In session (last known)</p>
+          <p className="mt-3 text-sm text-quiet">In session</p>
           <p className="mt-1 text-xs text-quiet">
             {summary.inSession.toLocaleString("en-AU")} yes
             {" · "}
@@ -248,7 +247,7 @@ export default async function CcSnapshotPage({
             {" · "}
             unknown {summary.sessionUnknown.toLocaleString("en-AU")}
             {" · "}
-            not refreshed (sessionInfo paused)
+            from /sessionInfo (soft-fail if 30000001)
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">

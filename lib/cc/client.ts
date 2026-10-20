@@ -218,9 +218,8 @@ async function jasperGet<T>(path: string, allow404 = false): Promise<T | null> {
         if (isJasperSoftRateLimit(res.status, body, message)) {
           attempt += 1;
           if (attempt > MAX_429_RETRIES) {
-            // Enrich endpoints allow 404 → treat exhausted soft-limits as empty
-            // rather than aborting the whole tick at 0 SIMs (sessionInfo is flaky).
-            if (allow404) return null;
+            // Always throw — callers soft-catch so CTD can still persist when
+            // sessionInfo returns 30000001 (works for many SIMs, flaky for some).
             throw new CcRateLimitError(message);
           }
           const delayMs = Math.min(30_000, 2_000 * 2 ** (attempt - 1));
