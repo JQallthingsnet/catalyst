@@ -127,9 +127,9 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      {/* Chart left · activity right */}
-      <div className="mt-8 grid gap-4 lg:grid-cols-5 lg:items-start">
-        <section className={showPools ? "lg:col-span-3" : "lg:col-span-5"}>
+      {/* Chart left · activity right (matched height) */}
+      <div className="mt-8 grid gap-4 lg:grid-cols-5 lg:items-stretch">
+        <section className={`min-h-0 ${showPools ? "lg:col-span-3" : "lg:col-span-5"}`}>
           {showPools ? (
             <PoolsDashboard
               initialRows={poolRows}
@@ -142,10 +142,12 @@ export default async function DashboardPage() {
           ) : null}
         </section>
 
-        <article className="rounded-card border border-line bg-panel p-5 lg:col-span-2">
-          <h2 className="text-lg font-semibold">Recent activity</h2>
-          <p className="mt-1 text-xs text-quiet">Audit log for this organisation (creates, deletes, assigns).</p>
-          <ul className="mt-4 max-h-96 space-y-3 overflow-y-auto">
+        <article className="flex h-full min-h-0 flex-col rounded-card border border-line bg-panel p-5 lg:col-span-2">
+          <h2 className="shrink-0 text-lg font-semibold">Recent activity</h2>
+          <p className="mt-1 shrink-0 text-xs text-quiet">
+            Audit log for this organisation (creates, deletes, assigns).
+          </p>
+          <ul className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
             {data.activity.length === 0 ? (
               <li className="text-sm text-quiet">No activity yet.</li>
             ) : (

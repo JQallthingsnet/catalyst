@@ -181,6 +181,12 @@ function EntityPickerDialog({
   );
 }
 
+function formatMbShort(mb: number): string {
+  if (mb >= 1_000_000) return `${(mb / 1_000_000).toFixed(1)}M`;
+  if (mb >= 1000) return `${Math.round(mb / 1000)}k`;
+  return `${Math.round(mb)}`;
+}
+
 function MultiEntityChart({
   plotted,
   seriesByName,
@@ -190,7 +196,6 @@ function MultiEntityChart({
   entityLabel,
   title = "CTD usage over time",
   subtitle,
-  onRemove,
   onOpenPicker,
 }: {
   plotted: string[];
@@ -201,9 +206,19 @@ function MultiEntityChart({
   entityLabel: string;
   title?: string;
   subtitle?: string;
-  onRemove: (name: string) => void;
   onOpenPicker: () => void;
 }) {
+  const [hover, setHover] = useState<{
+    name: string;
+    day: string;
+    ctdUsageMb: number;
+    allowanceMb: number;
+    pct: number;
+    color: string;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
+
   const days = useMemo(() => {
     const set = new Set<string>();
     for (const name of plotted) {
@@ -212,22 +227,23 @@ function MultiEntityChart({
     return [...set].sort();
   }, [plotted, seriesByName]);
 
+  // Scale to CTD only so large allowances don't squash the usage lines.
   const maxMb = useMemo(() => {
     let max = 1;
     for (const name of plotted) {
       for (const point of seriesByName.get(name) ?? []) {
-        max = Math.max(max, point.ctdUsageMb, point.allowanceMb);
+        max = Math.max(max, point.ctdUsageMb);
       }
     }
-    return max;
+    return max * 1.12;
   }, [plotted, seriesByName]);
 
-  const width = 640;
-  const height = 220;
-  const padL = 44;
-  const padR = 12;
-  const padT = 12;
-  const padB = 28;
+  const width = 720;
+  const height = 280;
+  const padL = 48;
+  const padR = 16;
+  const padT = 16;
+  const padB = 32;
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
 
@@ -237,75 +253,25 @@ function MultiEntityChart({
   }
 
   function yAt(mb: number) {
-    return padT + innerH - (mb / maxMb) * innerH;
+    const clamped = Math.min(Math.max(mb, 0), maxMb);
+    return padT + innerH - (clamped / maxMb) * innerH;
   }
 
   const hint =
     subtitle ??
-    `Sydney day · solid CTD · dashed allowance${
+    `Sydney day · solid CTD · dashed allowance (hover a point)${
       allowPick ? ` · top 10 ${entityLabel.toLowerCase()}s` : ""
     }${days.length === 1 ? " · lines from day 2" : ""}`;
 
-  const legend = (
-    <aside className="flex w-full shrink-0 flex-col lg:w-44">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-quiet">Legend</p>
-        {busy ? <span className="text-[10px] text-quiet">…</span> : null}
-      </div>
-      <p className="mt-1 text-[10px] leading-snug text-quiet">
-        <span className="mr-2 inline-flex items-center gap-1">
-          <span className="inline-block h-0.5 w-3 rounded bg-ink" /> CTD
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-px w-3 border-t border-dashed border-ink" /> Cap
-        </span>
-      </p>
-      <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto lg:max-h-64">
-        {plotted.length === 0 ? (
-          <li className="text-[10px] text-quiet">None selected</li>
-        ) : (
-          plotted.map((name) => {
-            const latest = latestByName.get(name);
-            const color = colorFor(name, plotted);
-            return (
-              <li
-                key={name}
-                className="flex items-center gap-1.5 rounded-lg border border-line/80 bg-canvas/40 px-1.5 py-1"
-              >
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-[10px] leading-tight text-ink">{name}</p>
-                  {latest ? (
-                    <p className="truncate text-[9px] leading-tight text-quiet">
-                      {latest.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB ·{" "}
-                      {latest.pct}%
-                    </p>
-                  ) : null}
-                </div>
-                {allowPick ? (
-                  <button
-                    type="button"
-                    onClick={() => onRemove(name)}
-                    className="shrink-0 px-0.5 text-[10px] text-quiet hover:text-ink"
-                    aria-label={`Remove ${name} from chart`}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </li>
-            );
-          })
-        )}
-      </ul>
-    </aside>
-  );
-
   return (
-    <article className="rounded-card border border-line bg-panel p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <article className="flex h-full flex-col rounded-card border border-line bg-panel p-4 sm:p-5">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-xl">
           <h2 className="text-base font-semibold text-ink sm:text-lg">{title}</h2>
-          <p className="mt-1 text-[11px] leading-snug text-quiet">{hint}</p>
+          <p className="mt-1 text-[11px] leading-snug text-quiet">
+            {hint}
+            {busy ? " · loading…" : ""}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {allowPick ? (
@@ -320,117 +286,161 @@ function MultiEntityChart({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-stretch">
-        <div className="min-w-0 flex-1 overflow-x-auto">
-          {plotted.length === 0 || days.length === 0 ? (
-            <p className="flex h-48 items-center text-sm text-quiet">
-              {allowPick
-                ? `No daily points yet — open Pools or wait for the daily snapshot, then add ${entityLabel.toLowerCase()}s.`
-                : "No daily points yet — saved after Sydney midnight / first open."}
-            </p>
-          ) : (
-            <svg viewBox={`0 0 ${width} ${height}`} className="h-52 w-full min-w-80" role="img">
-              {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-                const y = padT + innerH * (1 - t);
-                return (
-                  <g key={t}>
-                    <line
-                      x1={padL}
-                      x2={width - padR}
-                      y1={y}
-                      y2={y}
-                      stroke="currentColor"
-                      className="text-line"
-                      strokeOpacity={0.35}
-                    />
-                    <text x={padL - 6} y={y + 3} textAnchor="end" className="fill-quiet text-[9px]">
-                      {t === 0 ? "0" : `${Math.round((maxMb * t) / 1000)}k`}
-                    </text>
-                  </g>
-                );
-              })}
-              {days.map((day, i) => {
-                const step = days.length > 14 ? Math.ceil(days.length / 10) : 1;
-                const show = i === 0 || i === days.length - 1 || i % step === 0;
-                if (!show) return null;
-                return (
-                  <text
-                    key={day}
-                    x={xAt(i)}
-                    y={height - 8}
-                    textAnchor="middle"
-                    className="fill-quiet text-[9px]"
-                  >
-                    {day.slice(5)}
+      <div className="relative mt-3 min-h-0 flex-1">
+        {plotted.length === 0 || days.length === 0 ? (
+          <p className="flex h-64 items-center text-sm text-quiet">
+            {allowPick
+              ? `No daily points yet — open Pools or wait for the daily snapshot, then add ${entityLabel.toLowerCase()}s.`
+              : "No daily points yet — saved after Sydney midnight / first open."}
+          </p>
+        ) : (
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="h-64 w-full sm:h-72"
+            role="img"
+            onMouseLeave={() => setHover(null)}
+          >
+            {[0, 0.25, 0.5, 0.75, 1].map((t) => {
+              const y = padT + innerH * (1 - t);
+              return (
+                <g key={t}>
+                  <line
+                    x1={padL}
+                    x2={width - padR}
+                    y1={y}
+                    y2={y}
+                    stroke="currentColor"
+                    className="text-line"
+                    strokeOpacity={0.35}
+                  />
+                  <text x={padL - 6} y={y + 3} textAnchor="end" className="fill-quiet text-[9px]">
+                    {t === 0 ? "0" : formatMbShort(maxMb * t)}
                   </text>
-                );
-              })}
-              {plotted.map((name) => {
-                const points = seriesByName.get(name) ?? [];
-                const byDay = new Map(points.map((p) => [p.day, p]));
-                const color = colorFor(name, plotted);
-                const buildPath = (value: (p: PoolSeriesPoint) => number) => {
-                  let d = "";
-                  let move = true;
-                  days.forEach((day, i) => {
+                </g>
+              );
+            })}
+            {days.map((day, i) => {
+              const step = days.length > 14 ? Math.ceil(days.length / 10) : 1;
+              const show = i === 0 || i === days.length - 1 || i % step === 0;
+              if (!show) return null;
+              return (
+                <text
+                  key={day}
+                  x={xAt(i)}
+                  y={height - 10}
+                  textAnchor="middle"
+                  className="fill-quiet text-[9px]"
+                >
+                  {day.slice(5)}
+                </text>
+              );
+            })}
+            {plotted.map((name) => {
+              const points = seriesByName.get(name) ?? [];
+              const byDay = new Map(points.map((p) => [p.day, p]));
+              const color = colorFor(name, plotted);
+              const active = hover?.name === name;
+              const buildPath = (value: (p: PoolSeriesPoint) => number) => {
+                let d = "";
+                let move = true;
+                days.forEach((day, i) => {
+                  const p = byDay.get(day);
+                  if (!p) {
+                    move = true;
+                    return;
+                  }
+                  d += `${move ? "M" : "L"}${xAt(i)},${yAt(value(p))} `;
+                  move = false;
+                });
+                return d.trim();
+              };
+              const ctdPath = buildPath((p) => p.ctdUsageMb);
+              const allowPath = buildPath((p) => p.allowanceMb);
+              return (
+                <g key={name} opacity={hover && !active ? 0.28 : 1}>
+                  {allowPath ? (
+                    <path
+                      d={allowPath}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={active ? 2 : 1.25}
+                      strokeDasharray="4 3"
+                      strokeOpacity={active ? 0.85 : 0.4}
+                      pointerEvents="none"
+                    />
+                  ) : null}
+                  {ctdPath ? (
+                    <path
+                      d={ctdPath}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={active ? 3 : 2.25}
+                      strokeLinecap="round"
+                      pointerEvents="none"
+                    />
+                  ) : null}
+                  {days.map((day, i) => {
                     const p = byDay.get(day);
-                    if (!p) {
-                      move = true;
-                      return;
-                    }
-                    d += `${move ? "M" : "L"}${xAt(i)},${yAt(value(p))} `;
-                    move = false;
-                  });
-                  return d.trim();
-                };
-                const ctdPath = buildPath((p) => p.ctdUsageMb);
-                const allowPath = buildPath((p) => p.allowanceMb);
-                return (
-                  <g key={name}>
-                    {allowPath ? (
-                      <path
-                        d={allowPath}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={1.5}
-                        strokeDasharray="4 3"
-                        strokeOpacity={0.55}
+                    if (!p) return null;
+                    const latest = latestByName.get(name);
+                    const pct =
+                      latest?.pct ??
+                      (p.allowanceMb > 0 ? Math.round((p.ctdUsageMb / p.allowanceMb) * 100) : 0);
+                    return (
+                      <circle
+                        key={`${name}-${day}`}
+                        cx={xAt(i)}
+                        cy={yAt(p.ctdUsageMb)}
+                        r={active ? 5 : 3.5}
+                        fill={color}
+                        className="cursor-pointer"
+                        onMouseEnter={(event) => {
+                          setHover({
+                            name,
+                            day,
+                            ctdUsageMb: p.ctdUsageMb,
+                            allowanceMb: p.allowanceMb,
+                            pct,
+                            color,
+                            clientX: event.clientX,
+                            clientY: event.clientY,
+                          });
+                        }}
+                        onMouseMove={(event) => {
+                          setHover((current) =>
+                            current && current.name === name && current.day === day
+                              ? { ...current, clientX: event.clientX, clientY: event.clientY }
+                              : current,
+                          );
+                        }}
                       />
-                    ) : null}
-                    {ctdPath ? (
-                      <path
-                        d={ctdPath}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={2.25}
-                        strokeLinecap="round"
-                      />
-                    ) : null}
-                    {days.map((day, i) => {
-                      const p = byDay.get(day);
-                      if (!p) return null;
-                      return (
-                        <circle
-                          key={`${name}-${day}`}
-                          cx={xAt(i)}
-                          cy={yAt(p.ctdUsageMb)}
-                          r={3}
-                          fill={color}
-                        >
-                          <title>
-                            {name}: {p.ctdUsageMb.toFixed(0)} MB CTD / {p.allowanceMb.toFixed(0)} MB
-                            allowance ({day})
-                          </title>
-                        </circle>
-                      );
-                    })}
-                  </g>
-                );
-              })}
-            </svg>
-          )}
-        </div>
-        {legend}
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </svg>
+        )}
+
+        {hover ? (
+          <div
+            className="pointer-events-none fixed z-50 min-w-40 rounded-xl border border-line bg-panel px-3 py-2 shadow-xl"
+            style={{ left: hover.clientX + 12, top: hover.clientY + 12 }}
+          >
+            <p className="flex items-center gap-1.5 font-mono text-xs font-medium text-ink">
+              <span className="h-2 w-2 rounded-full" style={{ background: hover.color }} />
+              {hover.name}
+            </p>
+            <p className="mt-1 text-[11px] text-quiet">{hover.day}</p>
+            <p className="mt-1 text-xs text-ink">
+              CTD {hover.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB
+            </p>
+            <p className="text-xs text-quiet">
+              Cap {hover.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB ·{" "}
+              {hover.pct}%
+            </p>
+          </div>
+        ) : null}
       </div>
     </article>
   );
@@ -534,10 +544,9 @@ export function PoolsDashboard({
       title={mode === "chart" ? "Data usage by modem_ID" : "CTD usage over time"}
       subtitle={
         mode === "chart"
-          ? "Same plot as Pools · top 10 by CTD · solid = usage · dashed = allowance"
+          ? "Same plot as Pools · top 10 by CTD · hover a point for details"
           : undefined
       }
-      onRemove={(name) => setPlotted((current) => current.filter((c) => c !== name))}
       onOpenPicker={() => setPickerOpen(true)}
     />
   );
@@ -555,9 +564,9 @@ export function PoolsDashboard({
 
   if (mode === "chart") {
     return (
-      <div>
-        {message ? <p className="mb-3 text-sm text-quiet">{message}</p> : null}
-        {chart}
+      <div className="flex h-full min-h-0 flex-col">
+        {message ? <p className="mb-3 shrink-0 text-sm text-quiet">{message}</p> : null}
+        <div className="min-h-0 flex-1">{chart}</div>
         {picker}
       </div>
     );
