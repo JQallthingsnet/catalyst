@@ -120,13 +120,18 @@ export async function changeSimRatePlan(
     }
   }
 
+  // Reseller-facing identity is modem_ID (CC snapshot), not Jasper rate_plan / TCode.
+  const fromPlan = sim.platform_plan_id ? await loadPlatformPlanRecord(sim.platform_plan_id) : null;
+  const fromModemId = fromPlan?.name?.trim() || sim.wholesale_plan;
+  const toModemId = target.name.trim();
+  const jasperRatePlan = target.cc_rate_plan;
+
   const cc = await db
-    .prepare("SELECT rate_plan FROM cc_devices WHERE iccid = ?")
+    .prepare("SELECT modem_id FROM cc_devices WHERE iccid = ?")
     .bind(iccid)
-    .first<{ rate_plan: string | null }>();
-  const ccRate = cc?.rate_plan?.trim() || null;
-  const toRatePlan = target.cc_rate_plan;
-  const tcodeMismatch = Boolean(ccRate && ccRate !== toRatePlan);
+    .first<{ modem_id: string | null }>();
+  const liveModemId = cc?.modem_id?.trim() || null;
+  const tcodeMismatch = Boolean(liveModemId && toModemId && liveModemId !== toModemId);
 
   let clearedRetailPlan = false;
   if (sim.plan_id) {
@@ -147,7 +152,7 @@ export async function changeSimRatePlan(
     .prepare(
       `UPDATE sims SET platform_plan_id = ?, wholesale_plan = ? WHERE id = ? AND tenant_id = ?`,
     )
-    .bind(platformPlanId, toRatePlan, sim.id, tenantId)
+    .bind(platformPlanId, jasperRatePlan, sim.id, tenantId)
     .run();
 
   const changeId = newId("rpc");
@@ -166,8 +171,8 @@ export async function changeSimRatePlan(
       iccid,
       sim.platform_plan_id,
       platformPlanId,
-      sim.wholesale_plan,
-      toRatePlan,
+      fromModemId,
+      toModemId,
       sim.state,
       tcodeMismatch ? 1 : 0,
       actorEmail,
@@ -176,19 +181,19 @@ export async function changeSimRatePlan(
     .run();
 
   const mismatchNote = tcodeMismatch
-    ? ` · Supplier rate-plan code mismatch vs snapshot (${ccRate}) — billing notification pending`
+    ? ` · modem_ID mismatch vs snapshot (${liveModemId}) — billing notification pending`
     : "";
   await writeAudit(
     tenantId,
     actorEmail,
     "rate_plan",
-    `${iccid}: ${sim.wholesale_plan ?? "—"} → ${toRatePlan}${clearedRetailPlan ? " · retail plan cleared" : ""}${mismatchNote}`,
+    `${iccid}: ${fromModemId ?? "—"} → ${toModemId}${clearedRetailPlan ? " · retail plan cleared" : ""}${mismatchNote}`,
   );
 
   return {
     iccid,
-    fromRatePlan: sim.wholesale_plan,
-    toRatePlan,
+    fromRatePlan: fromModemId,
+    toRatePlan: toModemId,
     tcodeMismatch,
     clearedRetailPlan,
   };
@@ -497,11 +502,11 @@ export async function exportRatePlanChangesCsv(options: {
         "when",
         "organisation",
         "iccid",
-        "from_rate_plan",
-        "to_rate_plan",
+        "from_modem_id",
+        "to_modem_id",
         "state_at_change",
         "current_state",
-        "supplier_code_match",
+        "modem_id_match",
         "push_status",
         "pushed_at",
         "push_error",
@@ -510,11 +515,11 @@ export async function exportRatePlanChangesCsv(options: {
     : [
         "when",
         "iccid",
-        "from_rate_plan",
-        "to_rate_plan",
+        "from_modem_id",
+        "to_modem_id",
         "state_at_change",
         "current_state",
-        "supplier_code_match",
+        "modem_id_match",
         "push_status",
         "pushed_at",
         "push_error",

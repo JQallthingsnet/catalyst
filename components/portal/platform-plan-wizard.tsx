@@ -55,7 +55,7 @@ export function PlatformPlanWizard({
       step={step}
       summary={
         <>
-          <p>{name || "Remarks"}</p>
+          <p>{name || "modem_ID"}</p>
           <p>
             {supplier || "Supplier"} · {ccRatePlan || "rate plan"}
           </p>
@@ -67,11 +67,11 @@ export function PlatformPlanWizard({
     >
       {step === 0 ? (
         <label className="block text-sm">
-          Remarks (commercial description on the contract)
+          modem_ID (what resellers see on Contract, Plans, and Plan changes)
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. 1GB · Lift plan, 50MB+50SMS"
+            placeholder="e.g. CM1GB, 50MB_Voice"
             className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
           />
         </label>
