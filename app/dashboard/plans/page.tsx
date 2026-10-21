@@ -17,7 +17,7 @@ export default async function PlansPage() {
           <div>
             <h1 className="text-3xl font-semibold">Plans</h1>
             <p className="mt-1 text-sm text-quiet">
-              Map ATN plans upward to a supplier (Optus today; others later). Bind those
+              Map plans upward to a supplier (Optus today; others later). Bind those
               plans to resellers on{" "}
               <Link href="/dashboard/contracts" className="text-accent">
                 Contract
@@ -26,7 +26,7 @@ export default async function PlansPage() {
             </p>
           </div>
           <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink">
-            Create ATN plan
+            Create plan
           </Link>
         </div>
         <PlatformPlansTable
@@ -57,7 +57,7 @@ export default async function PlansPage() {
         <div>
           <h1 className="text-3xl font-semibold">Plans</h1>
           <p className="mt-1 text-sm text-quiet">
-            Create retail plans (name, data per SIM, price) from your contracted ATN lines — these are what
+            Create retail plans (name, data per SIM, price) from your contracted plans — these are what
             operators assign to each ICCID. Your signed lines are on{" "}
             <Link href="/dashboard/contracts" className="text-accent">
               Contract
@@ -74,7 +74,7 @@ export default async function PlansPage() {
 
       {ctx.role === "reseller_admin" && assigned.length > 0 ? (
         <p className="mt-4 text-sm text-quiet">
-          {assigned.length} contracted ATN line{assigned.length === 1 ? "" : "s"} available to create retail plans from.
+          {assigned.length} contracted plan{assigned.length === 1 ? "" : "s"} available to create retail plans from.
         </p>
       ) : null}
 

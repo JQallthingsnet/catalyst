@@ -117,7 +117,7 @@ export default async function EstatePage({
                             Retail: {customer.plansSold.length > 0 ? customer.plansSold.join(", ") : "—"}
                           </p>
                           <p className="text-quiet">
-                            ATN plan:{" "}
+                            Plan:{" "}
                             {customer.wholesalePlans.length > 0 ? customer.wholesalePlans.join(", ") : "—"}
                           </p>
                         </li>
@@ -147,7 +147,7 @@ export default async function EstatePage({
                         <th className="px-3 py-2">ICCID</th>
                         <th className="px-3 py-2">Customer</th>
                         <th className="px-3 py-2">Retail plan</th>
-                        <th className="px-3 py-2">ATN plan</th>
+                        <th className="px-3 py-2">Plan</th>
                         <th className="px-3 py-2">CC rate plan</th>
                         <th className="px-3 py-2">CC status</th>
                         <th className="px-3 py-2">Pool</th>
