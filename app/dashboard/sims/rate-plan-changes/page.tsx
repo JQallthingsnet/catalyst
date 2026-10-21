@@ -227,17 +227,17 @@ export default async function RatePlanChangesPage({
           ) : null}
           <FilterSelect
             name="fromPlan"
-            label="From rate plan"
+            label="From modem_ID"
             value={filter.fromRatePlan ?? ""}
             options={options.fromRatePlans}
-            allLabel="All from plans"
+            allLabel="All from"
           />
           <FilterSelect
             name="toPlan"
-            label="To rate plan"
+            label="To modem_ID"
             value={filter.toRatePlan ?? ""}
             options={options.toRatePlans}
-            allLabel="All to plans"
+            allLabel="All to"
           />
           <FilterSelect
             name="state"
@@ -255,7 +255,7 @@ export default async function RatePlanChangesPage({
           />
           <FilterSelect
             name="supplierCode"
-            label="Supplier code"
+            label="modem_ID"
             value={filter.supplierCode ?? ""}
             options={[
               { value: "ok", label: "OK" },
@@ -310,7 +310,7 @@ export default async function RatePlanChangesPage({
               <th className="px-4 py-3">To</th>
               <th className="px-4 py-3">State at change</th>
               <th className="px-4 py-3">Current</th>
-              <th className="px-4 py-3">Supplier code</th>
+              <th className="px-4 py-3">modem_ID</th>
               <th className="px-4 py-3">Push</th>
               <th className="px-4 py-3">By</th>
             </tr>
@@ -327,7 +327,7 @@ export default async function RatePlanChangesPage({
                 <td className="px-4 py-3">{row.simStatus ?? "—"}</td>
                 <td className="px-4 py-3">
                   {row.tcodeMismatch ? (
-                    <span className="text-danger">Mismatch vs supplier snapshot</span>
+                    <span className="text-danger">Mismatch vs snapshot</span>
                   ) : (
                     <span className="text-quiet">OK</span>
                   )}

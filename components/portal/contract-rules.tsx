@@ -10,7 +10,7 @@ const SUPER_ADMIN_RULES = [
   "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
   "Ready or Deactivated: rate-plan changes are free within contracted plans. Reseller admins or operators can change before shipping or after deactivation.",
   "Active or Suspended: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
-  "Activated rate-plan changes are flagged when the contracted supplier rate-plan code does not match the live code on the supplier snapshot; billing notification until charging is automated.",
+  "Plan changes From/To use modem_ID (reseller-facing). Mismatch means the SIM’s live modem_ID on the CC snapshot differs from the plan’s modem_ID. Jasper rate-plan code stays ATN-facing for supplier push.",
   "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs. Each change has a supplier push status (pending until Optus write is enabled).",
 ];
 

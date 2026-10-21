@@ -35,7 +35,7 @@ export default async function SimsPage({
   const fields = simFieldsForRole(ctx.role);
   const planOptions = contracted.map((plan) => ({
     id: plan.id,
-    label: `${plan.ccRatePlan} — ${plan.name}`,
+    label: `${plan.name} — ${plan.ccRatePlan}`,
   }));
   const canChangePlan = can(ctx.role, "rate_plan.change");
 
