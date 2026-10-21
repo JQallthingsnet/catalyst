@@ -1,7 +1,7 @@
 import { sendSystemEmail } from "@/lib/auth/email";
 import { getDB } from "@/lib/env";
 import { getAlertSetting, PLATFORM_ALERT_SCOPE } from "@/lib/portal/alert-settings";
-import { listPoolModemLatest, listPoolRatePlanLatest } from "@/lib/portal/pools";
+import { listPoolModemLatest } from "@/lib/portal/pools";
 import { listCcCustomerBindings } from "@/lib/portal/tenant";
 import { sydneyDayKey } from "@/lib/portal/time";
 
@@ -402,73 +402,18 @@ type DigestAttempt = {
   error?: string;
 };
 
-async function sendPoolsRatePlanDigest(input: {
-  day: string;
-  threshold: number;
-  force: boolean;
-  recipients: string[];
-}): Promise<DigestAttempt> {
-  const marker = DIGEST_POOLS_RATE_PLAN;
-  if (!input.force && (await digestAlreadySent(marker, input.day, input.threshold))) {
-    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "already_sent_today" };
-  }
-  if (input.recipients.length === 0) {
-    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_recipients" };
-  }
-
-  const breaches = (await listPoolRatePlanLatest())
-    .filter((row) => row.allowanceMb > 0 && row.pct >= input.threshold)
-    .sort((a, b) => b.pct - a.pct)
-    .map(
-      (row): PoolBreachRow => ({
-        key: row.ratePlan,
-        label: row.ratePlan,
-        customer: null,
-        ctdUsageMb: row.ctdUsageMb,
-        allowanceMb: row.allowanceMb,
-        pct: row.pct,
-        simCount: row.simCount,
-      }),
-    );
-
-  if (breaches.length === 0) {
-    return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_breaches" };
-  }
-
-  const { subject, html } = buildPoolAlertEmail({
-    rows: breaches.slice(0, 50),
-    day: input.day,
-    threshold: input.threshold,
-    kind: "rate_plan",
-    audience: "super",
-  });
-
-  const emailed = await sendAlertHtml(input.recipients, subject, html);
-  if (!emailed) {
-    return {
-      checked: breaches.length,
-      newlyAlerted: breaches.length,
-      emailed: false,
-      error: "SMTP send failed for super-admin pools digest.",
-    };
-  }
-
-  await markDigestSent(marker, input.day, input.threshold, "rate_plan");
-  console.log(
-    `[sim-usage] pools rate-plan digest emailed: ${breaches.length} ≥${input.threshold}% → ${input.recipients.join(",")}`,
-  );
-  return { checked: breaches.length, newlyAlerted: breaches.length, emailed: true };
-}
-
 async function sendPoolsModemDigest(input: {
   day: string;
   threshold: number;
   force: boolean;
-  tenantId: string;
-  customer: string;
+  /** Digest marker scope — platform uses PLATFORM_ALERT_SCOPE; reseller uses tenant id. */
+  scopeId: string;
+  /** Exact CC customer for reseller; omit/empty for platform (all customers). */
+  customer?: string;
   recipients: string[];
+  audience: "super" | "reseller";
 }): Promise<DigestAttempt> {
-  const marker = `${DIGEST_POOLS_MODEM_PREFIX}${input.tenantId}`;
+  const marker = `${DIGEST_POOLS_MODEM_PREFIX}${input.scopeId}`;
   if (!input.force && (await digestAlreadySent(marker, input.day, input.threshold))) {
     return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "already_sent_today" };
   }
@@ -476,7 +421,12 @@ async function sendPoolsModemDigest(input: {
     return { checked: 0, newlyAlerted: 0, emailed: false, skipReason: "no_recipients" };
   }
 
-  const breaches = (await listPoolModemLatest({ exactCustomer: input.customer }))
+  const customer = input.customer?.trim() ?? "";
+  const breaches = (
+    await listPoolModemLatest({
+      exactCustomer: input.audience === "reseller" ? customer : undefined,
+    })
+  )
     .filter((row) => row.allowanceMb > 0 && row.pct >= input.threshold)
     .sort((a, b) => b.pct - a.pct)
     .map(
@@ -500,8 +450,8 @@ async function sendPoolsModemDigest(input: {
     day: input.day,
     threshold: input.threshold,
     kind: "modem",
-    audience: "reseller",
-    customer: input.customer,
+    audience: input.audience,
+    customer: customer || undefined,
   });
 
   const emailed = await sendAlertHtml(input.recipients, subject, html);
@@ -510,13 +460,13 @@ async function sendPoolsModemDigest(input: {
       checked: breaches.length,
       newlyAlerted: breaches.length,
       emailed: false,
-      error: `SMTP send failed for pools modem digest (${input.customer}).`,
+      error: `SMTP send failed for pools modem digest (${customer || "platform"}).`,
     };
   }
 
   await markDigestSent(marker, input.day, input.threshold, "modem");
   console.log(
-    `[sim-usage] pools modem digest emailed: ${breaches.length} ≥${input.threshold}% → ${input.recipients.join(",")} (${input.customer})`,
+    `[sim-usage] pools modem digest emailed: ${breaches.length} ≥${input.threshold}% → ${input.recipients.join(",")} (${customer || "platform"})`,
   );
   return { checked: breaches.length, newlyAlerted: breaches.length, emailed: true };
 }
@@ -570,7 +520,7 @@ async function sendUsageModemDigest(input: {
 
 /**
  * Daily digests (once per Sydney day unless force), using Alerts settings:
- * - Super admin → Pools by rate plan (platform pool recipients + threshold)
+ * - Super admin → Pools by modem_ID per customer (same as Pools plot)
  * - Each bound reseller → Pools by modem_ID + Usage per SIM (tenant pool/usage settings)
  */
 export async function notifySimAllowanceAlerts(opts?: { force?: boolean }): Promise<{
@@ -624,11 +574,13 @@ export async function notifySimAllowanceAlerts(opts?: { force?: boolean }): Prom
   const platformPool = await getAlertSetting(PLATFORM_ALERT_SCOPE, "pool");
   if (platformPool.thresholdPct != null && platformPool.recipients.length > 0) {
     fold(
-      await sendPoolsRatePlanDigest({
+      await sendPoolsModemDigest({
         day,
         threshold: platformPool.thresholdPct,
         force,
+        scopeId: PLATFORM_ALERT_SCOPE,
         recipients: platformPool.recipients,
+        audience: "super",
       }),
     );
   } else {
@@ -647,9 +599,10 @@ export async function notifySimAllowanceAlerts(opts?: { force?: boolean }): Prom
           day,
           threshold: poolSettings.thresholdPct,
           force,
-          tenantId: binding.tenantId,
+          scopeId: binding.tenantId,
           customer: binding.ccCustomer,
           recipients: poolSettings.recipients,
+          audience: "reseller",
         }),
       );
     } else {

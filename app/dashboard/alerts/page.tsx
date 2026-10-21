@@ -22,7 +22,7 @@ export default async function AlertsPage() {
           <h1 className="text-3xl font-semibold">Alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Daily email when platform Pools (rate plan) hit your threshold. Configure recipients and the trigger %."
+              ? "Daily email when platform Pools (modem_ID per customer) hit your threshold. Configure recipients and the trigger %."
               : "Daily emails when your Pools (modem_ID) or Usage (per SIM) hit your thresholds. Configure recipients and trigger % for each."}
           </p>
         </div>
@@ -35,7 +35,7 @@ export default async function AlertsPage() {
           title="Pool usage"
           blurb={
             onPlatform
-              ? "Σ CTD MB ÷ Σ rate-plan allowance across SIMs on each Jasper/CC rate plan."
+              ? "Σ CTD MB ÷ Σ modem_ID allowance across SIMs on each modem ID per customer."
               : "Σ CTD MB ÷ Σ modem_ID allowance for your Control Center customer."
           }
           initial={settings.pool}
