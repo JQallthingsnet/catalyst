@@ -10,12 +10,13 @@ const SUPER_ADMIN_RULES = [
   "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
   "Ready or Deactivated: rate-plan changes are free within contracted plans. Reseller admins or operators can change before shipping or after deactivation.",
   "Active or Suspended: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
-  "Plan changes From/To use modem_ID (reseller-facing). Mismatch means the SIM’s live modem_ID on the CC snapshot differs from the plan’s modem_ID. Jasper rate-plan code stays ATN-facing for supplier push.",
-  "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs. Each change has a supplier push status (pending until Optus write is enabled).",
+  "Plan changes update the reseller-facing plan (modem_ID). ATN bills from that Catalyst plan — not from Jasper. Whether to also change Jasper is ATN’s choice later.",
+  "Snapshot differs / Push are super-admin only (CC vs Catalyst). They do not change reseller billing.",
+  "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs.",
 ];
 
 const SUPER_ADMIN_COMING = [
-  "Push queued rate-plan changes to Optus Control Center (Edit Device). Plan changes already store push status: pending / pushed / failed / skipped.",
+  "Optional: push a queued rate-plan change to Optus Control Center when ATN chooses to. Push status already exists (pending / pushed / failed / skipped).",
 ];
 
 const RESELLER_ADMIN_RULES = [
@@ -28,7 +29,7 @@ const RESELLER_ADMIN_RULES = [
   "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
   "Ready or Deactivated SIMs: change rate plan freely within this contract.",
   "Active or Suspended: only until midnight on the 24th (Sydney), and only once per ICCID per month. After the cut-off: “Changes will be effective next month”.",
-  "Plan changes is your log book of every ICCID rate-plan change for this organisation, with SIM status.",
+  "Plan changes is your log of ICCID plan moves. Billing follows the plan on the SIM in Catalyst.",
 ];
 
 export function ContractRules({ variant }: { variant: "super_admin" | "reseller_admin" }) {

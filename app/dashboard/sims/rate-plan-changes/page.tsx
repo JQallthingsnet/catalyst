@@ -166,8 +166,8 @@ export default async function RatePlanChangesPage({
           <h1 className="text-3xl font-semibold">Plan changes</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Rate-plan change log across reseller ICCIDs. New changes queue as Pending push (Jasper write still on hold)."
-              : "Rate-plan change log for your organisation’s ICCIDs. New changes queue as Pending push until supplier sync is enabled."}{" "}
+              ? "Log of reseller-facing plan changes (modem_ID). Billing follows the Catalyst plan; Jasper update is optional for ATN."
+              : "Log of plan changes for your organisation. Billing follows the plan on each SIM in Catalyst."}{" "}
             Export CSV downloads the current filtered view (all matching rows).
           </p>
         </div>
@@ -253,28 +253,32 @@ export default async function RatePlanChangesPage({
             options={options.currentStates}
             allLabel="All current states"
           />
-          <FilterSelect
-            name="supplierCode"
-            label="modem_ID"
-            value={filter.supplierCode ?? ""}
-            options={[
-              { value: "ok", label: "OK" },
-              { value: "mismatch", label: "Mismatch" },
-            ]}
-            allLabel="All"
-          />
-          <FilterSelect
-            name="push"
-            label="Push status"
-            value={filter.pushStatus ?? ""}
-            options={[
-              { value: "pending", label: "Pending push" },
-              { value: "pushed", label: "Pushed" },
-              { value: "failed", label: "Failed" },
-              { value: "skipped", label: "Skipped" },
-            ]}
-            allLabel="All push states"
-          />
+          {onPlatform ? (
+            <>
+              <FilterSelect
+                name="supplierCode"
+                label="Snapshot"
+                value={filter.supplierCode ?? ""}
+                options={[
+                  { value: "ok", label: "OK" },
+                  { value: "mismatch", label: "Snapshot differs" },
+                ]}
+                allLabel="All"
+              />
+              <FilterSelect
+                name="push"
+                label="Push status"
+                value={filter.pushStatus ?? ""}
+                options={[
+                  { value: "pending", label: "Pending push" },
+                  { value: "pushed", label: "Pushed" },
+                  { value: "failed", label: "Failed" },
+                  { value: "skipped", label: "Skipped" },
+                ]}
+                allLabel="All push states"
+              />
+            </>
+          ) : null}
           <FilterSelect
             name="by"
             label="Changed by"
@@ -310,8 +314,8 @@ export default async function RatePlanChangesPage({
               <th className="px-4 py-3">To</th>
               <th className="px-4 py-3">State at change</th>
               <th className="px-4 py-3">Current</th>
-              <th className="px-4 py-3">modem_ID</th>
-              <th className="px-4 py-3">Push</th>
+              {onPlatform ? <th className="px-4 py-3">Snapshot</th> : null}
+              {onPlatform ? <th className="px-4 py-3">Push</th> : null}
               <th className="px-4 py-3">By</th>
             </tr>
           </thead>
@@ -325,34 +329,43 @@ export default async function RatePlanChangesPage({
                 <td className="px-4 py-3">{row.toRatePlan}</td>
                 <td className="px-4 py-3">{row.simState}</td>
                 <td className="px-4 py-3">{row.simStatus ?? "—"}</td>
-                <td className="px-4 py-3">
-                  {row.tcodeMismatch ? (
-                    <span className="text-danger">Mismatch vs snapshot</span>
-                  ) : (
-                    <span className="text-quiet">OK</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={
-                      row.pushStatus === "failed"
-                        ? "text-danger"
-                        : row.pushStatus === "pushed"
-                          ? "text-ink"
-                          : "text-quiet"
-                    }
-                  >
-                    {pushStatusLabel(row.pushStatus)}
-                  </span>
-                  {row.pushedAt ? (
-                    <p className="mt-0.5 text-xs text-quiet">{formatAuDateTime(row.pushedAt)}</p>
-                  ) : null}
-                  {row.pushError ? (
-                    <p className="mt-0.5 max-w-48 text-xs text-quiet" title={row.pushError}>
-                      {row.pushError}
-                    </p>
-                  ) : null}
-                </td>
+                {onPlatform ? (
+                  <td className="px-4 py-3">
+                    {row.tcodeMismatch ? (
+                      <span
+                        className="text-quiet"
+                        title="CC snapshot modem_ID differs; billing still uses the Catalyst plan"
+                      >
+                        Snapshot differs
+                      </span>
+                    ) : (
+                      <span className="text-quiet">OK</span>
+                    )}
+                  </td>
+                ) : null}
+                {onPlatform ? (
+                  <td className="px-4 py-3">
+                    <span
+                      className={
+                        row.pushStatus === "failed"
+                          ? "text-danger"
+                          : row.pushStatus === "pushed"
+                            ? "text-ink"
+                            : "text-quiet"
+                      }
+                    >
+                      {pushStatusLabel(row.pushStatus)}
+                    </span>
+                    {row.pushedAt ? (
+                      <p className="mt-0.5 text-xs text-quiet">{formatAuDateTime(row.pushedAt)}</p>
+                    ) : null}
+                    {row.pushError ? (
+                      <p className="mt-0.5 max-w-48 text-xs text-quiet" title={row.pushError}>
+                        {row.pushError}
+                      </p>
+                    ) : null}
+                  </td>
+                ) : null}
                 <td className="px-4 py-3 text-quiet">{row.actorEmail}</td>
               </tr>
             ))}

@@ -181,7 +181,7 @@ export async function changeSimRatePlan(
     .run();
 
   const mismatchNote = tcodeMismatch
-    ? ` · modem_ID mismatch vs snapshot (${liveModemId}) — billing notification pending`
+    ? ` · snapshot modem_ID still ${liveModemId} (billing uses Catalyst plan)`
     : "";
   await writeAudit(
     tenantId,
@@ -495,70 +495,46 @@ function csvEscape(value: string | number | boolean | null | undefined): string 
 export async function exportRatePlanChangesCsv(options: {
   filter?: RatePlanChangeFilter;
   includeOrganisation: boolean;
+  /** Super admin only — snapshot mismatch + Jasper push columns. */
+  includeAtnOps?: boolean;
 }): Promise<string> {
   const filter = normalizeRatePlanChangeFilter(options.filter ?? {});
-  const headers = options.includeOrganisation
-    ? [
-        "when",
-        "organisation",
-        "iccid",
-        "from_modem_id",
-        "to_modem_id",
-        "state_at_change",
-        "current_state",
-        "modem_id_match",
-        "push_status",
-        "pushed_at",
-        "push_error",
-        "changed_by",
-      ]
-    : [
-        "when",
-        "iccid",
-        "from_modem_id",
-        "to_modem_id",
-        "state_at_change",
-        "current_state",
-        "modem_id_match",
-        "push_status",
-        "pushed_at",
-        "push_error",
-        "changed_by",
-      ];
+  const includeAtnOps = Boolean(options.includeAtnOps);
+  const headers = [
+    "when",
+    ...(options.includeOrganisation ? ["organisation"] : []),
+    "iccid",
+    "from_modem_id",
+    "to_modem_id",
+    "state_at_change",
+    "current_state",
+    ...(includeAtnOps ? ["snapshot_match", "push_status", "pushed_at", "push_error"] : []),
+    "changed_by",
+  ];
   const lines = [headers.join(",")];
   let offset = 0;
   while (true) {
     const page = await listRatePlanChanges(filter, EXPORT_PAGE_SIZE, offset);
     if (page.length === 0) break;
     for (const row of page) {
-      const cells = options.includeOrganisation
-        ? [
-            row.createdAt,
-            row.tenantName,
-            row.iccid,
-            row.fromRatePlan,
-            row.toRatePlan,
-            row.simState,
-            row.simStatus,
-            row.tcodeMismatch ? "mismatch" : "ok",
-            row.pushStatus,
-            row.pushedAt,
-            row.pushError,
-            row.actorEmail,
-          ]
-        : [
-            row.createdAt,
-            row.iccid,
-            row.fromRatePlan,
-            row.toRatePlan,
-            row.simState,
-            row.simStatus,
-            row.tcodeMismatch ? "mismatch" : "ok",
-            row.pushStatus,
-            row.pushedAt,
-            row.pushError,
-            row.actorEmail,
-          ];
+      const cells = [
+        row.createdAt,
+        ...(options.includeOrganisation ? [row.tenantName] : []),
+        row.iccid,
+        row.fromRatePlan,
+        row.toRatePlan,
+        row.simState,
+        row.simStatus,
+        ...(includeAtnOps
+          ? [
+              row.tcodeMismatch ? "snapshot_differs" : "ok",
+              row.pushStatus,
+              row.pushedAt,
+              row.pushError,
+            ]
+          : []),
+        row.actorEmail,
+      ];
       lines.push(cells.map(csvEscape).join(","));
     }
     offset += page.length;

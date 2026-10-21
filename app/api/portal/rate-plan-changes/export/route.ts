@@ -36,6 +36,7 @@ export async function GET(request: Request) {
     const csv = await exportRatePlanChangesCsv({
       filter,
       includeOrganisation: onPlatform,
+      includeAtnOps: onPlatform,
     });
     const stamp = new Date().toISOString().slice(0, 10);
     const scope = onPlatform ? "all" : "org";

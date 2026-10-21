@@ -76,9 +76,9 @@ export function ChangeRatePlanButton({
         body={
           <div className="space-y-3">
             <p>
-              Update the ATN rate plan on{" "}
-              <span className="font-medium text-ink">ICCID {iccid}</span>. This is a Catalyst
-              policy change; supplier sync comes later.
+              Update the plan on{" "}
+              <span className="font-medium text-ink">ICCID {iccid}</span> in Catalyst. Billing
+              follows this plan. Jasper is unchanged unless ATN updates it separately.
             </p>
             <label className="block text-sm text-quiet">
               New rate plan
