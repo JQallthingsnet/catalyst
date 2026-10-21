@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatIccid } from "@/lib/portal/ids";
 import { WizardActions, WizardFrame } from "@/components/portal/wizard";
@@ -70,7 +71,18 @@ export function AssignWizard({
       {step === 0 ? (
         <div className="space-y-2">
           {customers.length === 0 ? (
-            <p className="text-sm text-quiet">A reseller admin needs to add a customer name first.</p>
+            <div className="space-y-4">
+              <p className="text-sm leading-6 text-quiet">
+                Create an end customer first, then assign warehouse SIMs to them. Shipping stays outside Catalyst.
+              </p>
+              <Link
+                href="/dashboard/customers"
+                className="inline-flex rounded-card bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink"
+              >
+                Go to Customers
+              </Link>
+              <p className="text-xs text-quiet">Only a reseller admin can add customer names.</p>
+            </div>
           ) : (
             customers.map((item) => (
               <button
@@ -142,16 +154,18 @@ export function AssignWizard({
       ) : null}
 
       {error ? <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
-      <WizardActions
-        onBack={step > 0 ? () => setStep(step - 1) : undefined}
-        onNext={() => {
-          if (step < 2) setStep(step + 1);
-          else void submit();
-        }}
-        nextLabel={step < 2 ? "Continue" : "Assign & sync CC"}
-        busy={busy}
-        disabled={!customerId || !planId || (step === 1 && selected.length === 0)}
-      />
+      {customers.length > 0 ? (
+        <WizardActions
+          onBack={step > 0 ? () => setStep(step - 1) : undefined}
+          onNext={() => {
+            if (step < 2) setStep(step + 1);
+            else void submit();
+          }}
+          nextLabel={step < 2 ? "Continue" : "Assign & sync CC"}
+          busy={busy}
+          disabled={!customerId || !planId || (step === 1 && selected.length === 0)}
+        />
+      ) : null}
     </WizardFrame>
   );
 }
