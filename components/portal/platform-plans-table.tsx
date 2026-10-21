@@ -177,7 +177,7 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
         </table>
         {filtered.length === 0 ? (
           <p className="px-4 py-8 text-sm text-quiet">
-            {plans.length === 0 ? "No ATN plans yet." : "No plans match these filters."}
+            {plans.length === 0 ? "No plans yet." : "No plans match these filters."}
           </p>
         ) : null}
       </div>

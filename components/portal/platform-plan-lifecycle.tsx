@@ -125,7 +125,7 @@ export function PlatformPlanLifecycle({
         title={`Delete ${name}?`}
         body={
           <p>
-            Permanently removes this ATN plan, its reseller contracts, and any retail copies with no SIMs. This cannot
+            Permanently removes this plan, its reseller contracts, and any retail copies with no SIMs. This cannot
             be undone.
           </p>
         }

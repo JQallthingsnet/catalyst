@@ -50,7 +50,7 @@ export function PlatformPlanWizard({
 
   return (
     <WizardFrame
-      title="Create ATN plan"
+      title="Create plan"
       steps={["Remarks", "Supplier mapping", "Bind resellers", "Confirm"]}
       step={step}
       summary={
@@ -152,7 +152,7 @@ export function PlatformPlanWizard({
       ) : null}
       {step === 3 ? (
         <p className="text-sm leading-6 text-quiet">
-          This creates one ATN plan (visible under Plans with the supplier mapping) and adds it to Contract for the
+          This creates one plan (visible under Plans with the supplier mapping) and adds it to Contract for the
           bound reseller(s). Reseller admins can refer to Contract; they create retail plans from Plans.
         </p>
       ) : null}

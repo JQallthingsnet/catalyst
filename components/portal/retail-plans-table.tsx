@@ -62,7 +62,7 @@ export function RetailPlansTable({
                 onChange={(event) => setSource(event.target.value)}
                 className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
               >
-                <option value="">All ATN plans</option>
+                <option value="">All plans</option>
                 {sources.map((item) => (
                   <option key={item} value={item}>
                     {item}

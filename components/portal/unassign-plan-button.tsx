@@ -60,7 +60,7 @@ export function UnassignPlanButton({
       <ConfirmDialog
         open={open}
         title={`Unbind ${tenantName}?`}
-        body={<p>This reseller will no longer see or buy this ATN plan. Existing SIMs are not changed.</p>}
+        body={<p>This reseller will no longer see or buy this plan. Existing SIMs are not changed.</p>}
         confirmLabel="Unbind"
         tone="danger"
         busy={busy}

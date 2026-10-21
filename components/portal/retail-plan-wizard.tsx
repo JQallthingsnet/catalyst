@@ -43,7 +43,7 @@ export function RetailPlanWizard({
   return (
     <WizardFrame
       title="Create retail plan"
-      steps={["ATN plan", "Name, data, price", "Confirm"]}
+      steps={["Plan", "Name, data, price", "Confirm"]}
       step={step}
       summary={
         <>
@@ -57,7 +57,7 @@ export function RetailPlanWizard({
       {step === 0 ? (
         <div className="space-y-2">
           {platformPlans.length === 0 ? (
-            <p className="text-sm text-quiet">No ATN plan is contracted to this organisation yet.</p>
+            <p className="text-sm text-quiet">No plan is contracted to this organisation yet.</p>
           ) : (
             platformPlans.map((item) => (
               <button

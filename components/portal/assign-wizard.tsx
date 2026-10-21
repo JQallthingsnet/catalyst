@@ -104,7 +104,7 @@ export function AssignWizard({
               ))}
             </select>
             {plans.length === 0 ? (
-              <p className="mt-2 text-xs text-quiet">Copy a contracted ATN plan to retail first.</p>
+              <p className="mt-2 text-xs text-quiet">Copy a contracted plan to retail first.</p>
             ) : null}
           </label>
           <div className="max-h-72 overflow-auto">

@@ -873,7 +873,7 @@ export async function allocateWholesaleStock(
   const sku = await resolveSellStockSku(tenant.id, input.skuId);
   const platformPlan = await loadPlatformPlanRecord(input.platformPlanId);
   if (!platformPlan) throw new Error("Plan not found.");
-  if (!platformPlan.active) throw new Error("This ATN plan is deactivated.");
+  if (!platformPlan.active) throw new Error("This plan is deactivated.");
   const contracted = await tenantHasPlatformPlan(tenant.id, platformPlan.id);
   if (!contracted) throw new Error("Assign this plan to the reseller (contract) before selling stock.");
 
@@ -989,7 +989,7 @@ export async function assignSims(
     .bind(input.planId, tenantId)
     .first<{ id: string; name: string; wholesale_plan: string; comm_plan: string; platform_plan_id: string | null }>();
   if (!customer || !plan) throw new Error("Customer or plan not found in this tenant.");
-  if (!plan.platform_plan_id) throw new Error("Choose a retail plan copied from a contracted ATN plan.");
+  if (!plan.platform_plan_id) throw new Error("Choose a retail plan copied from a contracted plan.");
   let poolId: string | null = null;
   if (input.poolId) {
     const pool = await db
@@ -1025,7 +1025,7 @@ export async function assignSims(
       .first<{ platform_plan_id: string | null }>();
     if (!sim) throw new Error(`SIM ${iccid} is not in this tenant.`);
     if (!sim.platform_plan_id || sim.platform_plan_id !== plan.platform_plan_id) {
-      throw new Error(`SIM ${iccid} is not on the ATN plan this retail plan was copied from.`);
+      throw new Error(`SIM ${iccid} is not on the plan this retail plan was copied from.`);
     }
     const result = await db
       .prepare(
