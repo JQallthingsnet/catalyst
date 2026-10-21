@@ -4,6 +4,7 @@ import { RetailPlansTable } from "@/components/portal/retail-plans-table";
 import { requirePortal } from "@/lib/portal/guard";
 import { listPlans } from "@/lib/portal/repo";
 import { listAssignedPlatformPlans, listPlatformPlans } from "@/lib/portal/platform-plans";
+import { btnPrimary } from "@/lib/portal/button-styles";
 import { can } from "@/lib/portal/role-model";
 
 export default async function PlansPage() {
@@ -25,7 +26,7 @@ export default async function PlansPage() {
               .
             </p>
           </div>
-          <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink">
+          <Link href="/dashboard/plans/new" className={btnPrimary}>
             Create plan
           </Link>
         </div>
@@ -66,7 +67,7 @@ export default async function PlansPage() {
           </p>
         </div>
         {can(ctx.role, "plan.create") ? (
-          <Link href="/dashboard/plans/new" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink">
+          <Link href="/dashboard/plans/new" className={btnPrimary}>
             Create retail plan
           </Link>
         ) : null}

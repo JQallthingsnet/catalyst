@@ -5,6 +5,7 @@ import {
   PLATFORM_ALERT_SCOPE,
   SUGGESTED_ALERT_THRESHOLD_PCT,
 } from "@/lib/portal/alert-settings";
+import { btnSecondary } from "@/lib/portal/button-styles";
 import { requirePortal } from "@/lib/portal/guard";
 import { listAudit } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
@@ -101,10 +102,7 @@ export default async function UsagePage({
               <input type="checkbox" name="alert" value="1" defaultChecked={alertsOnly} />
               ≥{highlightPct}% only
             </label>
-            <button
-              type="submit"
-              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
-            >
+            <button type="submit" className={btnSecondary}>
               Filter
             </button>
           </form>

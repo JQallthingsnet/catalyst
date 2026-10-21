@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { OpenTenantButton } from "@/components/portal/tenant-switcher";
+import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
 import { listPlatformEstate } from "@/lib/portal/tenant";
@@ -40,16 +41,10 @@ export default async function EstatePage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/dashboard/estate/cc"
-            className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent"
-          >
+          <Link href="/dashboard/estate/cc" className={btnSecondary}>
             CC snapshot
           </Link>
-          <Link
-            href="/dashboard/estate/allocate"
-            className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
-          >
+          <Link href="/dashboard/estate/allocate" className={btnPrimary}>
             Sell stock
           </Link>
         </div>

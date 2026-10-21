@@ -4,6 +4,7 @@ import { ContractCataloguePicker } from "@/components/portal/contract-catalogue-
 import { ContractRules } from "@/components/portal/contract-rules";
 import { SetDefaultPlanButton } from "@/components/portal/set-default-plan-button";
 import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
+import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
 import type { SimSku } from "@/lib/portal/skus";
 
@@ -31,22 +32,13 @@ export function ContractsAdminView({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link
-            href="/dashboard/admin"
-            className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent"
-          >
+          <Link href="/dashboard/admin" className={btnSecondary}>
             Add reseller
           </Link>
-          <Link
-            href="/dashboard/catalogue"
-            className="rounded-card border border-line px-4 py-2 text-sm text-ink hover:border-accent"
-          >
+          <Link href="/dashboard/catalogue" className={btnSecondary}>
             Catalogue
           </Link>
-          <Link
-            href="/dashboard/plans/new?from=contract"
-            className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
-          >
+          <Link href="/dashboard/plans/new?from=contract" className={btnPrimary}>
             Create Rate Plan
           </Link>
         </div>
