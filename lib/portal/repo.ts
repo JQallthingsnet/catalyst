@@ -1002,16 +1002,37 @@ export async function assignSims(
   const iccids = input.iccids.map((value) => value.replace(/\s/g, "")).filter(Boolean);
   if (iccids.length === 0) throw new Error("Select at least one SIM.");
 
-  // Portal-only: end customer lives in Catalyst, not Jasper (custom field outside CC).
+  const contracted = await tenantHasPlatformPlan(tenantId, plan.platform_plan_id);
+  if (!contracted) {
+    throw new Error("That retail plan’s rate plan is not on this organisation’s contract.");
+  }
+
+  // Dynamic import avoids a circular dependency with rate-plan-change → writeAudit.
+  const { changeSimRatePlan } = await import("@/lib/portal/rate-plan-change");
+
+  // Portal-only end customer. Retail plan may retarget the SIM onto any contracted rate plan
+  // (same rules as Plan changes when the warehouse default differs).
+  let ratePlanChanges = 0;
   for (const iccid of iccids) {
     const sim = await db
       .prepare("SELECT platform_plan_id FROM sims WHERE tenant_id = ? AND iccid = ?")
       .bind(tenantId, iccid)
       .first<{ platform_plan_id: string | null }>();
     if (!sim) throw new Error(`SIM ${iccid} is not in this tenant.`);
-    if (!sim.platform_plan_id || sim.platform_plan_id !== plan.platform_plan_id) {
-      throw new Error(`SIM ${iccid} is not on the plan this retail plan was copied from.`);
+
+    if (sim.platform_plan_id !== plan.platform_plan_id) {
+      try {
+        await changeSimRatePlan(tenantId, actorEmail, {
+          iccid,
+          platformPlanId: plan.platform_plan_id,
+        });
+        ratePlanChanges += 1;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Rate plan change failed.";
+        throw new Error(`SIM ${iccid}: ${message}`);
+      }
     }
+
     const result = await db
       .prepare(
         `UPDATE sims
@@ -1027,7 +1048,9 @@ export async function assignSims(
     tenantId,
     actorEmail,
     "assign",
-    `${customer.name} · ${iccids.length} SIMs · ${plan.name}${poolId ? " · pool" : ""}`,
+    `${customer.name} · ${iccids.length} SIMs · ${plan.name}${
+      ratePlanChanges ? ` · ${ratePlanChanges} rate plan change${ratePlanChanges === 1 ? "" : "s"}` : ""
+    }${poolId ? " · pool" : ""}`,
   );
   return { assigned: iccids.length };
 }

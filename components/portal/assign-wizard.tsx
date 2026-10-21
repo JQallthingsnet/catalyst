@@ -276,8 +276,9 @@ export function AssignWizard({
 
       {step === 2 ? (
         <p className="text-sm leading-6 text-quiet">
-          Confirm saves the end customer and retail plan on these SIMs in Catalyst only. Jasper End
-          customer is managed outside Control Center and is not updated here.
+          Confirm saves the end customer and retail plan in Catalyst only (Jasper End customer is not
+          updated). If a SIM is on a different contracted rate plan, Assign moves it to this retail
+          plan’s parent using the same Plan changes rules.
         </p>
       ) : null}
 
