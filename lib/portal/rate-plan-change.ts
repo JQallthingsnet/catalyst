@@ -120,9 +120,8 @@ export async function changeSimRatePlan(
     }
   }
 
-  // Reseller-facing identity is modem_ID (CC snapshot), not Jasper rate_plan / TCode.
+  // Reseller-facing From/To = modem_ID (never Jasper TCode / wholesale_plan).
   const fromPlan = sim.platform_plan_id ? await loadPlatformPlanRecord(sim.platform_plan_id) : null;
-  const fromModemId = fromPlan?.name?.trim() || sim.wholesale_plan;
   const toModemId = target.name.trim();
   const jasperRatePlan = target.cc_rate_plan;
 
@@ -131,6 +130,7 @@ export async function changeSimRatePlan(
     .bind(iccid)
     .first<{ modem_id: string | null }>();
   const liveModemId = cc?.modem_id?.trim() || null;
+  const fromModemId = liveModemId || fromPlan?.name?.trim() || null;
   const tcodeMismatch = Boolean(liveModemId && toModemId && liveModemId !== toModemId);
 
   let clearedRetailPlan = false;
@@ -244,14 +244,25 @@ type RatePlanChangeRow = {
   push_error: string | null;
 };
 
+/** From = live CC modem_ID first; To = plan modem_ID (platform plan name). Avoid raw Jasper TCode when possible. */
+const FROM_MODEM_SQL = `COALESCE(NULLIF(TRIM(d.modem_id), ''), NULLIF(TRIM(fp.name), ''), NULLIF(TRIM(c.from_rate_plan), ''))`;
+const TO_MODEM_SQL = `COALESCE(NULLIF(TRIM(tp.name), ''), NULLIF(TRIM(c.to_rate_plan), ''))`;
+
+const CHANGE_FROM = `FROM sim_rate_plan_changes c
+           JOIN tenants t ON t.id = c.tenant_id
+           LEFT JOIN sims s ON s.iccid = c.iccid AND s.tenant_id = c.tenant_id
+           LEFT JOIN platform_plans fp ON fp.id = c.from_platform_plan_id
+           LEFT JOIN platform_plans tp ON tp.id = c.to_platform_plan_id
+           LEFT JOIN cc_devices d ON d.iccid = c.iccid`;
+
 const CHANGE_SELECT = `SELECT c.id, c.tenant_id, t.name AS tenant_name, c.iccid,
                   c.from_platform_plan_id, c.to_platform_plan_id,
-                  c.from_rate_plan, c.to_rate_plan, c.sim_state, c.tcode_mismatch,
+                  ${FROM_MODEM_SQL} AS from_rate_plan,
+                  ${TO_MODEM_SQL} AS to_rate_plan,
+                  c.sim_state, c.tcode_mismatch,
                   c.actor_email, c.created_at, s.state AS current_state,
                   c.push_status, c.pushed_at, c.push_error
-           FROM sim_rate_plan_changes c
-           JOIN tenants t ON t.id = c.tenant_id
-           LEFT JOIN sims s ON s.iccid = c.iccid AND s.tenant_id = c.tenant_id`;
+           ${CHANGE_FROM}`;
 
 const EXPORT_PAGE_SIZE = 500;
 
@@ -322,18 +333,18 @@ function ratePlanChangeWhere(filter: RatePlanChangeFilter): { sql: string; binds
   }
 
   if (normalized.query) {
-    clauses.push(`(c.iccid LIKE ? OR IFNULL(c.actor_email,'') LIKE ? OR IFNULL(c.from_rate_plan,'') LIKE ?
-      OR IFNULL(c.to_rate_plan,'') LIKE ? OR IFNULL(t.name,'') LIKE ?)`);
+    clauses.push(`(c.iccid LIKE ? OR IFNULL(c.actor_email,'') LIKE ? OR IFNULL(${FROM_MODEM_SQL},'') LIKE ?
+      OR IFNULL(${TO_MODEM_SQL},'') LIKE ? OR IFNULL(t.name,'') LIKE ?)`);
     const digits = `%${normalized.query.replace(/\s/g, "")}%`;
     const text = `%${normalized.query}%`;
     binds.push(digits, text, text, text, text);
   }
   if (normalized.fromRatePlan) {
-    clauses.push("c.from_rate_plan = ?");
+    clauses.push(`${FROM_MODEM_SQL} = ?`);
     binds.push(normalized.fromRatePlan);
   }
   if (normalized.toRatePlan) {
-    clauses.push("c.to_rate_plan = ?");
+    clauses.push(`${TO_MODEM_SQL} = ?`);
     binds.push(normalized.toRatePlan);
   }
   if (normalized.simState) {
@@ -417,12 +428,7 @@ export async function listRatePlanChanges(
 export async function countRatePlanChanges(filter: RatePlanChangeFilter = {}): Promise<number> {
   const { sql, binds } = ratePlanChangeWhere(filter);
   const row = await getDB()
-    .prepare(
-      `SELECT COUNT(*) AS c
-       FROM sim_rate_plan_changes c
-       JOIN tenants t ON t.id = c.tenant_id
-       LEFT JOIN sims s ON s.iccid = c.iccid AND s.tenant_id = c.tenant_id${sql}`,
-    )
+    .prepare(`SELECT COUNT(*) AS c ${CHANGE_FROM}${sql}`)
     .bind(...binds)
     .first<{ c: number }>();
   return row?.c ?? 0;
@@ -443,9 +449,7 @@ export async function listRatePlanChangeFilterOptions(
     const rows = await db
       .prepare(
         `SELECT DISTINCT ${columnSql} AS value
-         FROM sim_rate_plan_changes c
-         JOIN tenants t ON t.id = c.tenant_id
-         LEFT JOIN sims s ON s.iccid = c.iccid AND s.tenant_id = c.tenant_id${whereExtra}
+         ${CHANGE_FROM}${whereExtra}
          ORDER BY value COLLATE NOCASE
          LIMIT 500`,
       )
@@ -467,8 +471,8 @@ export async function listRatePlanChangeFilterOptions(
         .all<{ id: string; name: string }>();
 
   const [fromRatePlans, toRatePlans, simStates, currentStates, actorEmails] = await Promise.all([
-    distinct("c.from_rate_plan"),
-    distinct("c.to_rate_plan"),
+    distinct(FROM_MODEM_SQL),
+    distinct(TO_MODEM_SQL),
     distinct("c.sim_state"),
     distinct("s.state"),
     distinct("c.actor_email"),
