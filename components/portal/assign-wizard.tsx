@@ -29,6 +29,13 @@ export function AssignWizard({
 
   const ready = useMemo(() => sims.filter((sim) => sim.state === "Ready" || sim.state === "Active"), [sims]);
 
+  const nextDisabled =
+    step === 0
+      ? !customerId
+      : step === 1
+        ? !planId || selected.length === 0
+        : !customerId || !planId || selected.length === 0;
+
   function toggle(iccid: string) {
     setSelected((current) => (current.includes(iccid) ? current.filter((item) => item !== iccid) : [...current, iccid]));
   }
@@ -84,66 +91,98 @@ export function AssignWizard({
               <p className="text-xs text-quiet">Only a reseller admin can add customer names.</p>
             </div>
           ) : (
-            customers.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setCustomerId(item.id)}
-                className={`block w-full rounded-card border px-4 py-3 text-left ${
-                  customerId === item.id ? "border-accent bg-panel-2" : "border-line"
-                }`}
-              >
-                {item.name}
-              </button>
-            ))
+            <>
+              {customers.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setCustomerId(item.id)}
+                  className={`block w-full rounded-card border px-4 py-3 text-left ${
+                    customerId === item.id ? "border-accent bg-panel-2" : "border-line"
+                  }`}
+                >
+                  {item.name}
+                </button>
+              ))}
+              {plans.length === 0 ? (
+                <p className="pt-2 text-xs text-quiet">
+                  Next you will need a retail plan — create one on{" "}
+                  <Link href="/dashboard/plans" className="text-accent">
+                    Plans
+                  </Link>{" "}
+                  first.
+                </p>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}
 
       {step === 1 ? (
-        <div className="space-y-4">
-          <label className="block text-sm">
-            Retail plan
-            <select
-              value={planId}
-              onChange={(event) => setPlanId(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+        plans.length === 0 ? (
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-quiet">
+              Create a retail plan from your contracted plans before assigning SIMs.
+            </p>
+            <Link
+              href="/dashboard/plans"
+              className="inline-flex rounded-card bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink"
             >
-              {plans.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            {plans.length === 0 ? (
-              <p className="mt-2 text-xs text-quiet">Copy a contracted plan to retail first.</p>
-            ) : null}
-          </label>
-          <div className="max-h-72 overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-quiet">
-                <tr>
-                  <th className="pb-2" />
-                  <th className="pb-2">ICCID</th>
-                  <th className="pb-2">Plan</th>
-                  <th className="pb-2">State</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ready.map((sim) => (
-                  <tr key={sim.iccid} className="border-t border-line">
-                    <td className="py-2">
-                      <input type="checkbox" checked={selected.includes(sim.iccid)} onChange={() => toggle(sim.iccid)} />
-                    </td>
-                    <td className="py-2 font-mono">{formatIccid(sim.iccid)}</td>
-                    <td className="py-2 text-quiet">{sim.planName ?? "—"}</td>
-                    <td className="py-2">{sim.state}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              Go to Plans
+            </Link>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4">
+            <label className="block text-sm">
+              Retail plan
+              <select
+                value={planId}
+                onChange={(event) => setPlanId(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+              >
+                {plans.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="max-h-72 overflow-auto">
+              {ready.length === 0 ? (
+                <p className="text-sm text-quiet">
+                  No Ready or Active warehouse SIMs to assign. Sell stock into this organisation first.
+                </p>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <thead className="text-quiet">
+                    <tr>
+                      <th className="pb-2" />
+                      <th className="pb-2">ICCID</th>
+                      <th className="pb-2">Plan</th>
+                      <th className="pb-2">State</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ready.map((sim) => (
+                      <tr key={sim.iccid} className="border-t border-line">
+                        <td className="py-2">
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(sim.iccid)}
+                            onChange={() => toggle(sim.iccid)}
+                          />
+                        </td>
+                        <td className="py-2 font-mono">{formatIccid(sim.iccid)}</td>
+                        <td className="py-2 text-quiet">{sim.planName ?? "—"}</td>
+                        <td className="py-2">{sim.state}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )
       ) : null}
 
       {step === 2 ? (
@@ -154,7 +193,7 @@ export function AssignWizard({
       ) : null}
 
       {error ? <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p> : null}
-      {customers.length > 0 ? (
+      {customers.length > 0 && !(step === 1 && plans.length === 0) ? (
         <WizardActions
           onBack={step > 0 ? () => setStep(step - 1) : undefined}
           onNext={() => {
@@ -163,7 +202,7 @@ export function AssignWizard({
           }}
           nextLabel={step < 2 ? "Continue" : "Assign & sync CC"}
           busy={busy}
-          disabled={!customerId || !planId || (step === 1 && selected.length === 0)}
+          disabled={nextDisabled}
         />
       ) : null}
     </WizardFrame>
