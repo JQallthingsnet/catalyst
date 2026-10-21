@@ -8,8 +8,8 @@ const SUPER_ADMIN_RULES = [
   "Rate plans: only bound resellers can see and use a rate plan. Bind them on Contract before selling stock.",
   "Catalogue: on Contract, tick which Catalogue SKUs each reseller may Order SIMs for (multiple allowed). Binding a rate plan requires at least one catalogue SKU if none are bound yet.",
   "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
-  "Before activation, a rate-plan change is allowed within contracted plans. Reseller admins or operators can change the rate plan on a SIM before shipping to end customer or activation.",
-  "After activation: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
+  "Ready or Deactivated: rate-plan changes are free within contracted plans. Reseller admins or operators can change before shipping or after deactivation.",
+  "Active or Suspended: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
   "Activated rate-plan changes are flagged when the contracted supplier rate-plan code does not match the live code on the supplier snapshot; billing notification until charging is automated.",
   "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs. Each change has a supplier push status (pending until Optus write is enabled).",
 ];
@@ -26,8 +26,8 @@ const RESELLER_ADMIN_RULES = [
   "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",
   "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
-  "Before activation, you or an operator may change an ICCID’s rate plan to another plan on this contract (before shipping to the end customer or activation).",
-  "After activation: rate-plan changes only until midnight on the 24th (Sydney), and only once per ICCID per month. After the cut-off: “Changes will be effective next month”.",
+  "Ready or Deactivated SIMs: change rate plan freely within this contract.",
+  "Active or Suspended: only until midnight on the 24th (Sydney), and only once per ICCID per month. After the cut-off: “Changes will be effective next month”.",
   "Plan changes is your log book of every ICCID rate-plan change for this organisation, with SIM status.",
 ];
 

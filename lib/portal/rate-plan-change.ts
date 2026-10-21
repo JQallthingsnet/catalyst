@@ -48,8 +48,9 @@ export type RatePlanChangeResult = {
   clearedRetailPlan: boolean;
 };
 
+/** In-service SIMs only — Ready and Deactivated change freely. */
 function isActivatedState(state: SimState): boolean {
-  return state !== "Ready";
+  return state === "Active" || state === "Suspended";
 }
 
 async function countChangesThisSydneyMonth(iccid: string, at = new Date()): Promise<number> {
@@ -68,8 +69,8 @@ async function countChangesThisSydneyMonth(iccid: string, at = new Date()): Prom
  * Catalyst portal policy for ICCID rate-plan changes.
  * Records push_status=pending for the future Jasper write queue (push still on hold).
  * - Target must be on the reseller contract and active.
- * - Ready SIMs: change freely within contracted plans.
- * - After activation: only until 24:00 on the 24th (Sydney); one change per ICCID per Sydney month.
+ * - Ready / Deactivated SIMs: change freely within contracted plans.
+ * - Active / Suspended: only until 24:00 on the 24th (Sydney); one change per ICCID per Sydney month.
  */
 export async function changeSimRatePlan(
   tenantId: string,

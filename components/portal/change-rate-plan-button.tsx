@@ -95,8 +95,9 @@ export function ChangeRatePlanButton({
               </select>
             </label>
             <p className="text-xs text-quiet">
-              After activation: only until midnight on the 24th (Sydney), one change per ICCID per
-              month. A mismatched retail plan on this SIM will be cleared.
+              Active or Suspended: only until midnight on the 24th (Sydney), one change per ICCID per
+              month. Ready and Deactivated change freely. A mismatched retail plan on this SIM will be
+              cleared.
             </p>
           </div>
         }
