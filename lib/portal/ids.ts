@@ -2,8 +2,9 @@ export function newId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
 
+/** Display ICCID with no spaces (digits only; strip any existing whitespace). */
 export function formatIccid(iccid: string): string {
-  return iccid.replace(/(.{4})/g, "$1 ").trim();
+  return String(iccid ?? "").replace(/\s/g, "");
 }
 
 export function padIccid(n: number): string {
