@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { btnPrimary } from "@/lib/portal/button-styles";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { listSimSkus } from "@/lib/portal/skus";
 
@@ -16,10 +17,7 @@ export default async function CataloguePage() {
             here. Sell stock and Order SIMs only use active items.
           </p>
         </div>
-        <Link
-          href="/dashboard/catalogue/new"
-          className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
-        >
+        <Link href="/dashboard/catalogue/new" className={btnPrimary}>
           Create SIM type
         </Link>
       </div>

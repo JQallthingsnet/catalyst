@@ -6,6 +6,7 @@ import { requirePortal } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import { listAssignedPlatformPlans } from "@/lib/portal/platform-plans";
 import { listSims } from "@/lib/portal/repo";
+import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { can, simFieldsForRole } from "@/lib/portal/role-model";
 
 function ccLabel(id: string | null) {
@@ -49,27 +50,24 @@ export default async function SimsPage({
               : "Inventory and lifecycle. Control Center remains the radio source."}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canChangePlan ? (
-            <Link
-              href="/dashboard/sims/rate-plan-changes"
-              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
-            >
+            <Link href="/dashboard/sims/rate-plan-changes" className={btnSecondary}>
               Plan changes
             </Link>
           ) : null}
           {can(ctx.role, "wholesale.allocate") ? (
-            <Link href="/dashboard/estate/allocate" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
+            <Link href="/dashboard/estate/allocate" className={btnSecondary}>
               Sell stock
             </Link>
           ) : null}
           {can(ctx.role, "platform.estate") ? (
-            <Link href="/dashboard/estate/cc" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
+            <Link href="/dashboard/estate/cc" className={btnSecondary}>
               CC snapshot
             </Link>
           ) : null}
           {can(ctx.role, "assign") ? (
-            <Link href="/dashboard/sims/assign" className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink">
+            <Link href="/dashboard/sims/assign" className={btnPrimary}>
               Assign SIMs
             </Link>
           ) : null}

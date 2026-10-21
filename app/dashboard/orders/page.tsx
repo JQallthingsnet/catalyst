@@ -8,6 +8,7 @@ import {
   orderFilterActive,
   orderKindLabel,
 } from "@/lib/portal/repo";
+import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { formatAuDateTime } from "@/lib/portal/time";
 
 function FilterSelect({
@@ -107,17 +108,11 @@ export default async function OrdersPage({
           </p>
         </div>
         {asPlatform ? (
-          <Link
-            href="/dashboard/estate/allocate"
-            className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
-          >
+          <Link href="/dashboard/estate/allocate" className={btnPrimary}>
             Sell stock
           </Link>
         ) : (
-          <Link
-            href="/dashboard/sims/order"
-            className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
-          >
+          <Link href="/dashboard/sims/order" className={btnPrimary}>
             Order SIMs
           </Link>
         )}
@@ -197,14 +192,11 @@ export default async function OrdersPage({
         <p className="text-xs text-quiet">Dates use Australia/Sydney calendar days. Leave empty to ignore.</p>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="submit"
-            className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
-          >
+          <button type="submit" className={btnPrimary}>
             Apply filters
           </button>
           {filtered ? (
-            <Link href={clearHref} className="rounded-full border border-line px-4 py-2 text-sm hover:border-accent">
+            <Link href={clearHref} className={btnSecondary}>
               Clear
             </Link>
           ) : null}

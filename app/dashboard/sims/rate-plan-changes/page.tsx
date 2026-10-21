@@ -10,6 +10,7 @@ import {
   ratePlanChangeFilterActive,
   type RatePlanChangeFilter,
 } from "@/lib/portal/rate-plan-change";
+import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { formatAuDateTime } from "@/lib/portal/time";
 
 const PAGE_SIZE = 50;
@@ -172,7 +173,7 @@ export default async function RatePlanChangesPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PlanChangesExportButton queryString={exportQuery} />
-          <Link href="/dashboard/sims" className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent">
+          <Link href="/dashboard/sims" className={btnSecondary}>
             Back to SIMs
           </Link>
         </div>
@@ -286,15 +287,12 @@ export default async function RatePlanChangesPage({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="submit"
-            className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
+            className={btnPrimary}
           >
             Apply filters
           </button>
           {filtered ? (
-            <Link
-              href="/dashboard/sims/rate-plan-changes"
-              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent"
-            >
+            <Link href="/dashboard/sims/rate-plan-changes" className={btnSecondary}>
               Clear
             </Link>
           ) : null}

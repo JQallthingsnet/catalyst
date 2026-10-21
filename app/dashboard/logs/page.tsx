@@ -8,6 +8,7 @@ import {
   normalizeAuditLogFilter,
   type AuditLogFilter,
 } from "@/lib/portal/audit";
+import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { formatAuDateTime } from "@/lib/portal/time";
 
@@ -190,17 +191,11 @@ export default async function LogsPage({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="submit"
-            className="inline-flex h-10 items-center rounded-full bg-accent px-4 text-sm font-medium text-accent-ink"
-          >
+          <button type="submit" className={btnPrimary}>
             Apply filters
           </button>
           {filtered ? (
-            <Link
-              href="/dashboard/logs"
-              className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent"
-            >
+            <Link href="/dashboard/logs" className={btnSecondary}>
               Clear
             </Link>
           ) : null}
