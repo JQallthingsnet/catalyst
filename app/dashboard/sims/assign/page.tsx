@@ -22,7 +22,12 @@ export default async function AssignPage() {
           plans={plans
             .filter((item) => item.platformPlanId)
             .map((item) => ({ id: item.id, name: item.name }))}
-          sims={sims.map((item) => ({ iccid: item.iccid, state: item.state, planName: item.planName }))}
+          sims={sims.map((item) => ({
+            iccid: item.iccid,
+            state: item.state,
+            planName: item.planName,
+            customerName: item.customerName,
+          }))}
         />
       </div>
     </div>
