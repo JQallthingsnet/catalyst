@@ -108,7 +108,7 @@ export function AssignWizard({
         <>
           <p>{selected.length} SIMs</p>
           <p>Plan {plan?.name ?? "—"}</p>
-          <p className="text-ok">Assign & sync CC</p>
+          <p className="text-ok">Assign in Catalyst</p>
         </>
       }
     >
@@ -276,8 +276,8 @@ export function AssignWizard({
 
       {step === 2 ? (
         <p className="text-sm leading-6 text-quiet">
-          Confirm writes the retail mapping and tenant/customer tags to Control Center. Failed CC calls
-          surface an error and retry; Catalyst will not silently diverge.
+          Confirm saves the end customer and retail plan on these SIMs in Catalyst only. Jasper End
+          customer is managed outside Control Center and is not updated here.
         </p>
       ) : null}
 
@@ -289,7 +289,7 @@ export function AssignWizard({
             if (step < 2) setStep(step + 1);
             else void submit();
           }}
-          nextLabel={step < 2 ? "Continue" : "Assign & sync CC"}
+          nextLabel={step < 2 ? "Continue" : "Assign"}
           busy={busy}
           disabled={nextDisabled}
         />

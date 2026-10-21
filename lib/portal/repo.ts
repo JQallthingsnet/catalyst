@@ -4,7 +4,6 @@ import { runCcMutation } from "@/lib/cc/adapter";
 import {
   listCcDevicesForCustomer,
   materializeWarehouseForCcCustomer,
-  setCcEndCustomers,
 } from "@/lib/cc/devices";
 import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
 import { getSimSku, listResellerSkus, listSimSkus, tenantHasSku } from "@/lib/portal/skus";
@@ -978,7 +977,7 @@ export async function assignSims(
   tenantId: string,
   actorEmail: string,
   input: { customerId: string; planId: string; poolId?: string; iccids: string[] },
-): Promise<{ assigned: number; correlationId: string }> {
+): Promise<{ assigned: number }> {
   const db = getDB();
   const customer = await db
     .prepare("SELECT id, name FROM customers WHERE id = ? AND tenant_id = ?")
@@ -1003,21 +1002,7 @@ export async function assignSims(
   const iccids = input.iccids.map((value) => value.replace(/\s/g, "")).filter(Boolean);
   if (iccids.length === 0) throw new Error("Select at least one SIM.");
 
-  const job = await runCcMutation({
-    tenantId,
-    kind: "assign",
-    payload: {
-      customerId: customer.id,
-      planId: plan.id,
-      wholesalePlan: plan.wholesale_plan,
-      commPlan: plan.comm_plan,
-      poolId,
-      iccids,
-    },
-    correlationId: `assign-${customer.id}-${iccids[0]}-${iccids.length}`,
-  });
-  if (job.status === "failed") throw new Error(job.error ?? "Control Center assign failed.");
-
+  // Portal-only: end customer lives in Catalyst, not Jasper (custom field outside CC).
   for (const iccid of iccids) {
     const sim = await db
       .prepare("SELECT platform_plan_id FROM sims WHERE tenant_id = ? AND iccid = ?")
@@ -1038,15 +1023,13 @@ export async function assignSims(
     if ((result.meta.changes ?? 0) === 0) throw new Error(`SIM ${iccid} is not in this tenant.`);
   }
 
-  await setCcEndCustomers(iccids, customer.name);
-
   await writeAudit(
     tenantId,
     actorEmail,
     "assign",
     `${customer.name} · ${iccids.length} SIMs · ${plan.name}${poolId ? " · pool" : ""}`,
   );
-  return { assigned: iccids.length, correlationId: job.correlationId };
+  return { assigned: iccids.length };
 }
 
 export async function applyLifecycle(
