@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModemAllowancesDialog } from "@/components/portal/modem-allowances-dialog";
 import { RatePlanAllowancesDialog } from "@/components/portal/rate-plan-allowances-dialog";
+import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 
 export type PoolGroupBy = "rate_plan" | "modem" | "customer";
 
@@ -156,11 +157,7 @@ function EntityPickerDialog({
             Reset to top 10
           </button>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
-            >
+            <button type="button" onClick={onClose} className={btnSecondary}>
               Cancel
             </button>
             <button
@@ -170,7 +167,7 @@ function EntityPickerDialog({
                 onApply(ordered);
                 onClose();
               }}
-              className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink"
+              className={btnPrimary}
             >
               Apply ({draft.size})
             </button>
@@ -596,14 +593,14 @@ export function PoolsDashboard({
             <button
               type="button"
               onClick={() => setRatePlanAllowancesOpen(true)}
-              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
+              className={btnSecondary}
             >
               Rate plan allowances
             </button>
             <button
               type="button"
               onClick={() => setModemAllowancesOpen(true)}
-              className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent"
+              className={btnSecondary}
             >
               Modem allowances
             </button>

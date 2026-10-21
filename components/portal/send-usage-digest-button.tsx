@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { btnSecondary } from "@/lib/portal/button-styles";
 
 /** Super admin: force today's digests using Alerts settings (Pools + reseller Pools/Usage). */
 export function SendUsageDigestButton() {
@@ -46,7 +47,7 @@ export function SendUsageDigestButton() {
         type="button"
         disabled={busy}
         onClick={() => void sendNow()}
-        className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent disabled:opacity-40"
+        className={btnSecondary}
       >
         {busy ? "Sending…" : "Send digest now"}
       </button>
