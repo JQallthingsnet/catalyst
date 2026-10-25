@@ -89,7 +89,7 @@ export default async function SimsPage({
               {fields.ccStatus ? <th className="px-4 py-3">CC status</th> : null}
               <th className="px-4 py-3">IMSI</th>
               <th className="px-4 py-3">MSISDN</th>
-              <th className="px-4 py-3">Volume</th>
+              <th className="px-4 py-3">CTD MB</th>
               <th className="px-4 py-3">Pool</th>
               <th className="px-4 py-3">State</th>
               <th className="px-4 py-3">Lifecycle</th>

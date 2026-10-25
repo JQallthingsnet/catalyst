@@ -246,7 +246,7 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
            s.platform_plan_id, s.imsi, s.msisdn, s.current_volume_mb,
            c.name as customer_name, p.name as plan_name, pl.name as pool_name,
            pp.name as platform_plan_name, t.name as tenant_name,
-           cc.status as cc_status, cc.polled_at as cc_polled_at
+           cc.status as cc_status, cc.polled_at as cc_polled_at, cc.ctd_usage_mb as cc_ctd_usage_mb
     FROM sims s
     LEFT JOIN customers c ON c.id = s.customer_id
     LEFT JOIN plans p ON p.id = s.plan_id
@@ -280,6 +280,7 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     pool_name: string | null;
     cc_status: string | null;
     cc_polled_at: string | null;
+    cc_ctd_usage_mb: number | null;
   }>();
   return (rows.results ?? []).map((row) => ({
     id: row.id,
@@ -298,7 +299,8 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     tenantName: row.tenant_name,
     imsi: row.imsi,
     msisdn: row.msisdn,
-    currentVolumeMb: row.current_volume_mb,
+    // Prefer live CC CTD; sims.current_volume_mb is only a fallback stamp.
+    currentVolumeMb: row.cc_ctd_usage_mb ?? row.current_volume_mb,
     ccStatus: row.cc_status,
     ccPolledAt: row.cc_polled_at,
   }));
