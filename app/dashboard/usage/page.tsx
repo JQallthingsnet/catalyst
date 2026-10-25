@@ -7,11 +7,9 @@ import {
 } from "@/lib/portal/alert-settings";
 import { btnSecondary } from "@/lib/portal/button-styles";
 import { requirePortal } from "@/lib/portal/guard";
-import { listAudit } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
 import { listSimModemUsage, type UsageAllowanceBasis } from "@/lib/portal/sim-usage";
 import { loadTenant } from "@/lib/portal/tenant";
-import { formatAuDateTime } from "@/lib/portal/time";
 
 export default async function UsagePage({
   searchParams,
@@ -35,18 +33,15 @@ export default async function UsagePage({
   /** Highlight / filter band: saved Alerts threshold, else UI suggestion only. */
   const highlightPct = alertSetting?.thresholdPct ?? SUGGESTED_ALERT_THRESHOLD_PCT;
 
-  const [sims, audit] = await Promise.all([
-    can(ctx.role, "pool.view")
-      ? listSimModemUsage({
-          basis,
-          customer: customerScope,
-          q,
-          minPct: alertsOnly ? highlightPct : undefined,
-          limit: 500,
-        })
-      : Promise.resolve([]),
-    listAudit(ctx.tenantId),
-  ]);
+  const sims = can(ctx.role, "pool.view")
+    ? await listSimModemUsage({
+        basis,
+        customer: customerScope,
+        q,
+        minPct: alertsOnly ? highlightPct : undefined,
+        limit: 500,
+      })
+    : [];
 
   const alertCount = sims.filter(
     (sim) => sim.pct != null && sim.pct >= highlightPct,
@@ -188,28 +183,6 @@ export default async function UsagePage({
         </p>
       )}
 
-      {can(ctx.role, "audit.view") ? (
-        <div className="mt-8">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold text-ink">Recent activity</h2>
-            <Link href="/dashboard/logs" className="text-xs text-accent hover:underline">
-              View all logs
-            </Link>
-          </div>
-          <p className="mt-1 text-xs text-quiet">Portal audit log for this organisation (not the Plan changes book).</p>
-          <ul className="mt-3 space-y-2 text-sm">
-            {audit.slice(0, 12).map((item) => (
-              <li key={item.id} className="rounded-card border border-line bg-panel px-4 py-3">
-                <p className="text-xs text-quiet">{formatAuDateTime(item.createdAt)}</p>
-                <p className="mt-1 text-ink">{item.detail}</p>
-              </li>
-            ))}
-            {audit.length === 0 ? (
-              <li className="rounded-card border border-line bg-panel px-4 py-8 text-quiet">No activity yet.</li>
-            ) : null}
-          </ul>
-        </div>
-      ) : null}
     </div>
   );
 }
