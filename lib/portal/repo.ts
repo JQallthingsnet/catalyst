@@ -806,12 +806,34 @@ export async function createOrder(
   }
 
   await writeAudit(tenantId, actor.email, "order", `Order ${sku.name} × ${input.quantity} submitted`);
+
+  const destination = input.destination ?? input.logistics;
+  // Soft-fail: order stays submitted even if SMTP or recipients misconfigured.
+  try {
+    const { notifySuperAdminsOfOrder } = await import("@/lib/portal/order-notify");
+    const tenant = await loadTenant(tenantId);
+    const result = await notifySuperAdminsOfOrder({
+      orderId: id,
+      tenantName: tenant?.name ?? tenantId,
+      skuName: sku.name,
+      quantity: input.quantity,
+      destination,
+      poNumber,
+      createdBy: actor.email,
+    });
+    if (result.errors.length > 0) {
+      console.error("[order-notify]", result.errors.join("; "));
+    }
+  } catch (err) {
+    console.error("[order-notify]", err instanceof Error ? err.message : err);
+  }
+
   return {
     id,
     skuName: sku.name,
     quantity: input.quantity,
     logistics: input.logistics,
-    destination: input.destination ?? input.logistics,
+    destination,
     status: "Submitted",
     createdAt: now,
     kind: "order_sims",

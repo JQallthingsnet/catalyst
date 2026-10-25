@@ -1,4 +1,5 @@
 import { AlertSettingsForm } from "@/components/portal/alert-settings-form";
+import { OrderNotifySettingsForm } from "@/components/portal/order-notify-settings-form";
 import { SendUsageDigestButton } from "@/components/portal/send-usage-digest-button";
 import {
   getAlertSettingsForScope,
@@ -6,6 +7,7 @@ import {
   type AlertKind,
 } from "@/lib/portal/alert-settings";
 import { requirePrivilege } from "@/lib/portal/guard";
+import { getOrderNotifySetting } from "@/lib/portal/order-notify";
 import { formatAuDateTime } from "@/lib/portal/time";
 
 export default async function AlertsPage() {
@@ -13,7 +15,10 @@ export default async function AlertsPage() {
   const onPlatform = ctx.role === "super_admin";
   const scopeId = onPlatform ? PLATFORM_ALERT_SCOPE : ctx.tenantId;
   const kinds: AlertKind[] = onPlatform ? ["pool"] : ["pool", "usage"];
-  const settings = await getAlertSettingsForScope(scopeId, kinds);
+  const [settings, orderNotify] = await Promise.all([
+    getAlertSettingsForScope(scopeId, kinds),
+    onPlatform ? getOrderNotifySetting() : Promise.resolve(null),
+  ]);
 
   return (
     <div>
@@ -22,7 +27,7 @@ export default async function AlertsPage() {
           <h1 className="text-3xl font-semibold">Alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Daily email when platform Pools (modem_ID per customer) hit your threshold. Configure recipients and the trigger %."
+              ? "Configure pool digests and who is emailed when a reseller Orders SIMs."
               : "Daily emails when your Pools (rate plan) or Usage (per SIM) hit your thresholds. Configure recipients and trigger % for each."}
           </p>
         </div>
@@ -30,6 +35,9 @@ export default async function AlertsPage() {
       </div>
 
       <div className="mt-6 space-y-4">
+        {onPlatform && orderNotify ? (
+          <OrderNotifySettingsForm initialRecipients={orderNotify.recipients} />
+        ) : null}
         <AlertSettingsForm
           kind="pool"
           title="Pool usage"
