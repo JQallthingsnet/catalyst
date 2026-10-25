@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
-import { cancelOrderSims, createOrder } from "@/lib/portal/repo";
+import { advanceOrderSims, cancelOrderSims, createOrder } from "@/lib/portal/repo";
 
 export async function POST(request: Request) {
   const ctx = await requirePortalApi();
@@ -21,6 +21,11 @@ export async function POST(request: Request) {
     if (body.action === "revoke" || body.action === "cancel") {
       await cancelOrderSims(ctx, body.orderId ?? "");
       return NextResponse.json({ success: true });
+    }
+
+    if (body.action === "advance") {
+      const result = await advanceOrderSims(ctx, body.orderId ?? "");
+      return NextResponse.json({ success: true, ...result });
     }
 
     const order = await createOrder(ctx.tenantId, ctx, {

@@ -133,10 +133,15 @@ export function OrderWizard({ skus }: { skus: SimSku[] }) {
       ) : null}
 
       {step === 2 ? (
-        <div className="space-y-2 text-sm leading-6">
+        <div className="space-y-2 text-sm leading-6 text-quiet">
           <p>
-            Submit an order for <strong>{sku?.name}</strong>. Control Center remains the source of ICCIDs. States: Draft
-            → Submitted → Accepted → Shipped → Received.
+            Submit an order for <strong className="text-ink">{sku?.name}</strong>. ATN fulfils plastic SIMs by
+            courier to the shipping address, or eSIMs by provision to the destination email. ICCIDs still come from
+            Control Center after ATN loads them.
+          </p>
+          <p>
+            Status path: Submitted → Accepted → Shipped → Received. You can revoke while Submitted; after Accept only
+            ATN can cancel.
           </p>
         </div>
       ) : null}
