@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogsExportButton } from "@/components/portal/logs-export-button";
 import {
   auditActionLabel,
   auditLogFilterActive,
@@ -114,6 +115,7 @@ export default async function LogsPage({
   const currentPage = Math.min(page, pageCount);
   const from = listedCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const to = Math.min(currentPage * PAGE_SIZE, listedCount);
+  const exportQuery = logsFilterParams(filter, onPlatform).toString();
 
   return (
     <div>
@@ -122,10 +124,11 @@ export default async function LogsPage({
           <h1 className="text-3xl font-semibold">Logs</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Portal activity across all organisations — who did what, and when."
-              : "Portal activity for your organisation — who did what, and when."}
+              ? "Portal activity across all organisations — who did what, and when. Export CSV downloads the current filtered view."
+              : "Portal activity for your organisation — who did what, and when. Export CSV downloads the current filtered view."}
           </p>
         </div>
+        <LogsExportButton queryString={exportQuery} />
       </div>
 
       <form action="/dashboard/logs" className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4">

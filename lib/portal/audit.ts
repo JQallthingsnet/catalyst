@@ -237,3 +237,68 @@ export function auditActionLabel(action: string): string {
       return action.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
   }
 }
+
+function csvEscape(value: string | number | boolean | null | undefined): string {
+  if (value == null) return "";
+  const text = String(value);
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+const EXPORT_PAGE_SIZE = 500;
+
+/** CSV for the current filtered Logs view (all matching rows, paged). */
+export async function exportAuditLogsCsv(options: {
+  filter?: AuditLogFilter;
+  includeOrganisation: boolean;
+}): Promise<string> {
+  const filter = normalizeAuditLogFilter(options.filter ?? {});
+  const headers = [
+    "when",
+    "actor",
+    ...(options.includeOrganisation ? ["organisation"] : []),
+    "action",
+    "action_key",
+    "detail",
+  ];
+  const lines = [headers.join(",")];
+  let offset = 0;
+  while (true) {
+    const { sql, binds } = auditWhere(filter);
+    const rows = await getDB()
+      .prepare(
+        `SELECT a.id, a.tenant_id, t.name AS tenant_name, a.actor_email, a.action, a.detail, a.created_at
+         FROM audit_events a
+         LEFT JOIN tenants t ON t.id = a.tenant_id
+         ${sql}
+         ORDER BY a.created_at DESC
+         LIMIT ? OFFSET ?`,
+      )
+      .bind(...binds, EXPORT_PAGE_SIZE, offset)
+      .all<{
+        id: string;
+        tenant_id: string;
+        tenant_name: string | null;
+        actor_email: string;
+        action: string;
+        detail: string;
+        created_at: string;
+      }>();
+    const page = (rows.results ?? []).map(mapRow);
+    if (page.length === 0) break;
+    for (const row of page) {
+      const cells = [
+        row.createdAt,
+        row.actorEmail,
+        ...(options.includeOrganisation ? [row.tenantName] : []),
+        auditActionLabel(row.action),
+        row.action,
+        row.detail,
+      ];
+      lines.push(cells.map(csvEscape).join(","));
+    }
+    offset += page.length;
+    if (page.length < EXPORT_PAGE_SIZE) break;
+  }
+  return `${lines.join("\n")}\n`;
+}
