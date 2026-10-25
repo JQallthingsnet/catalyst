@@ -60,6 +60,13 @@ export default async function DashboardPage() {
     ).map(toPoolEntityFromModem);
   }
 
+  const poolCtdMb = poolRows.reduce((sum, row) => sum + row.ctdUsageMb, 0);
+  const poolAllowanceMb = poolRows.reduce((sum, row) => sum + row.allowanceMb, 0);
+  const poolUsedPct =
+    poolAllowanceMb > 0 ? Math.round((poolCtdMb / poolAllowanceMb) * 100) : 0;
+  const topPool = [...poolRows].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb)[0];
+  const poolHint = topPool?.name || "—";
+
   const resellers = excludeHomeTenant(tenants, ctx.homeTenantId);
   const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
 
@@ -93,7 +100,7 @@ export default async function DashboardPage() {
         ) : (
           <>
             <Kpi label="SIMs active" value={data.simsActive.toLocaleString("en-AU")} />
-            <Kpi label="Pool used" value={`${data.poolUsedPct}%`} hint={data.poolName} />
+            <Kpi label="Pool used" value={`${poolUsedPct}%`} hint={poolHint} />
             <Kpi label="Open orders" value={String(data.openOrders)} />
             <Kpi label="Activations 24h" value={String(data.activations24h)} />
           </>
