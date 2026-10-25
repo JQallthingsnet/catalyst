@@ -26,6 +26,7 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
 export default async function DashboardPage() {
   const ctx = await requirePortal();
   const showPools = can(ctx.role, "pool.view");
+  const showActivity = can(ctx.role, "audit.view");
   const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
   // KPI uses live CTD even when role cannot open Pools (e.g. reseller operator).
   const needPoolKpi = !onPlatform;
@@ -136,47 +137,49 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      {/* Chart left · activity right (matched height) */}
-      <div className="mt-8 grid gap-4 lg:grid-cols-5 lg:items-stretch">
-        <section className={`min-h-0 ${showPools ? "lg:col-span-3" : "lg:col-span-5"}`}>
+      {/* Chart left · activity right (matched height) — activity needs audit.view */}
+      {showPools || showActivity ? (
+        <div className="mt-8 grid gap-4 lg:grid-cols-5 lg:items-stretch">
           {showPools ? (
-            <PoolsDashboard
-              initialRows={poolRows}
-              canEdit={false}
-              scopedCustomer={poolScope?.unrestricted ? null : poolScope?.exactCustomer || null}
-              platformView={Boolean(poolScope?.unrestricted)}
-              groupBy="modem"
-              mode="chart"
-            />
+            <section className={`min-h-0 ${showActivity ? "lg:col-span-3" : "lg:col-span-5"}`}>
+              <PoolsDashboard
+                initialRows={poolRows}
+                canEdit={false}
+                scopedCustomer={poolScope?.unrestricted ? null : poolScope?.exactCustomer || null}
+                platformView={Boolean(poolScope?.unrestricted)}
+                groupBy="modem"
+                mode="chart"
+              />
+            </section>
           ) : null}
-        </section>
 
-        <article className="flex h-full min-h-0 flex-col rounded-card border border-line bg-panel p-5 lg:col-span-2">
-          <div className="flex shrink-0 items-baseline justify-between gap-2">
-            <h2 className="text-lg font-semibold">Recent activity</h2>
-            {can(ctx.role, "audit.view") ? (
-              <Link href="/dashboard/logs" className="text-xs text-accent hover:underline">
-                View all
-              </Link>
-            ) : null}
-          </div>
-          <p className="mt-1 shrink-0 text-xs text-quiet">
-            Audit log for this organisation (creates, deletes, assigns).
-          </p>
-          <ul className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
-            {data.activity.length === 0 ? (
-              <li className="text-sm text-quiet">No activity yet.</li>
-            ) : (
-              data.activity.map((item) => (
-                <li key={item.id} className="border-b border-line pb-3 text-sm last:border-0">
-                  <p className="text-ink">{item.detail}</p>
-                  <p className="mt-1 text-xs text-quiet">{new Date(item.createdAt).toLocaleString("en-AU")}</p>
-                </li>
-              ))
-            )}
-          </ul>
-        </article>
-      </div>
+          {showActivity ? (
+            <article className="flex h-full min-h-0 flex-col rounded-card border border-line bg-panel p-5 lg:col-span-2">
+              <div className="flex shrink-0 items-baseline justify-between gap-2">
+                <h2 className="text-lg font-semibold">Recent activity</h2>
+                <Link href="/dashboard/logs" className="text-xs text-accent hover:underline">
+                  View all
+                </Link>
+              </div>
+              <p className="mt-1 shrink-0 text-xs text-quiet">
+                Audit log for this organisation (creates, deletes, assigns).
+              </p>
+              <ul className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
+                {data.activity.length === 0 ? (
+                  <li className="text-sm text-quiet">No activity yet.</li>
+                ) : (
+                  data.activity.map((item) => (
+                    <li key={item.id} className="border-b border-line pb-3 text-sm last:border-0">
+                      <p className="text-ink">{item.detail}</p>
+                      <p className="mt-1 text-xs text-quiet">{new Date(item.createdAt).toLocaleString("en-AU")}</p>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </article>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
