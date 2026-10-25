@@ -27,9 +27,7 @@ export async function POST(request: Request) {
       success: true,
       mode: "requested",
       ...result,
-      message: result.emailed
-        ? `Queued for ATN — ${result.pendingCount} pending request${result.pendingCount === 1 ? "" : "s"} emailed.`
-        : `Queued (${result.pendingCount} pending). Add Order SIMs recipients on Alerts so ATN is emailed.`,
+      message: `Queued for ATN — ${result.pendingCount} pending request${result.pendingCount === 1 ? "" : "s"}. See Logs → Lifecycle request.`,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Lifecycle failed." }, { status: 400 });

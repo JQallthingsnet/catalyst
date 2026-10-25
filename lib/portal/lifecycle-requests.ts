@@ -112,7 +112,7 @@ export async function requestLifecycle(
   await writeAudit(
     tenantId,
     actorEmail,
-    "lifecycle",
+    "lifecycle_request",
     `Requested ${action} ${iccid} (${sim.state} → ${toState}) — queued for ATN`,
   );
 

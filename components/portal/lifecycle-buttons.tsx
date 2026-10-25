@@ -27,22 +27,22 @@ const ACTION_COPY: Record<string, { title: string; body: string; confirmLabel: s
 const REQUEST_COPY: Record<string, { title: string; body: string; confirmLabel: string }> = {
   Activate: {
     title: "Request Activate?",
-    body: "Queues Activate for ATN (including reactivate from Deactivated). Same recipients as Order SIMs get a bulk summary email.",
+    body: "Queues Activate for ATN to process (including reactivate from Deactivated). It will appear on Logs as a lifecycle request.",
     confirmLabel: "Request Activate",
   },
   Suspend: {
     title: "Request Suspend?",
-    body: "Queues Suspend for ATN bulk processing. Order SIMs notify recipients get an updated pending list.",
+    body: "Queues Suspend for ATN to process. It will appear on Logs as a lifecycle request.",
     confirmLabel: "Request Suspend",
   },
   Resume: {
     title: "Request Resume?",
-    body: "Queues Resume for ATN bulk processing. Order SIMs notify recipients get an updated pending list.",
+    body: "Queues Resume for ATN to process. It will appear on Logs as a lifecycle request.",
     confirmLabel: "Request Resume",
   },
   Deactivate: {
     title: "Request Deactivate?",
-    body: "Queues Deactivate for ATN bulk processing. Order SIMs notify recipients get an updated pending list.",
+    body: "Queues Deactivate for ATN to process. It will appear on Logs as a lifecycle request.",
     confirmLabel: "Request Deactivate",
   },
 };

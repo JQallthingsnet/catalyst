@@ -217,6 +217,8 @@ export function auditActionLabel(action: string): string {
   switch (action) {
     case "lifecycle":
       return "Lifecycle";
+    case "lifecycle_request":
+      return "Lifecycle request";
     case "order":
       return "Order";
     case "plan":

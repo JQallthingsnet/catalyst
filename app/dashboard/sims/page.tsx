@@ -46,9 +46,9 @@ export default async function SimsPage({
           <h1 className="text-3xl font-semibold">SIMs</h1>
           <p className="mt-1 text-sm text-quiet">
             {ctx.role === "reseller_operator"
-              ? "Assign a retail plan and end customer. Lifecycle actions are queued for ATN (same recipients as Order SIMs)."
+              ? "Assign a retail plan and end customer. Lifecycle requests are queued for ATN to process."
               : ctx.role === "reseller_admin"
-                ? "Inventory. Lifecycle actions Request Activate / Suspend / Resume / Deactivate are emailed to ATN for bulk Jasper processing — including reactivate from Deactivated."
+                ? "Inventory. Request Activate / Suspend / Resume / Deactivate queues work for ATN (including reactivate from Deactivated). Track requests on Logs."
                 : "Inventory and lifecycle. Control Center remains the radio source."}
           </p>
         </div>
