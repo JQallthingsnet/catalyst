@@ -105,7 +105,6 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/sims", label: "SIMs" },
     { href: "/dashboard/customers", label: "Customers" },
-    { href: "/dashboard/usage", label: "Usage" },
   ],
 };
 
