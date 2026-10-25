@@ -23,7 +23,7 @@ export default async function AlertsPage() {
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
               ? "Daily email when platform Pools (modem_ID per customer) hit your threshold. Configure recipients and the trigger %."
-              : "Daily emails when your Pools (modem_ID) or Usage (per SIM) hit your thresholds. Configure recipients and trigger % for each."}
+              : "Daily emails when your Pools (rate plan) or Usage (per SIM) hit your thresholds. Configure recipients and trigger % for each."}
           </p>
         </div>
         {onPlatform ? <SendUsageDigestButton /> : null}
@@ -36,7 +36,7 @@ export default async function AlertsPage() {
           blurb={
             onPlatform
               ? "Σ CTD MB ÷ Σ modem_ID allowance across SIMs on each modem ID per customer."
-              : "Σ CTD MB ÷ Σ modem_ID allowance for your Control Center customer."
+              : "Σ CTD MB ÷ Σ rate plan allowance for your Control Center customer."
           }
           initial={settings.pool}
         />
@@ -44,7 +44,7 @@ export default async function AlertsPage() {
           <AlertSettingsForm
             kind="usage"
             title="SIM usage"
-            blurb="Per SIM, CTD MB ÷ modem_ID allowance for your Control Center customer."
+            blurb="Per SIM, CTD MB ÷ rate plan allowance for your Control Center customer."
             initial={settings.usage}
           />
         ) : null}

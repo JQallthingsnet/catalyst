@@ -460,10 +460,17 @@ export function PoolsDashboard({
   /** `chart` = embeddable CTD plot only (e.g. Dashboard). */
   mode?: "full" | "chart";
 }) {
+  // Reseller sees modem_ID as their rate plan; super admin keeps the CC field name.
   const entityLabel =
-    groupBy === "rate_plan" ? "Rate plan" : groupBy === "modem" ? "modem_ID" : "CC customer";
+    groupBy === "rate_plan" || (groupBy === "modem" && !platformView)
+      ? "Rate plan"
+      : groupBy === "modem"
+        ? "modem_ID"
+        : "CC customer";
   const allowanceLabel =
-    groupBy === "rate_plan" ? "Rate plan allowance MB" : "Modem allowance MB";
+    groupBy === "rate_plan" || (groupBy === "modem" && !platformView)
+      ? "Rate plan allowance MB"
+      : "Modem allowance MB";
   const [filterQ, setFilterQ] = useState("");
   const [plotted, setPlotted] = useState<string[]>(() => topByUsage(initialRows, 10));
   const [series, setSeries] = useState<PoolSeriesPoint[]>([]);
@@ -538,7 +545,13 @@ export function PoolsDashboard({
       busy={seriesBusy}
       allowPick
       entityLabel={entityLabel}
-      title={mode === "chart" ? "Data usage by modem_ID" : "CTD usage over time"}
+      title={
+        mode === "chart"
+          ? platformView
+            ? "Data usage by modem_ID"
+            : "Data usage by rate plan"
+          : "CTD usage over time"
+      }
       subtitle={
         mode === "chart"
           ? "Same plot as Pools · top 10 by CTD · hover a point for details"
@@ -578,13 +591,13 @@ export function PoolsDashboard({
             {groupBy === "modem" && platformView
               ? "Grouped by customer modem_ID: daily Σ CTD MB and Σ modem_ID allowance across SIMs with that ID (one point per Sydney calendar day)."
               : groupBy === "modem" && scopedCustomer
-                ? `Grouped by modem_ID for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ modem_ID allowance across SIMs with that ID (one point per Sydney calendar day).`
+                ? `Grouped by rate plan for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ rate plan allowance across SIMs on that plan (one point per Sydney calendar day).`
                 : groupBy === "modem"
-                  ? "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see modem_ID pools."
+                  ? "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see rate plan pools."
                   : groupBy === "rate_plan"
                     ? "Grouped by Jasper/CC rate plan: daily Σ CTD MB and Σ rate plan allowance across SIMs on that plan (one point per Sydney calendar day)."
                     : scopedCustomer
-                      ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and modem_ID allowance (one point per Sydney calendar day, auto-saved).`
+                      ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and rate plan allowance (one point per Sydney calendar day, auto-saved).`
                       : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
           </p>
         </div>
@@ -623,7 +636,9 @@ export function PoolsDashboard({
           onChange={(event) => setFilterQ(event.target.value)}
           placeholder={
             groupBy === "modem"
-              ? "Filter modem_ID or customer"
+              ? platformView
+                ? "Filter modem_ID or customer"
+                : "Filter rate plan or customer"
               : `Filter ${entityLabel.toLowerCase()}`
           }
           className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent"
