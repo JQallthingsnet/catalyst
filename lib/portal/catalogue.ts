@@ -21,7 +21,24 @@ export function orderAdvanceLabel(next: OrderStatus): string {
 }
 
 export function lifecycleTarget(action: string, current: SimState): SimState | null {
-  if (action === "Activate" && (current === "Ready" || current === "Suspended")) return "Active";
+  // Reactivate from Deactivated is valid in Jasper; keep Catalyst aligned.
+  if (action === "Activate" && (current === "Ready" || current === "Suspended" || current === "Deactivated")) {
+    return "Active";
+  }
+  if (action === "Suspend" && current === "Active") return "Suspended";
+  if (action === "Resume" && current === "Suspended") return "Active";
+  if (action === "Deactivate" && current !== "Deactivated") return "Deactivated";
+  return null;
+}
+
+/**
+ * Reseller → ATN request path. Allows Reactivate from Deactivated (Jasper bulk work).
+ * Invalid no-ops (e.g. Activate while already Active) still return null.
+ */
+export function lifecycleRequestTarget(action: string, current: SimState): SimState | null {
+  if (action === "Activate" && (current === "Ready" || current === "Suspended" || current === "Deactivated")) {
+    return "Active";
+  }
   if (action === "Suspend" && current === "Active") return "Suspended";
   if (action === "Resume" && current === "Suspended") return "Active";
   if (action === "Deactivate" && current !== "Deactivated") return "Deactivated";

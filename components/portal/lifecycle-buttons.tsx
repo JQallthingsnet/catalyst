@@ -19,26 +19,63 @@ const ACTION_COPY: Record<string, { title: string; body: string; confirmLabel: s
   },
 };
 
-export function LifecycleButtons({ iccid }: { iccid: string }) {
+const REQUEST_COPY: Record<string, { title: string; body: string; confirmLabel: string }> = {
+  Activate: {
+    title: "Request Activate?",
+    body: "Queues Activate for ATN (including reactivate from Deactivated). Same recipients as Order SIMs get a bulk summary email.",
+    confirmLabel: "Request Activate",
+  },
+  Suspend: {
+    title: "Request Suspend?",
+    body: "Queues Suspend for ATN bulk processing. Order SIMs notify recipients get an updated pending list.",
+    confirmLabel: "Request Suspend",
+  },
+  Resume: {
+    title: "Request Resume?",
+    body: "Queues Resume for ATN bulk processing. Order SIMs notify recipients get an updated pending list.",
+    confirmLabel: "Request Resume",
+  },
+  Deactivate: {
+    title: "Request Deactivate?",
+    body: "Queues Deactivate for ATN bulk processing. Order SIMs notify recipients get an updated pending list.",
+    confirmLabel: "Request Deactivate",
+  },
+};
+
+export function LifecycleButtons({
+  iccid,
+  mode = "apply",
+}: {
+  iccid: string;
+  /** apply = super admin local; request = reseller → ATN email queue */
+  mode?: "apply" | "request";
+}) {
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const isRequest = mode === "request";
 
   async function run(action: string) {
     setBusy(action);
     setError("");
+    setMessage("");
     try {
       const res = await fetch("/api/portal/lifecycle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ iccid, action }),
       });
-      const data = (await res.json()) as { error?: string };
+      const data = (await res.json()) as { error?: string; message?: string; mode?: string };
       if (!res.ok) {
         setError(data.error ?? "Update failed.");
         return;
       }
       setPending(null);
+      if (data.mode === "requested") {
+        setMessage(data.message ?? "Queued for ATN.");
+        return;
+      }
       window.location.reload();
     } catch {
       setError("Update failed.");
@@ -49,14 +86,19 @@ export function LifecycleButtons({ iccid }: { iccid: string }) {
 
   function onActionClick(action: string) {
     setError("");
-    if (CONFIRM_ACTIONS.has(action)) {
+    setMessage("");
+    if (isRequest || CONFIRM_ACTIONS.has(action)) {
       setPending(action);
       return;
     }
     void run(action);
   }
 
-  const copy = pending ? ACTION_COPY[pending] : null;
+  const copy = pending
+    ? isRequest
+      ? REQUEST_COPY[pending]
+      : ACTION_COPY[pending] ?? REQUEST_COPY[pending]
+    : null;
 
   return (
     <div className="flex flex-wrap items-center gap-1">
@@ -68,10 +110,11 @@ export function LifecycleButtons({ iccid }: { iccid: string }) {
           onClick={() => onActionClick(action)}
           className="rounded-lg border border-line px-2 py-1 text-[11px] text-quiet hover:border-accent hover:text-ink disabled:opacity-40"
         >
-          {busy === action ? "…" : action}
+          {busy === action ? "…" : isRequest ? `Request ${action}` : action}
         </button>
       ))}
-      {error && !pending ? <span className="text-[11px] text-danger">{error}</span> : null}
+      {error && !pending ? <span className="basis-full text-[11px] text-danger">{error}</span> : null}
+      {message && !pending ? <span className="basis-full text-[11px] text-ok">{message}</span> : null}
       {copy && pending ? (
         <ConfirmDialog
           open
@@ -83,7 +126,7 @@ export function LifecycleButtons({ iccid }: { iccid: string }) {
             </p>
           }
           confirmLabel={copy.confirmLabel}
-          tone="danger"
+          tone={pending === "Suspend" || pending === "Deactivate" ? "danger" : "accent"}
           busy={Boolean(busy)}
           error={error}
           onClose={() => {

@@ -46,8 +46,10 @@ export default async function SimsPage({
           <h1 className="text-3xl font-semibold">SIMs</h1>
           <p className="mt-1 text-sm text-quiet">
             {ctx.role === "reseller_operator"
-              ? "Assign a retail plan and end customer. Warehouse SIMs have no customer yet."
-              : "Inventory and lifecycle. Control Center remains the radio source."}
+              ? "Assign a retail plan and end customer. Lifecycle actions are queued for ATN (same recipients as Order SIMs)."
+              : ctx.role === "reseller_admin"
+                ? "Inventory. Lifecycle actions Request Activate / Suspend / Resume / Deactivate are emailed to ATN for bulk Jasper processing — including reactivate from Deactivated."
+                : "Inventory and lifecycle. Control Center remains the radio source."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -112,7 +114,14 @@ export default async function SimsPage({
                 <td className="px-4 py-3">{sim.poolName ?? "—"}</td>
                 <td className="px-4 py-3">{sim.state}</td>
                 <td className="px-4 py-3">
-                  {can(ctx.role, "lifecycle") ? <LifecycleButtons iccid={sim.iccid} /> : sim.state}
+                  {can(ctx.role, "lifecycle") ? (
+                    <LifecycleButtons
+                      iccid={sim.iccid}
+                      mode={ctx.role === "super_admin" ? "apply" : "request"}
+                    />
+                  ) : (
+                    sim.state
+                  )}
                 </td>
                 {canChangePlan ? (
                   <td className="px-4 py-3">

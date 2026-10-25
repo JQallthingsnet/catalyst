@@ -31,8 +31,8 @@ export function OrderNotifySettingsForm({
       const count = data.setting?.recipients.length ?? 0;
       setMessage(
         count
-          ? `Saved — ${count} recipient${count === 1 ? "" : "s"} will be emailed when a reseller Orders SIMs.`
-          : "Saved — no recipients (order emails are off until you add addresses).",
+          ? `Saved — ${count} recipient${count === 1 ? "" : "s"} get Order SIMs and lifecycle-request summaries.`
+          : "Saved — no recipients (order / lifecycle emails are off until you add addresses).",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
@@ -45,7 +45,9 @@ export function OrderNotifySettingsForm({
     <article className="rounded-card border border-line bg-panel p-5">
       <h2 className="font-semibold">Order SIMs</h2>
       <p className="mt-1 text-sm text-quiet">
-        Email these ATN addresses when a reseller submits Order SIMs. Leave empty to keep notifications off.
+        Email these ATN addresses when a reseller submits Order SIMs, or queues lifecycle requests (Activate /
+        Suspend / Resume / Deactivate) for bulk Jasper processing. Leave empty to keep emails off (requests still
+        queue).
       </p>
 
       <form
