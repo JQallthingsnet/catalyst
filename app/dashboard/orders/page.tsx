@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { AdvanceOrderButton } from "@/components/portal/advance-order-button";
 import { RevokeOrderButton } from "@/components/portal/revoke-order-button";
+import { nextOrderSimsStatus } from "@/lib/portal/catalogue";
 import { requirePrivilege } from "@/lib/portal/guard";
 import {
   listOrderFilterOptions,
@@ -103,8 +105,8 @@ export default async function OrdersPage({
           <h1 className="text-3xl font-semibold">Orders</h1>
           <p className="mt-1 text-sm text-quiet">
             {asPlatform
-              ? "Reseller Order SIMs and ATN Sell stock into warehouses."
-              : "Your organisation’s SIM orders."}
+              ? "Reseller Order SIMs (Accept → Ship → Receive for plastic or eSIM) and ATN Sell stock into warehouses."
+              : "Your organisation’s SIM orders. Submitted orders can be revoked until ATN accepts."}
           </p>
         </div>
         {asPlatform ? (
@@ -239,12 +241,10 @@ export default async function OrdersPage({
               orders.map((order) => {
                 const isOrderSims = order.kind === "order_sims";
                 const isSubmitted = order.status === "Submitted" || order.status === "Draft";
+                const isSuper = ctx.isSuperAdmin && ctx.role === "super_admin";
                 const canRevoke = isOrderSims && isSubmitted;
-                const canCancelPastSubmitted =
-                  isOrderSims &&
-                  !isSubmitted &&
-                  ctx.isSuperAdmin &&
-                  ctx.role === "super_admin";
+                const canCancelPastSubmitted = isOrderSims && !isSubmitted && isSuper;
+                const nextStatus = isOrderSims && isSuper ? nextOrderSimsStatus(order.status) : null;
                 return (
                   <tr key={order.id} className="border-t border-line">
                     {asPlatform ? (
@@ -259,24 +259,35 @@ export default async function OrdersPage({
                     <td className="px-4 py-3">{order.status}</td>
                     <td className="px-4 py-3 text-quiet">{order.createdBy ?? "—"}</td>
                     <td className="px-4 py-3 text-quiet">{formatAuDateTime(order.createdAt)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {canRevoke ? (
-                        <RevokeOrderButton
-                          orderId={order.id}
-                          skuName={order.skuName}
-                          quantity={order.quantity}
-                          status={order.status}
-                          mode="revoke"
-                        />
-                      ) : canCancelPastSubmitted ? (
-                        <RevokeOrderButton
-                          orderId={order.id}
-                          skuName={order.skuName}
-                          quantity={order.quantity}
-                          status={order.status}
-                          mode="cancel"
-                        />
-                      ) : null}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {nextStatus ? (
+                          <AdvanceOrderButton
+                            orderId={order.id}
+                            skuName={order.skuName}
+                            quantity={order.quantity}
+                            nextStatus={nextStatus}
+                          />
+                        ) : null}
+                        {canRevoke ? (
+                          <RevokeOrderButton
+                            orderId={order.id}
+                            skuName={order.skuName}
+                            quantity={order.quantity}
+                            status={order.status}
+                            mode="revoke"
+                          />
+                        ) : null}
+                        {canCancelPastSubmitted ? (
+                          <RevokeOrderButton
+                            orderId={order.id}
+                            skuName={order.skuName}
+                            quantity={order.quantity}
+                            status={order.status}
+                            mode="cancel"
+                          />
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );

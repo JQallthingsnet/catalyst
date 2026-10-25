@@ -5,7 +5,13 @@ import {
   listCcDevicesForCustomer,
   materializeWarehouseForCcCustomer,
 } from "@/lib/cc/devices";
-import { lifecycleTarget, type OrderStatus, type SimState } from "@/lib/portal/catalogue";
+import {
+  lifecycleTarget,
+  nextOrderSimsStatus,
+  orderAdvanceLabel,
+  type OrderStatus,
+  type SimState,
+} from "@/lib/portal/catalogue";
 import { getSimSku, listResellerSkus, listSimSkus, tenantHasSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import {
@@ -701,6 +707,58 @@ function normalizePoNumber(value: string | undefined): string | null {
   if (!trimmed) return null;
   if (trimmed.length > 64) throw new Error("PO number must be 64 characters or fewer.");
   return trimmed;
+}
+
+/**
+ * Super admin advances Order SIMs: Submitted → Accepted → Shipped → Received.
+ * Same path for plastic SIMs (courier) and eSIM (provision / email destination).
+ */
+export async function advanceOrderSims(
+  actor: { email: string; role: PortalRole; isSuperAdmin: boolean },
+  orderId: string,
+): Promise<{ status: OrderStatus }> {
+  if (!actor.isSuperAdmin || actor.role !== "super_admin") {
+    throw new Error("Only a super admin can advance Order SIMs fulfillment.");
+  }
+  const row = await getDB()
+    .prepare(
+      `SELECT id, tenant_id, sku_name, quantity, status, kind
+       FROM orders WHERE id = ?`,
+    )
+    .bind(orderId)
+    .first<{
+      id: string;
+      tenant_id: string;
+      sku_name: string;
+      quantity: number;
+      status: OrderStatus;
+      kind: string | null;
+    }>();
+  if (!row) throw new Error("Order not found.");
+  const kind = normalizeOrderKind(row.kind, { status: row.status });
+  if (kind !== "order_sims") {
+    throw new Error("Only Order SIMs can be advanced. Sell stock is already Received.");
+  }
+  const next = nextOrderSimsStatus(row.status);
+  if (!next) {
+    throw new Error(`Order is already ${row.status}.`);
+  }
+
+  const result = await getDB()
+    .prepare("UPDATE orders SET status = ? WHERE id = ? AND status = ?")
+    .bind(next, orderId, row.status)
+    .run();
+  if ((result.meta.changes ?? 0) === 0) {
+    throw new Error("Order status changed — refresh and try again.");
+  }
+
+  await writeAudit(
+    row.tenant_id,
+    actor.email,
+    "order",
+    `${orderAdvanceLabel(next)}: ${row.sku_name} × ${row.quantity} (${orderId.slice(-8)}) ${row.status} → ${next}`,
+  );
+  return { status: next };
 }
 
 /**
