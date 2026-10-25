@@ -117,6 +117,7 @@ export default async function SimsPage({
                   {can(ctx.role, "lifecycle") ? (
                     <LifecycleButtons
                       iccid={sim.iccid}
+                      state={sim.state}
                       mode={ctx.role === "super_admin" ? "apply" : "request"}
                     />
                   ) : (

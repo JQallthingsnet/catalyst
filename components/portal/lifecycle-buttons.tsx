@@ -1,7 +1,12 @@
 "use client";
 
 import { ConfirmDialog } from "@/components/portal/confirm-dialog";
-import { LIFECYCLE_ACTIONS } from "@/lib/portal/catalogue";
+import {
+  LIFECYCLE_ACTIONS,
+  lifecycleRequestTarget,
+  lifecycleTarget,
+  type SimState,
+} from "@/lib/portal/catalogue";
 import { useState } from "react";
 
 const CONFIRM_ACTIONS = new Set(["Suspend", "Deactivate"]);
@@ -42,11 +47,20 @@ const REQUEST_COPY: Record<string, { title: string; body: string; confirmLabel: 
   },
 };
 
+function asSimState(value: string): SimState | null {
+  if (value === "Ready" || value === "Active" || value === "Suspended" || value === "Deactivated") {
+    return value;
+  }
+  return null;
+}
+
 export function LifecycleButtons({
   iccid,
+  state,
   mode = "apply",
 }: {
   iccid: string;
+  state: string;
   /** apply = super admin local; request = reseller → ATN email queue */
   mode?: "apply" | "request";
 }) {
@@ -55,8 +69,20 @@ export function LifecycleButtons({
   const [busy, setBusy] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const isRequest = mode === "request";
+  const simState = asSimState(state);
+
+  function actionAllowed(action: string): boolean {
+    if (!simState) return true;
+    return isRequest
+      ? lifecycleRequestTarget(action, simState) != null
+      : lifecycleTarget(action, simState) != null;
+  }
 
   async function run(action: string) {
+    if (!actionAllowed(action)) {
+      setError(`${action} is not valid from ${state}.`);
+      return;
+    }
     setBusy(action);
     setError("");
     setMessage("");
@@ -85,6 +111,7 @@ export function LifecycleButtons({
   }
 
   function onActionClick(action: string) {
+    if (!actionAllowed(action)) return;
     setError("");
     setMessage("");
     if (isRequest || CONFIRM_ACTIONS.has(action)) {
@@ -102,17 +129,21 @@ export function LifecycleButtons({
 
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {LIFECYCLE_ACTIONS.map((action) => (
-        <button
-          key={action}
-          type="button"
-          disabled={Boolean(busy)}
-          onClick={() => onActionClick(action)}
-          className="rounded-lg border border-line px-2 py-1 text-[11px] text-quiet hover:border-accent hover:text-ink disabled:opacity-40"
-        >
-          {busy === action ? "…" : isRequest ? `Request ${action}` : action}
-        </button>
-      ))}
+      {LIFECYCLE_ACTIONS.map((action) => {
+        const allowed = actionAllowed(action);
+        return (
+          <button
+            key={action}
+            type="button"
+            disabled={Boolean(busy) || !allowed}
+            title={allowed ? undefined : `${action} is not valid from ${state}`}
+            onClick={() => onActionClick(action)}
+            className="rounded-lg border border-line px-2 py-1 text-[11px] text-quiet hover:border-accent hover:text-ink disabled:opacity-40"
+          >
+            {busy === action ? "…" : isRequest ? `Request ${action}` : action}
+          </button>
+        );
+      })}
       {error && !pending ? <span className="basis-full text-[11px] text-danger">{error}</span> : null}
       {message && !pending ? <span className="basis-full text-[11px] text-ok">{message}</span> : null}
       {copy && pending ? (
