@@ -26,6 +26,9 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
 export default async function DashboardPage() {
   const ctx = await requirePortal();
   const showPools = can(ctx.role, "pool.view");
+  const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
+  // KPI uses live CTD even when role cannot open Pools (e.g. reseller operator).
+  const needPoolKpi = !onPlatform;
   const [data, tenants, ccSummary, poolScope] = await Promise.all([
     dashboardSummary(ctx.tenantId),
     ctx.isSuperAdmin && ctx.role === "super_admin" ? listPlatformTenants(true) : Promise.resolve([]),
@@ -47,11 +50,11 @@ export default async function DashboardPage() {
           detailsOlder14d: 0,
           usageMb: 0,
         }),
-    showPools ? resolvePoolCustomerScope(ctx) : Promise.resolve(null),
+    showPools || needPoolKpi ? resolvePoolCustomerScope(ctx) : Promise.resolve(null),
   ]);
 
   let poolRows: ReturnType<typeof toPoolEntityFromModem>[] = [];
-  if (showPools && poolScope) {
+  if (poolScope && (showPools || needPoolKpi)) {
     await snapshotPoolCustomerDailyIfNeeded();
     poolRows = (
       await listPoolModemLatest({
@@ -68,7 +71,6 @@ export default async function DashboardPage() {
   const poolHint = topPool?.name || "—";
 
   const resellers = excludeHomeTenant(tenants, ctx.homeTenantId);
-  const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
 
   return (
     <div>
