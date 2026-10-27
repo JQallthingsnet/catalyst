@@ -1110,7 +1110,7 @@ export async function assignSims(
         });
         ratePlanChanges += 1;
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Rate plan change failed.";
+        const message = err instanceof Error ? err.message : "Reseller Plan change failed.";
         throw new Error(`SIM ${iccid}: ${message}`);
       }
     }

@@ -128,7 +128,7 @@ export async function setModemAllowance(
   actorEmail: string,
 ): Promise<void> {
   const id = modemId.trim();
-  if (!id) throw new Error("modem_ID is required.");
+  if (!id) throw new Error("Reseller Plan is required.");
   if (!Number.isFinite(allowanceMb) || allowanceMb < 0) {
     throw new Error("Allowance must be a non-negative number of MB.");
   }
@@ -148,7 +148,7 @@ export async function setModemAllowance(
 
 export async function clearModemAllowance(modemId: string): Promise<void> {
   const id = modemId.trim();
-  if (!id) throw new Error("modem_ID is required.");
+  if (!id) throw new Error("Reseller Plan is required.");
   await getDB().prepare("DELETE FROM modem_allowances WHERE modem_id = ?").bind(id).run();
 }
 
