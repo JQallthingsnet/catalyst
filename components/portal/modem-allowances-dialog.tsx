@@ -27,7 +27,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
       try {
         const res = await fetch("/api/portal/pools?view=modems");
         const data = (await res.json()) as { modems?: ModemRow[]; error?: string };
-        if (!res.ok) throw new Error(data.error ?? "Could not load modem_IDs.");
+        if (!res.ok) throw new Error(data.error ?? "Could not load Reseller Plans.");
         if (cancelled) return;
         const modems = data.modems ?? [];
         setRows(modems);
@@ -38,7 +38,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
         setDrafts(next);
         setBaseline(next);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load modem_IDs.");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load Reseller Plans.");
       }
     })();
     return () => {
@@ -127,9 +127,9 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-card border border-line bg-panel shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold">Modem allowances</h2>
+            <h2 className="text-lg font-semibold">Reseller Plan allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB per modem_ID. Reseller Usage and Pools use CTD ÷ this allowance (set by ATN only).
+              Manual MB per Reseller Plan. Reseller Usage and Pools use CTD ÷ this allowance (set by ATN only).
             </p>
           </div>
           <button
@@ -145,7 +145,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
           <input
             value={q}
             onChange={(event) => setQ(event.target.value)}
-            placeholder="Filter modem_ID"
+            placeholder="Filter Reseller Plan"
             className="h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm outline-none focus:border-accent"
           />
         </div>
@@ -154,7 +154,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
           <table className="w-full text-left text-sm">
             <thead className="text-quiet">
               <tr>
-                <th className="py-2">modem_ID</th>
+                <th className="py-2">Reseller Plan</th>
                 <th className="py-2">Allowance MB</th>
               </tr>
             </thead>
@@ -177,7 +177,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={2} className="py-8 text-quiet">
-                    No modem_IDs in the CC snapshot yet. Sync devices first.
+                    No Reseller Plans in the CC snapshot yet. Sync the device list first.
                   </td>
                 </tr>
               ) : null}

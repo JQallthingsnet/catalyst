@@ -51,11 +51,11 @@ export function PlatformPlanWizard({
   return (
     <WizardFrame
       title="Create plan"
-      steps={["Remarks", "Supplier mapping", "Bind resellers", "Confirm"]}
+      steps={["Reseller Plan", "Supplier mapping", "Bind resellers", "Confirm"]}
       step={step}
       summary={
         <>
-          <p>{name || "modem_ID"}</p>
+          <p>{name || "Reseller Plan"}</p>
           <p>
             {supplier || "Supplier"} · {ccRatePlan || "rate plan"}
           </p>
@@ -67,7 +67,7 @@ export function PlatformPlanWizard({
     >
       {step === 0 ? (
         <label className="block text-sm">
-          modem_ID (what resellers see on Contract, Plans, and Plan changes)
+          Reseller Plan (what resellers see on Contract, Plans, and Plan changes)
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}

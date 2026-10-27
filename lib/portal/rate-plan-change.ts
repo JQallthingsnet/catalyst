@@ -106,7 +106,7 @@ export async function changeSimRatePlan(
   if (!allowed) throw new Error("That rate plan is not on this reseller’s contract.");
 
   const target = await loadPlatformPlanRecord(platformPlanId);
-  if (!target) throw new Error("Rate plan not found.");
+  if (!target) throw new Error("Reseller Plan not found.");
   if (!target.active) throw new Error("That rate plan is deactivated.");
 
   const now = new Date();
@@ -181,7 +181,7 @@ export async function changeSimRatePlan(
     .run();
 
   const mismatchNote = tcodeMismatch
-    ? ` · snapshot modem_ID still ${liveModemId} (billing uses Catalyst plan)`
+    ? ` · snapshot Reseller Plan still ${liveModemId} (billing uses Catalyst plan)`
     : "";
   await writeAudit(
     tenantId,
@@ -508,8 +508,8 @@ export async function exportRatePlanChangesCsv(options: {
     "when",
     ...(options.includeOrganisation ? ["organisation"] : []),
     "iccid",
-    "from_modem_id",
-    "to_modem_id",
+    "from_reseller_plan",
+    "to_reseller_plan",
     "state_at_change",
     "current_state",
     ...(includeAtnOps ? ["snapshot_match", "push_status", "pushed_at", "push_error"] : []),

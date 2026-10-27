@@ -209,8 +209,8 @@ function buildPoolAlertEmail(input: {
   customer?: string;
 }): { subject: string; html: string } {
   const { rows, day, threshold, kind, audience, customer } = input;
-  const keyLabel = kind === "rate_plan" ? "Rate plan" : "modem_ID";
-  const title = kind === "rate_plan" ? "Pools · rate plan alert" : "Pools · modem_ID alert";
+  const keyLabel = kind === "rate_plan" ? "Rate plan" : "Reseller Plan";
+  const title = kind === "rate_plan" ? "Pools · rate plan alert" : "Pools · Reseller Plan alert";
   const scope =
     audience === "reseller" && customer
       ? ` for CC customer <strong>${escapeHtml(customer)}</strong>`
@@ -232,7 +232,7 @@ function buildPoolAlertEmail(input: {
     .join("");
 
   const subject = `Catalyst daily Pools: ${rows.length} ${
-    kind === "rate_plan" ? "rate plan" : "modem_ID"
+    kind === "rate_plan" ? "rate plan" : "Reseller Plan"
   }${rows.length === 1 ? "" : "s"} ≥${threshold}% (${day})`;
 
   const html = `
@@ -281,9 +281,11 @@ function buildSimAllowanceAlertEmail(input: {
   customer?: string;
 }): { subject: string; html: string } {
   const { sims, day, threshold, basis, customer } = input;
-  const keyLabel = basis === "rate_plan" ? "Rate plan" : "modem_ID";
+  const keyLabel = basis === "rate_plan" ? "Rate plan" : "Reseller Plan";
   const title =
-    basis === "rate_plan" ? "Usage · rate plan allowance alert" : "Usage · modem allowance alert";
+    basis === "rate_plan"
+      ? "Usage · rate plan allowance alert"
+      : "Usage · Reseller Plan allowance alert";
   const scope = customer ? ` for CC customer <strong>${escapeHtml(customer)}</strong>` : "";
   const rowsHtml = sims
     .map((sim, index) => {
@@ -303,7 +305,7 @@ function buildSimAllowanceAlertEmail(input: {
     .join("");
 
   const subject = `Catalyst daily Usage: ${sims.length} SIM${sims.length === 1 ? "" : "s"} ≥${threshold}% ${
-    basis === "rate_plan" ? "rate plan" : "modem"
+    basis === "rate_plan" ? "rate plan" : "Reseller Plan"
   } allowance (${day})`;
 
   const html = `
@@ -317,7 +319,7 @@ function buildSimAllowanceAlertEmail(input: {
         <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.5;">
           Daily Usage digest for Sydney day <strong>${day}</strong>${scope}:
           ${sims.length} SIM${sims.length === 1 ? " is" : "s are"} at <strong>≥${threshold}%</strong> of
-          ${basis === "rate_plan" ? "Jasper rate plan" : "modem_ID"} allowance (CTD MB ÷ allowance MB).
+          ${basis === "rate_plan" ? "Jasper rate plan" : "Reseller Plan"} allowance (CTD MB ÷ allowance MB).
         </p>
         <table style="width:100%;border-collapse:collapse;margin:8px 0 20px;font-size:13px;">
           <thead>

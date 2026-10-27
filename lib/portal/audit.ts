@@ -234,7 +234,7 @@ export function auditActionLabel(action: string): string {
     case "wholesale":
       return "Sell stock";
     case "rate_plan":
-      return "Rate plan";
+      return "Reseller Plan";
     default:
       return action.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
   }

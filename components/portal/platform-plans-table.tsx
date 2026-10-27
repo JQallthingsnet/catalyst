@@ -53,7 +53,7 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Remarks, rate plan, reseller…"
+              placeholder="Reseller Plan, rate plan, reseller…"
               className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
             />
           </label>
@@ -113,7 +113,7 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
             <tr>
               <th className="px-4 py-3 font-medium">Rate plan</th>
               <th className="px-4 py-3 font-medium">Comm plan</th>
-              <th className="px-4 py-3 font-medium">Remarks</th>
+              <th className="px-4 py-3 font-medium">Reseller Plan</th>
               <th className="px-4 py-3 font-medium">Supplier</th>
               <th className="px-4 py-3 font-medium">Bound resellers</th>
               <th className="px-4 py-3 font-medium">Status</th>

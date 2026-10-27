@@ -228,7 +228,7 @@ export async function createPlatformPlan(
   homeTenantId: string,
 ): Promise<PlatformPlan> {
   const name = input.name.trim();
-  if (name.length < 2) throw new Error("Enter the modem_ID.");
+  if (name.length < 2) throw new Error("Enter the Reseller Plan.");
   const supplier = normalizePlanSupplier(input.supplier);
   if (!isListedPlanSupplier(supplier)) {
     throw new Error("Choose a supplier (Optus or Other).");
