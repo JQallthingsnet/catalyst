@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Finish Sync now (Search window catch-up) first. Auto poll is for short incremental updates after the list is in D1.",
+            "Finish Sync device list (Search catch-up) first. Auto poll refreshes CTD and profiles after the list is in D1.",
         },
         { status: 400 },
       );

@@ -219,7 +219,7 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            Copy of Control Center in D1. Use <span className="text-ink">Sync now</span> to pull the full Search window into D1 (progress bar; Auto poll stays off until done). After that, Auto poll keeps a short incremental window. Filter and export apply to the current view.
+            Copy of Control Center in D1. Use <span className="text-ink">Sync device list</span> to pull the Jasper Search ICCID list into D1 (progress bar; Auto poll stays off until done). Auto poll then refreshes CTD and device profiles (customer, IMEI, …). Filter and export apply to the current view.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -308,19 +308,19 @@ export default async function CcSnapshotPage({
             Full Jasper device profile (IMEI, customer, custom fields, …)
           </p>
           <p className="mt-3 text-xs text-quiet">
-            Profile refresh age (~2 weeks for full estate at current pace)
+            Profile refresh age (~1 day for full estate — bulk Get Device, Auto poll)
           </p>
           <p className="mt-1 text-xs text-quiet">
             <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
               {summary.neverEnriched.toLocaleString("en-AU")} still list-only
             </span>
             {" · "}
-            &lt;7d {summary.detailsFresh7d.toLocaleString("en-AU")}
+            &lt;24h {summary.detailsFresh24h.toLocaleString("en-AU")}
             {" · "}
-            7–14d {summary.detailsStale7to14d.toLocaleString("en-AU")}
+            1–7d {summary.detailsStale1to7d.toLocaleString("en-AU")}
             {" · "}
-            <span className={summary.detailsOlder14d > 0 ? "text-danger" : ""}>
-              &gt;14d {summary.detailsOlder14d.toLocaleString("en-AU")}
+            <span className={summary.detailsOlder7d > 0 ? "text-danger" : ""}>
+              &gt;7d {summary.detailsOlder7d.toLocaleString("en-AU")}
             </span>
           </p>
         </article>

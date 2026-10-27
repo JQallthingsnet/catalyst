@@ -53,15 +53,17 @@ const AUTO_LIST_PAGES_WHEN_COMPLETE = 1;
 /** Manual Sync: refresh details if older than this. */
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
- * Auto poll: full Get Device / bulk details this often. Never-enriched stay first.
- * Free-tier details drip (~1×4×24 ≈ 96/day) ⇒ multi-week full-estate refresh;
- * 14d remains the product age band (CTD freshness stays on a 24h bar).
+ * Auto poll: bulk Get Device / details this often (customer, IMEI, custom fields).
+ * Target ~1 day full-estate refresh at AUTO_DETAILS_PER_TICK × cron (CTD stays separate).
  */
-const AUTO_DETAILS_STALE_MS = 14 * 24 * 60 * 60 * 1000;
+const AUTO_DETAILS_STALE_MS = 24 * 60 * 60 * 1000;
 /**
- * Per auto tick, at most one full-details refresh so CTD/session keep the budget.
+ * Per auto tick: one bulk Get Device wave (up to JASPER_BULK_DEVICE_LIMIT).
+ * Details-only — does not call CTD/sessionInfo (those keep their own 24h queue).
  */
-const AUTO_DETAILS_PER_TICK = 1;
+const AUTO_DETAILS_PER_TICK = JASPER_BULK_DEVICE_LIMIT;
+/** Jasper calls reserved so the details bulk still runs after the CTD wave. */
+const AUTO_DETAILS_RESERVE_CALLS = 2;
 /**
  * Auto poll: refresh CTD usage + sessionInfo at least this often.
  * sessionInfo may 30000001 on some SIMs — soft-fail keeps CTD + prior in_session.
@@ -1129,10 +1131,10 @@ type CcInventorySummary = {
   sessionFresh24h: number;
   sessionStale24to48h: number;
   sessionOlder48h: number;
-  /** Details age bands match ~2-week full-estate refresh capacity. */
-  detailsFresh7d: number;
-  detailsStale7to14d: number;
-  detailsOlder14d: number;
+  /** Details age bands match ~1-day full-estate refresh target. */
+  detailsFresh24h: number;
+  detailsStale1to7d: number;
+  detailsOlder7d: number;
   usageMb: number;
 };
 
@@ -1146,7 +1148,6 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
   const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const cutoff7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const cutoff14d = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const row = await getDB()
     .prepare(
       `SELECT COUNT(*) as total,
@@ -1160,9 +1161,9 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
               SUM(CASE WHEN polled_at >= ? THEN 1 ELSE 0 END) as session_fresh_24h,
               SUM(CASE WHEN polled_at < ? AND polled_at >= ? THEN 1 ELSE 0 END) as session_stale_24_48h,
               SUM(CASE WHEN polled_at IS NULL OR polled_at < ? THEN 1 ELSE 0 END) as session_older_48h,
-              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_fresh_7d,
-              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_stale_7_14d,
-              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? THEN 1 ELSE 0 END) as details_older_14d,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_fresh_24h,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? AND details_polled_at >= ? THEN 1 ELSE 0 END) as details_stale_1_7d,
+              SUM(CASE WHEN details_polled_at IS NOT NULL AND details_polled_at < ? THEN 1 ELSE 0 END) as details_older_7d,
               IFNULL(SUM(ctd_usage_mb), 0) as usage_mb
        FROM cc_devices`,
     )
@@ -1171,10 +1172,10 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
       cutoff24h,
       cutoff48h,
       cutoff48h,
+      cutoff24h,
+      cutoff24h,
       cutoff7d,
       cutoff7d,
-      cutoff14d,
-      cutoff14d,
     )
     .first<{
       total: number;
@@ -1187,9 +1188,9 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
       session_fresh_24h: number;
       session_stale_24_48h: number;
       session_older_48h: number;
-      details_fresh_7d: number;
-      details_stale_7_14d: number;
-      details_older_14d: number;
+      details_fresh_24h: number;
+      details_stale_1_7d: number;
+      details_older_7d: number;
       usage_mb: number;
     }>();
   const value: CcInventorySummary = {
@@ -1203,9 +1204,9 @@ export async function ccInventorySummary(): Promise<CcInventorySummary> {
     sessionFresh24h: row?.session_fresh_24h ?? 0,
     sessionStale24to48h: row?.session_stale_24_48h ?? 0,
     sessionOlder48h: row?.session_older_48h ?? 0,
-    detailsFresh7d: row?.details_fresh_7d ?? 0,
-    detailsStale7to14d: row?.details_stale_7_14d ?? 0,
-    detailsOlder14d: row?.details_older_14d ?? 0,
+    detailsFresh24h: row?.details_fresh_24h ?? 0,
+    detailsStale1to7d: row?.details_stale_1_7d ?? 0,
+    detailsOlder7d: row?.details_older_7d ?? 0,
     usageMb: row?.usage_mb ?? 0,
   };
   inventorySummaryCache = { at: Date.now(), value };
@@ -1626,6 +1627,134 @@ function usageRefreshStatement(
     );
 }
 
+/** Profile-only write from Get Device / bulk — does not touch CTD, session, or polled_at. */
+async function persistDeviceDetailsOnly(iccid: string, details: JasperDevice | null): Promise<void> {
+  if (!details) return;
+  const now = isoNow();
+  const status = details.status ?? "";
+  const ratePlan = details.ratePlan ?? null;
+  const communicationPlan = details.communicationPlan ?? null;
+  const imsi = textOrNull(details.imsi);
+  const msisdn = textOrNull(details.msisdn);
+  const customFields = packCustomFields(details);
+  const detailsJson = JSON.stringify(details);
+
+  await getDB()
+    .prepare(
+      `UPDATE cc_devices
+       SET status = CASE WHEN ? != '' THEN ? ELSE status END,
+           rate_plan = COALESCE(?, rate_plan),
+           communication_plan = COALESCE(?, communication_plan),
+           imsi = COALESCE(?, imsi),
+           msisdn = COALESCE(?, msisdn),
+           imei = COALESCE(?, imei),
+           customer = COALESCE(?, customer),
+           end_consumer_id = COALESCE(?, end_consumer_id),
+           date_added = COALESCE(?, date_added),
+           date_activated = COALESCE(?, date_activated),
+           date_updated = COALESCE(?, date_updated),
+           date_shipped = COALESCE(?, date_shipped),
+           account_id = COALESCE(?, account_id),
+           fixed_ip_address = COALESCE(?, fixed_ip_address),
+           fixed_ipv6_address = COALESCE(?, fixed_ipv6_address),
+           sim_notes = COALESCE(?, sim_notes),
+           device_id = COALESCE(?, device_id),
+           modem_id = COALESCE(?, modem_id),
+           global_sim_type = COALESCE(?, global_sim_type),
+           mec = COALESCE(?, mec),
+           euiccid = COALESCE(?, euiccid),
+           sim_profile_id = COALESCE(?, sim_profile_id),
+           custom_fields = COALESCE(?, custom_fields),
+           details_json = COALESCE(?, details_json),
+           details_polled_at = ?
+       WHERE iccid = ?`,
+    )
+    .bind(
+      status,
+      status,
+      ratePlan,
+      communicationPlan,
+      imsi,
+      msisdn,
+      textOrNull(details.imei),
+      textOrNull(details.customer),
+      textOrNull(details.endConsumerId),
+      textOrNull(details.dateAdded),
+      textOrNull(details.dateActivated),
+      textOrNull(details.dateUpdated),
+      textOrNull(details.dateShipped),
+      textOrNull(details.accountId),
+      textOrNull(details.fixedIPAddress),
+      textOrNull(details.fixedIpv6Address),
+      textOrNull(details.simNotes),
+      textOrNull(details.deviceID),
+      textOrNull(details.modemID),
+      textOrNull(details.globalSimType),
+      textOrNull(details.mec),
+      textOrNull(details.euiccid),
+      textOrNull(details.simProfileId),
+      customFields,
+      detailsJson,
+      now,
+      iccid,
+    )
+    .run();
+
+  if (status) {
+    await overlaySim(iccid, { status, ratePlan, polledAt: now, imsi, msisdn });
+  }
+
+  const customerRow = await getDB()
+    .prepare("SELECT customer, status FROM cc_devices WHERE iccid = ?")
+    .bind(iccid)
+    .first<{ customer: string | null; status: string }>();
+  await ensureBoundWarehouseSim({
+    iccid,
+    customer: customerRow?.customer,
+    status: status || customerRow?.status || "INVENTORY",
+    ratePlan,
+    imsi,
+    msisdn,
+  });
+}
+
+/**
+ * Auto details wave: bulk Get Device only (customer / profile).
+ * CTD + sessionInfo stay on enrichUsageBatch.
+ */
+async function enrichDetailsOnlyBatch(
+  iccids: string[],
+  input: { deadline: number; done: Set<string> },
+): Promise<number> {
+  const pending = iccids.filter((iccid) => !input.done.has(iccid));
+  if (pending.length === 0) return 0;
+  if (Date.now() >= input.deadline || !jasperHasBudget(1)) return 0;
+  let enriched = 0;
+  try {
+    const detailsMap = await fetchDeviceDetailsBatch(pending);
+    for (const iccid of pending) {
+      if (Date.now() >= input.deadline) return enriched;
+      const details = detailsMap.get(iccid) ?? null;
+      if (!details) {
+        input.done.add(iccid);
+        continue;
+      }
+      await persistDeviceDetailsOnly(iccid, details);
+      input.done.add(iccid);
+      enriched += 1;
+      if (enriched % 25 === 0) await heartbeatLock();
+    }
+  } catch (err) {
+    if (err instanceof CcRateLimitError || err instanceof CcBudgetError) {
+      if (enriched > 0) return enriched;
+      throw err;
+    }
+    throw err;
+  }
+  return enriched;
+}
+
+/** Manual / Sync leftover: Get Device + CTD + sessionInfo per SIM. */
 async function enrichFullDetailsBatch(
   iccids: string[],
   input: { deadline: number; done: Set<string> },
@@ -1750,31 +1879,14 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     return enrichFullDetailsBatch(iccids, { deadline: input.deadline, done });
   }
 
-  // Auto: never-enriched first, then oldest CTD usage, then a capped details wave.
+  // Auto: CTD/session first (budget reserved for one details bulk), then details-only wave.
+  // Details: never-enriched first, then oldest details_polled_at — shared AUTO_DETAILS_PER_TICK.
   // Keyset pagination (polled_at, iccid) — do NOT break when a page is entirely in `done`,
   // or the same first ICCIDs get re-selected every cycle and the rest of the estate starves.
-  while (Date.now() < input.deadline && jasperHasBudget(2)) {
-    const neverRows = await getDB()
-      .prepare(
-        `SELECT iccid FROM cc_devices
-         WHERE details_polled_at IS NULL
-         ORDER BY polled_at ASC, iccid ASC
-         LIMIT ?`,
-      )
-      .bind(JASPER_BULK_DEVICE_LIMIT)
-      .all<{ iccid: string }>();
-    const neverList = (neverRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
-    if (neverList.length === 0) break;
-    enriched += await enrichFullDetailsBatch(neverList, { deadline: input.deadline, done });
-    if (Date.now() >= input.deadline || !jasperHasBudget(2)) return enriched;
-    if ((neverRows.results?.length ?? 0) < JASPER_BULK_DEVICE_LIMIT) break;
-  }
-
-  // CTD + sessionInfo = 2 Jasper calls/SIM — page larger than bulk Get Device limit.
   const ctdPage = 200;
   let ctdAfterAt = "";
   let ctdAfterIccid = "";
-  const detailsReserveCalls = AUTO_DETAILS_PER_TICK * 3;
+  const detailsReserveCalls = AUTO_DETAILS_RESERVE_CALLS;
   while (Date.now() < input.deadline && jasperHasBudget(2 + detailsReserveCalls)) {
     const ctdRows =
       ctdAfterAt === ""
@@ -1816,9 +1928,27 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
   }
 
   let detailsLeft = AUTO_DETAILS_PER_TICK;
+  if (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(1)) {
+    const neverRows = await getDB()
+      .prepare(
+        `SELECT iccid FROM cc_devices
+         WHERE details_polled_at IS NULL
+         ORDER BY polled_at ASC, iccid ASC
+         LIMIT ?`,
+      )
+      .bind(detailsLeft)
+      .all<{ iccid: string }>();
+    const neverList = (neverRows.results ?? []).map((row) => row.iccid).filter((id) => !done.has(id));
+    if (neverList.length > 0) {
+      const got = await enrichDetailsOnlyBatch(neverList, { deadline: input.deadline, done });
+      enriched += got;
+      detailsLeft -= got;
+    }
+  }
+
   let detailsAfterAt = "";
   let detailsAfterIccid = "";
-  while (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(2)) {
+  while (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(1)) {
     const take = Math.min(detailsLeft, JASPER_BULK_DEVICE_LIMIT);
     const detailRows =
       detailsAfterAt === ""
@@ -1851,7 +1981,7 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     const detailList = page.map((row) => row.iccid).filter((id) => !done.has(id));
     if (detailList.length === 0) continue;
 
-    const got = await enrichFullDetailsBatch(detailList, { deadline: input.deadline, done });
+    const got = await enrichDetailsOnlyBatch(detailList, { deadline: input.deadline, done });
     enriched += got;
     detailsLeft -= got;
     if (got === 0) break;
@@ -1968,7 +2098,7 @@ export async function syncCcDevices(input?: {
     // Catch-up: list only until lastPage. Incomplete crawl / manual: enrich after list.
     // enrichFirst path already spent the tick on CTD/session (leftover budget optional).
     if (enrichFirst) {
-      if (Date.now() < deadline && jasperHasBudget(2 + AUTO_DETAILS_PER_TICK * 3)) {
+      if (Date.now() < deadline && jasperHasBudget(2 + AUTO_DETAILS_RESERVE_CALLS)) {
         details += await enrichStaleDevices({ unlimited, deadline });
       }
     } else if (!catchup && (lastPage || state.lastPageComplete)) {

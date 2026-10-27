@@ -85,8 +85,8 @@ export function SyncCcButton({
         started.devicesInCopy >= Math.floor(started.jasperTotal * 0.95)
       ) {
         setOk(
-          `Already caught up — ${started.devicesInCopy.toLocaleString("en-AU")} devices in copy` +
-            ` / ${started.jasperTotal.toLocaleString("en-AU")} Search. Use Auto poll for incremental updates.`,
+          `Device list already complete — ${started.devicesInCopy.toLocaleString("en-AU")} in copy` +
+            ` / ${started.jasperTotal.toLocaleString("en-AU")} Search. Profiles (customer, IMEI, …) and CTD refresh via Auto poll.`,
         );
         return;
       }
@@ -170,7 +170,13 @@ export function SyncCcButton({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-ink">
-                  {busy ? "Syncing Control Center list…" : ok ? "Sync finished" : error ? "Sync stopped" : "Sync"}
+                  {busy
+                    ? "Syncing device list…"
+                    : ok
+                      ? "Device list sync finished"
+                      : error
+                        ? "Device list sync stopped"
+                        : "Device list sync"}
                 </p>
                 <p className="mt-1 text-sm text-quiet">
                   {progress
@@ -211,7 +217,7 @@ export function SyncCcButton({
         onClick={() => void runCatchUp()}
         className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent disabled:opacity-40"
       >
-        {busy ? "Syncing…" : "Sync now"}
+        {busy ? "Syncing list…" : "Sync device list"}
       </button>
       {panel}
     </>
