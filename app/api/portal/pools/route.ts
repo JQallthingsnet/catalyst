@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   if (view === "modems") {
     if (ctx.role !== "super_admin") {
       return NextResponse.json(
-        { error: "Only super admin can view modem_ID allowances." },
+        { error: "Only super admin can view Reseller Plan allowances." },
         { status: 403 },
       );
     }
@@ -101,11 +101,11 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: true });
     }
     if (!body.modemId?.trim()) {
-      return NextResponse.json({ error: "modem_ID or rate plan is required." }, { status: 400 });
+      return NextResponse.json({ error: "Reseller Plan or rate plan is required." }, { status: 400 });
     }
     if (ctx.role !== "super_admin") {
       return NextResponse.json(
-        { error: "Only super admin can edit modem_ID allowances." },
+        { error: "Only super admin can edit Reseller Plan allowances." },
         { status: 403 },
       );
     }

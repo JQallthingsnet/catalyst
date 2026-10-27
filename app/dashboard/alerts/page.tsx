@@ -43,8 +43,8 @@ export default async function AlertsPage() {
           title="Pool usage"
           blurb={
             onPlatform
-              ? "Σ CTD MB ÷ Σ modem_ID allowance across SIMs on each modem ID per customer."
-              : "Σ CTD MB ÷ Σ rate plan allowance for your Control Center customer."
+              ? "Σ CTD MB ÷ Σ Reseller Plan allowance across SIMs on each Reseller Plan per customer."
+              : "Σ CTD MB ÷ Σ Reseller Plan allowance for your Control Center customer."
           }
           initial={settings.pool}
         />
@@ -52,7 +52,7 @@ export default async function AlertsPage() {
           <AlertSettingsForm
             kind="usage"
             title="SIM usage"
-            blurb="Per SIM, CTD MB ÷ rate plan allowance for your Control Center customer."
+            blurb="Per SIM, CTD MB ÷ Reseller Plan allowance for your Control Center customer."
             initial={settings.usage}
           />
         ) : null}

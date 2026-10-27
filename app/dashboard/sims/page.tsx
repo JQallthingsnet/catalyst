@@ -84,7 +84,7 @@ export default async function SimsPage({
               <th className="px-4 py-3">ICCID</th>
               <th className="px-4 py-3">Customer</th>
               <th className="px-4 py-3">Retail plan</th>
-              {fields.platformPlan ? <th className="px-4 py-3">Plan</th> : null}
+              {fields.platformPlan ? <th className="px-4 py-3">Reseller Plan</th> : null}
               {fields.ccRatePlan ? <th className="px-4 py-3">CC rate plan</th> : null}
               {fields.ccStatus ? <th className="px-4 py-3">CC status</th> : null}
               <th className="px-4 py-3">IMSI</th>
@@ -93,7 +93,7 @@ export default async function SimsPage({
               <th className="px-4 py-3">Pool</th>
               <th className="px-4 py-3">State</th>
               <th className="px-4 py-3">Lifecycle</th>
-              {canChangePlan ? <th className="px-4 py-3">Rate plan</th> : null}
+              {canChangePlan ? <th className="px-4 py-3">Reseller Plan</th> : null}
             </tr>
           </thead>
           <tbody>

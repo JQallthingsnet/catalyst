@@ -176,8 +176,8 @@ function ContractResellerCard({
         </section>
 
         <section className="rounded-xl border border-line bg-canvas/40 p-4">
-          <h3 className="text-sm font-medium text-ink">Rate plans</h3>
-          <p className="mt-1 text-xs text-quiet">Contracted supplier rate plans this reseller may sell on.</p>
+          <h3 className="text-sm font-medium text-ink">Reseller Plans</h3>
+          <p className="mt-1 text-xs text-quiet">Contracted Reseller Plans this organisation may sell on.</p>
 
           {entry.plans.length === 0 ? (
             <p className="mt-3 text-sm text-quiet">None bound yet.</p>

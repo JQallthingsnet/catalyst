@@ -453,7 +453,7 @@ export default async function CcSnapshotPage({
           />
           <FilterSelect
             name="modemId"
-            label="Modem ID"
+            label="Reseller Plan"
             value={filter.modemId ?? ""}
             options={options.modemIds}
             allLabel="All modems"

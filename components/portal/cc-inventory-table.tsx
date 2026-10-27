@@ -94,7 +94,7 @@ export function CcInventoryTable({
             <th className="px-3 py-2.5">End customer</th>
             <th className="px-3 py-2.5">Account ID</th>
             <th className="px-3 py-2.5">Device ID</th>
-            <th className="px-3 py-2.5">Modem ID</th>
+            <th className="px-3 py-2.5">Reseller Plan</th>
             <th className="px-3 py-2.5">Fixed IP</th>
             <th className="px-3 py-2.5">Cycle to date (MB)</th>
             <th className="px-3 py-2.5">In session</th>

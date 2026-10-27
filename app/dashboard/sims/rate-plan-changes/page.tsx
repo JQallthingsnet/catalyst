@@ -166,8 +166,8 @@ export default async function RatePlanChangesPage({
           <h1 className="text-3xl font-semibold">Plan changes</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Log of reseller-facing plan changes (modem_ID). Billing follows the Catalyst plan; Jasper update is optional for ATN."
-              : "Log of plan changes for your organisation. Billing follows the plan on each SIM in Catalyst."}{" "}
+              ? "Log of Reseller Plan changes. Billing follows the Catalyst plan; Jasper update is optional for ATN."
+              : "Log of Reseller Plan changes for your organisation. Billing follows the plan on each SIM in Catalyst."}{" "}
             Export CSV downloads the current filtered view (all matching rows).
           </p>
         </div>
@@ -188,7 +188,7 @@ export default async function RatePlanChangesPage({
           <input
             name="q"
             defaultValue={filter.query ?? ""}
-            placeholder="ICCID, rate plan, organisation, changed by…"
+            placeholder="ICCID, Reseller Plan, organisation, changed by…"
             className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
           />
         </label>
@@ -227,14 +227,14 @@ export default async function RatePlanChangesPage({
           ) : null}
           <FilterSelect
             name="fromPlan"
-            label="From modem_ID"
+            label="From Reseller Plan"
             value={filter.fromRatePlan ?? ""}
             options={options.fromRatePlans}
             allLabel="All from"
           />
           <FilterSelect
             name="toPlan"
-            label="To modem_ID"
+            label="To Reseller Plan"
             value={filter.toRatePlan ?? ""}
             options={options.toRatePlans}
             allLabel="All to"
@@ -334,7 +334,7 @@ export default async function RatePlanChangesPage({
                     {row.tcodeMismatch ? (
                       <span
                         className="text-quiet"
-                        title="CC snapshot modem_ID differs; billing still uses the Catalyst plan"
+                        title="CC snapshot Reseller Plan differs; billing still uses the Catalyst plan"
                       >
                         Snapshot differs
                       </span>

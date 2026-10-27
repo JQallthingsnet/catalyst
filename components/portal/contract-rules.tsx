@@ -10,7 +10,7 @@ const SUPER_ADMIN_RULES = [
   "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
   "Ready or Deactivated: rate-plan changes are free within contracted plans. Reseller admins or operators can change before shipping or after deactivation.",
   "Active or Suspended: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
-  "Plan changes update the reseller-facing plan (modem_ID). ATN bills from that Catalyst plan — not from Jasper. Whether to also change Jasper is ATN’s choice later.",
+  "Plan changes update the Reseller Plan. ATN bills from that Catalyst plan — not from Jasper. Whether to also change Jasper is ATN’s choice later.",
   "Snapshot differs / Push are super-admin only (CC vs Catalyst). They do not change reseller billing.",
   "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs.",
 ];

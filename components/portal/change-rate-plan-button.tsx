@@ -32,7 +32,7 @@ export function ChangeRatePlanButton({
 
   async function submit() {
     if (!platformPlanId) {
-      setError("Choose a rate plan.");
+      setError("Choose a Reseller Plan.");
       return;
     }
     setBusy(true);
@@ -72,16 +72,16 @@ export function ChangeRatePlanButton({
       </button>
       <ConfirmDialog
         open={open}
-        title="Change rate plan?"
+        title="Change Reseller Plan?"
         body={
           <div className="space-y-3">
             <p>
-              Update the plan on{" "}
+              Update the Reseller Plan on{" "}
               <span className="font-medium text-ink">ICCID {iccid}</span> in Catalyst. Billing
               follows this plan. Jasper is unchanged unless ATN updates it separately.
             </p>
             <label className="block text-sm text-quiet">
-              New rate plan
+              New Reseller Plan
               <select
                 value={platformPlanId}
                 onChange={(event) => setPlatformPlanId(event.target.value)}

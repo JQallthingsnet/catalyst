@@ -55,7 +55,7 @@ export default async function UsagePage({
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
               ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily digests use "
-              : "Reseller: per SIM, CTD MB ÷ rate plan allowance. Daily digests use "}
+              : "Reseller: per SIM, CTD MB ÷ Reseller Plan allowance. Daily digests use "}
             <Link href="/dashboard/alerts" className="text-accent">
               Alerts
             </Link>
@@ -89,7 +89,7 @@ export default async function UsagePage({
               placeholder={
                 basis === "rate_plan"
                   ? "Filter ICCID, rate plan, or CC customer"
-                  : "Filter ICCID, rate plan, or CC customer"
+                  : "Filter ICCID, Reseller Plan, or CC customer"
               }
               className="h-10 min-w-0 flex-1 rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent sm:max-w-md"
             />
@@ -122,11 +122,12 @@ export default async function UsagePage({
                 <tr>
                   <th className="px-4 py-3">ICCID</th>
                   <th className="px-4 py-3">CC customer</th>
-                  {basis === "modem" || basis === "rate_plan" ? (
-                    <th className="px-4 py-3">Rate plan</th>
-                  ) : null}
+                  {basis === "modem" ? <th className="px-4 py-3">Reseller Plan</th> : null}
+                  {basis === "rate_plan" ? <th className="px-4 py-3">Rate plan</th> : null}
                   <th className="px-4 py-3">CTD MB</th>
-                  <th className="px-4 py-3">Rate plan allowance MB</th>
+                  <th className="px-4 py-3">
+                    {basis === "modem" ? "Reseller Plan allowance MB" : "Rate plan allowance MB"}
+                  </th>
                   <th className="px-4 py-3">%</th>
                   <th className="px-4 py-3">CC status</th>
                 </tr>
@@ -169,7 +170,7 @@ export default async function UsagePage({
                     <td colSpan={7} className="px-4 py-8 text-quiet">
                       {basis === "rate_plan"
                         ? "No SIMs match. Set rate plan allowances, then Sync / enrich CTD."
-                        : "No SIMs match. Modem allowances are set by ATN; Sync / enrich CTD if usage is empty."}
+                        : "No SIMs match. Reseller Plan allowances are set by ATN; Sync / enrich CTD if usage is empty."}
                     </td>
                   </tr>
                 ) : null}

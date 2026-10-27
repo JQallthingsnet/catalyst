@@ -36,7 +36,7 @@ export default async function ContractsPage() {
             <thead className="border-b border-line text-quiet">
               <tr>
                 <th className="px-4 py-3 font-medium">Rate plan</th>
-                <th className="px-4 py-3 font-medium">Remarks</th>
+                <th className="px-4 py-3 font-medium">Reseller Plan</th>
                 <th className="px-4 py-3 font-medium">Default for bulk</th>
                 <th className="px-4 py-3 font-medium">SIMs on line</th>
               </tr>
@@ -45,7 +45,7 @@ export default async function ContractsPage() {
               {lines.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-quiet">
-                    No rate plans on contract yet. Ask ATN to add rate plans for your organisation.
+                    No Reseller Plans on contract yet. Ask ATN to add plans for your organisation.
                   </td>
                 </tr>
               ) : null}
