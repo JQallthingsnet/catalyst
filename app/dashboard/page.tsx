@@ -6,8 +6,11 @@ import { requirePortal } from "@/lib/portal/guard";
 import { resolvePoolCustomerScope } from "@/lib/portal/pool-scope";
 import {
   listPoolModemLatest,
+  listPoolRatePlanLatest,
   snapshotPoolCustomerDailyIfNeeded,
   toPoolEntityFromModem,
+  toPoolEntityFromRatePlan,
+  type PoolEntityLatest,
 } from "@/lib/portal/pools";
 import { dashboardSummary } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
@@ -54,14 +57,17 @@ export default async function DashboardPage() {
     showPools || needPoolKpi ? resolvePoolCustomerScope(ctx) : Promise.resolve(null),
   ]);
 
-  let poolRows: ReturnType<typeof toPoolEntityFromModem>[] = [];
+  let poolRows: PoolEntityLatest[] = [];
+  const poolGroupBy = poolScope?.unrestricted ? "rate_plan" : "modem";
   if (poolScope && (showPools || needPoolKpi)) {
     await snapshotPoolCustomerDailyIfNeeded();
-    poolRows = (
-      await listPoolModemLatest({
-        exactCustomer: poolScope.unrestricted ? undefined : poolScope.exactCustomer,
-      })
-    ).map(toPoolEntityFromModem);
+    poolRows = poolScope.unrestricted
+      ? (await listPoolRatePlanLatest()).map(toPoolEntityFromRatePlan)
+      : (
+          await listPoolModemLatest({
+            exactCustomer: poolScope.exactCustomer,
+          })
+        ).map(toPoolEntityFromModem);
   }
 
   const poolCtdMb = poolRows.reduce((sum, row) => sum + row.ctdUsageMb, 0);
@@ -147,7 +153,7 @@ export default async function DashboardPage() {
                 canEdit={false}
                 scopedCustomer={poolScope?.unrestricted ? null : poolScope?.exactCustomer || null}
                 platformView={Boolean(poolScope?.unrestricted)}
-                groupBy="modem"
+                groupBy={poolGroupBy}
                 mode="chart"
               />
             </section>

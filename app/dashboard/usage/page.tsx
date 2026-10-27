@@ -54,7 +54,7 @@ export default async function UsagePage({
           <h1 className="text-3xl font-semibold">Usage & alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
-              ? "Super admin: per SIM, CTD MB ÷ Jasper/CC rate plan allowance (mapped on Pools). Daily digests use "
+              ? "Super admin: per SIM, CTD MB ÷ Supplier code allowance (Jasper rate plan, mapped on Pools). Daily digests use "
               : "Reseller: per SIM, CTD MB ÷ Reseller Plan allowance. Daily digests use "}
             <Link href="/dashboard/alerts" className="text-accent">
               Alerts
@@ -66,7 +66,7 @@ export default async function UsagePage({
         <div className="flex flex-wrap items-center gap-3">
           {can(ctx.role, "pool.view") ? (
             <Link href="/dashboard/pools" className="text-sm text-accent">
-              {basis === "rate_plan" ? "Pools · rate plan allowances" : "Customer pools"}
+              {basis === "rate_plan" ? "Pools · Supplier code allowances" : "Customer pools"}
             </Link>
           ) : null}
           {basis === "rate_plan" && can(ctx.role, "pool.create") ? <SendUsageDigestButton /> : null}
@@ -88,7 +88,7 @@ export default async function UsagePage({
               defaultValue={q}
               placeholder={
                 basis === "rate_plan"
-                  ? "Filter ICCID, rate plan, or CC customer"
+                  ? "Filter ICCID, Supplier code, or CC customer"
                   : "Filter ICCID, Reseller Plan, or CC customer"
               }
               className="h-10 min-w-0 flex-1 rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent sm:max-w-md"
@@ -123,10 +123,10 @@ export default async function UsagePage({
                   <th className="px-4 py-3">ICCID</th>
                   <th className="px-4 py-3">CC customer</th>
                   {basis === "modem" ? <th className="px-4 py-3">Reseller Plan</th> : null}
-                  {basis === "rate_plan" ? <th className="px-4 py-3">Rate plan</th> : null}
+                  {basis === "rate_plan" ? <th className="px-4 py-3">Supplier code</th> : null}
                   <th className="px-4 py-3">CTD MB</th>
                   <th className="px-4 py-3">
-                    {basis === "modem" ? "Reseller Plan allowance MB" : "Rate plan allowance MB"}
+                    {basis === "modem" ? "Reseller Plan allowance MB" : "Supplier code allowance MB"}
                   </th>
                   <th className="px-4 py-3">%</th>
                   <th className="px-4 py-3">CC status</th>

@@ -115,9 +115,10 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
       <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-card border border-line bg-panel shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold">Rate plan allowances</h2>
+            <h2 className="text-lg font-semibold">Supplier code allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB per Jasper/CC rate plan. Super-admin Usage and Pools use CTD ÷ this allowance.
+              Manual MB per Supplier code (Jasper rate plan). Super-admin Usage and Pools use CTD ÷ this
+              allowance.
             </p>
           </div>
           <button
@@ -133,7 +134,7 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
           <input
             value={q}
             onChange={(event) => setQ(event.target.value)}
-            placeholder="Filter rate plan"
+            placeholder="Filter Supplier code"
             className="h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm outline-none focus:border-accent"
           />
         </div>
@@ -142,7 +143,7 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
           <table className="w-full text-left text-sm">
             <thead className="text-quiet">
               <tr>
-                <th className="py-2">Rate plan</th>
+                <th className="py-2">Supplier code</th>
                 <th className="py-2">Allowance MB</th>
               </tr>
             </thead>

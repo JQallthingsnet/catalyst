@@ -460,11 +460,11 @@ export function PoolsDashboard({
   /** `chart` = embeddable CTD plot only (e.g. Dashboard). */
   mode?: "full" | "chart";
 }) {
-  // modem_ID is displayed as Reseller Plan everywhere; Jasper TCode stays "Rate plan".
+  // Super admin: Jasper rate plan → Supplier code. Reseller: modem_ID → Reseller Plan.
   const entityLabel =
-    groupBy === "modem" ? "Reseller Plan" : groupBy === "rate_plan" ? "Rate plan" : "CC customer";
+    groupBy === "modem" ? "Reseller Plan" : groupBy === "rate_plan" ? "Supplier code" : "CC customer";
   const allowanceLabel =
-    groupBy === "modem" ? "Reseller Plan allowance MB" : "Rate plan allowance MB";
+    groupBy === "modem" ? "Reseller Plan allowance MB" : "Supplier code allowance MB";
   const [filterQ, setFilterQ] = useState("");
   const [plotted, setPlotted] = useState<string[]>(() => topByUsage(initialRows, 10));
   const [series, setSeries] = useState<PoolSeriesPoint[]>([]);
@@ -543,7 +543,7 @@ export function PoolsDashboard({
         mode === "chart"
           ? groupBy === "modem"
             ? "Data usage by Reseller Plan"
-            : "Data usage by rate plan"
+            : "Data usage by Supplier code"
           : "CTD usage over time"
       }
       subtitle={
@@ -582,17 +582,15 @@ export function PoolsDashboard({
         <div>
           <h1 className="text-3xl font-semibold">Pools</h1>
           <p className="mt-1 text-sm text-quiet">
-            {groupBy === "modem" && platformView
-              ? "Grouped by customer Reseller Plan: daily Σ CTD MB and Σ Reseller Plan allowance across SIMs with that plan (one point per Sydney calendar day)."
+            {groupBy === "rate_plan"
+              ? "Grouped by Supplier code (Jasper rate plan): daily Σ CTD MB and Σ Supplier code allowance across SIMs on that plan (one point per Sydney calendar day)."
               : groupBy === "modem" && scopedCustomer
-                ? `Grouped by Reseller Plan for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ Reseller Plan allowance across SIMs on that plan (one point per Sydney calendar day).`
+                ? `Grouped by Reseller Plan (modem_ID) for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ Reseller Plan allowance across SIMs on that plan (one point per Sydney calendar day).`
                 : groupBy === "modem"
                   ? "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see Reseller Plan pools."
-                  : groupBy === "rate_plan"
-                    ? "Grouped by Jasper/CC rate plan: daily Σ CTD MB and Σ rate plan allowance across SIMs on that plan (one point per Sydney calendar day)."
-                    : scopedCustomer
-                      ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and Reseller Plan allowance (one point per Sydney calendar day, auto-saved).`
-                      : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
+                  : scopedCustomer
+                    ? `Your organisation’s Control Center customer “${scopedCustomer}”: daily CTD MB and Reseller Plan allowance (one point per Sydney calendar day, auto-saved).`
+                    : "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see pool usage."}
           </p>
         </div>
         {canEdit && platformView ? (
@@ -602,7 +600,7 @@ export function PoolsDashboard({
               onClick={() => setRatePlanAllowancesOpen(true)}
               className={btnSecondary}
             >
-              Rate plan allowances
+              Supplier code allowances
             </button>
             <button
               type="button"
@@ -631,7 +629,9 @@ export function PoolsDashboard({
           placeholder={
             groupBy === "modem"
               ? "Filter Reseller Plan or customer"
-              : `Filter ${entityLabel.toLowerCase()}`
+              : groupBy === "rate_plan"
+                ? "Filter Supplier code"
+                : `Filter ${entityLabel.toLowerCase()}`
           }
           className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm outline-none focus:border-accent"
         />
