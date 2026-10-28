@@ -8,9 +8,9 @@
   "main": "worker.ts",
   "triggers": {
     // Separate schedules (same Worker, branched in worker.ts via controller.cron):
-    // 1) CC poll — every 5 min. CTD+session enrich, ~2 Jasper calls/s, Free ~50 subrequests/tick.
+    // 1) CC poll — every 8 min. CTD+session and details share budget 50/50 (Workers Paid); ≥1×/day each.
     // 2) ≥80% usage digest email — near Sydney midnight (13:00 UTC = AEDT midnight, 14:00 = AEST)
-    "crons": ["*/5 * * * *", "0 13 * * *", "0 14 * * *"]
+    "crons": ["*/8 * * * *", "0 13 * * *", "0 14 * * *"]
   },
   "assets": {
     "directory": "dist/client",

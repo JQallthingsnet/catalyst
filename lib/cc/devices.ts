@@ -10,6 +10,7 @@ import {
   fetchJasperDevicesPage,
   fetchJasperSessionInfo,
   JASPER_BULK_DEVICE_LIMIT,
+  jasperCallsRemaining,
   jasperConfigured,
   jasperHasBudget,
   type JasperDevice,
@@ -28,49 +29,45 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — 15 min cron; CTD @ ~2/s fits well under this.
+ * Auto poll wall budget — cron `*/8`; ~2 Jasper calls/s fits well under this.
  */
 const AUTO_BUDGET_MS = 3 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
- * Soft Jasper call cap for Free Workers (50 subrequests/invocation including D1).
- * CTD + sessionInfo = 2 calls/SIM; leave headroom for list/lock/D1/details drip.
- * 15 min × ~20 SIMs ≈ ~1920 CTD refreshes/day until Paid.
+ * Soft Jasper call cap per Auto tick (Workers Paid).
+ * Split evenly: ~half CTD+session (2 calls/SIM), ~half details bulk (1 call / ≤50 SIMs).
+ * ~150 calls × `*/8` still covers the estate ≥1×/day for both queues.
  */
-const JASPER_CALLS_AUTO = 40;
+const JASPER_CALLS_AUTO = 150;
 /**
  * Sync now catch-up: one Worker batch of Search pages (UI chains until lastPage).
  * List-only — do not burn budget on CTD/session until the window is complete.
  */
 const CATCHUP_PAGES_PER_RUN = 40;
-const CATCHUP_JASPER_CALLS = 45;
+const CATCHUP_JASPER_CALLS = 80;
 const CATCHUP_BUDGET_MS = 55_000;
 /**
- * After one full list cycle, at most one incremental Search page so almost all
- * of the tiny Free-tier budget goes to CTD + sessionInfo.
+ * After one full list cycle, at most one incremental Search page so enrich keeps the budget.
  */
 const AUTO_LIST_PAGES_WHEN_COMPLETE = 1;
 /** Manual Sync: refresh details if older than this. */
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
  * Auto poll: bulk Get Device / details this often (customer, IMEI, custom fields).
- * Target ~1 day full-estate refresh at AUTO_DETAILS_PER_TICK × cron (CTD stays separate).
+ * Target ~1 day full-estate refresh; CTD/session share the tick 50/50 by call budget.
  */
 const AUTO_DETAILS_STALE_MS = 24 * 60 * 60 * 1000;
 /**
- * Per auto tick: one bulk Get Device wave (up to JASPER_BULK_DEVICE_LIMIT).
- * Details-only — does not call CTD/sessionInfo (those keep their own 24h queue).
+ * Per auto tick: up to this many SIMs for details-only bulk (never starves CTD — call cap splits).
  */
-const AUTO_DETAILS_PER_TICK = JASPER_BULK_DEVICE_LIMIT;
-/** Jasper calls reserved so the details bulk still runs after the CTD wave. */
-const AUTO_DETAILS_RESERVE_CALLS = 2;
+const AUTO_DETAILS_PER_TICK = JASPER_BULK_DEVICE_LIMIT * 2;
 /**
  * Auto poll: refresh CTD usage + sessionInfo at least this often.
  * sessionInfo may 30000001 on some SIMs — soft-fail keeps CTD + prior in_session.
  * Work oldest `polled_at` first so >24h / >48h drain first.
  */
 const AUTO_SESSION_STALE_MS = 24 * 60 * 60 * 1000;
-/** Hold the D1 lock for the tick budget + small buffer; well under 15 min cron gap. */
+/** Hold the D1 lock for the tick budget + small buffer; well under the 8 min cron gap. */
 const LOCK_MS = AUTO_BUDGET_MS + 60_000;
 /**
  * After a tick that rate-limits with 0 SIMs refreshed, skip auto-poll for this long.
@@ -1792,18 +1789,20 @@ async function enrichFullDetailsBatch(
 
 async function enrichUsageBatch(
   iccids: string[],
-  input: { deadline: number; done: Set<string> },
+  input: { deadline: number; done: Set<string>; /** Leave this many Jasper calls for details bulk. */ reserveCalls?: number },
 ): Promise<number> {
   let enriched = 0;
   /** Consecutive CTD soft-RLs — momentary per-SIM flakes skip; account-hot stops the tick. */
   let consecutiveSoftRl = 0;
   const CONSECUTIVE_SOFT_RL_ABORT = 3;
+  const reserve = Math.max(0, input.reserveCalls ?? 0);
   // Write each SIM immediately — batched flushes were lost when a mid-tick
   // rate-limit threw, so Last tick advanced while <24h stayed at 0.
   for (const iccid of iccids) {
     if (input.done.has(iccid)) continue;
     if (Date.now() >= input.deadline) return enriched;
-    if (!jasperHasBudget(2)) return enriched;
+    // Stop before eating the details-wave reserve (CTD used to drain the whole tick).
+    if (!jasperHasBudget(2 + reserve)) return enriched;
     try {
       const usage = await fetchJasperCtdUsage(iccid);
       consecutiveSoftRl = 0;
@@ -1879,15 +1878,17 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     return enrichFullDetailsBatch(iccids, { deadline: input.deadline, done });
   }
 
-  // Auto: CTD/session first (budget reserved for one details bulk), then details-only wave.
-  // Details: never-enriched first, then oldest details_polled_at — shared AUTO_DETAILS_PER_TICK.
-  // Keyset pagination (polled_at, iccid) — do NOT break when a page is entirely in `done`,
-  // or the same first ICCIDs get re-selected every cycle and the rest of the estate starves.
+  // Auto: CTD/session and details are equal priority — split Jasper call budget 50/50.
+  // CTD phase stops after half; details uses the other half (plus any unused CTD budget).
+  const phaseStartRemaining = jasperCallsRemaining();
+  const halfCalls = Math.max(2, Math.floor(phaseStartRemaining / 2));
+  const leaveForDetails = phaseStartRemaining - halfCalls;
+
+  // Phase A — CTD + sessionInfo (oldest polled_at).
   const ctdPage = 200;
   let ctdAfterAt = "";
   let ctdAfterIccid = "";
-  const detailsReserveCalls = AUTO_DETAILS_RESERVE_CALLS;
-  while (Date.now() < input.deadline && jasperHasBudget(2 + detailsReserveCalls)) {
+  while (Date.now() < input.deadline && jasperHasBudget(2 + leaveForDetails)) {
     const ctdRows =
       ctdAfterAt === ""
         ? await getDB()
@@ -1913,7 +1914,6 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     const page = ctdRows.results ?? [];
     if (page.length === 0) break;
 
-    // Advance past this page even if every row was already in `done` this tick.
     const tail = page[page.length - 1]!;
     ctdAfterAt = tail.polled_at;
     ctdAfterIccid = tail.iccid;
@@ -1921,12 +1921,18 @@ async function enrichStaleDevices(input: { unlimited: boolean; deadline: number 
     const ctdList = page.map((row) => row.iccid).filter((id) => !done.has(id));
     if (ctdList.length === 0) continue;
 
-    const got = await enrichUsageBatch(ctdList, { deadline: input.deadline, done });
+    const got = await enrichUsageBatch(ctdList, {
+      deadline: input.deadline,
+      done,
+      reserveCalls: leaveForDetails,
+    });
     enriched += got;
     if (got === 0) break;
-    if (Date.now() >= input.deadline || !jasperHasBudget(2 + detailsReserveCalls)) break;
+    if (phaseStartRemaining - jasperCallsRemaining() >= halfCalls) break;
+    if (Date.now() >= input.deadline || !jasperHasBudget(2 + leaveForDetails)) break;
   }
 
+  // Phase B — details-only bulk (customer / profile). Other half of the tick.
   let detailsLeft = AUTO_DETAILS_PER_TICK;
   if (detailsLeft > 0 && Date.now() < input.deadline && jasperHasBudget(1)) {
     const neverRows = await getDB()
@@ -2098,7 +2104,7 @@ export async function syncCcDevices(input?: {
     // Catch-up: list only until lastPage. Incomplete crawl / manual: enrich after list.
     // enrichFirst path already spent the tick on CTD/session (leftover budget optional).
     if (enrichFirst) {
-      if (Date.now() < deadline && jasperHasBudget(2 + AUTO_DETAILS_RESERVE_CALLS)) {
+      if (Date.now() < deadline && jasperHasBudget(2)) {
         details += await enrichStaleDevices({ unlimited, deadline });
       }
     } else if (!catchup && (lastPage || state.lastPageComplete)) {

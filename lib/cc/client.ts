@@ -51,6 +51,11 @@ export function jasperHasBudget(need = 1): boolean {
   return jasperCalls + need <= jasperCallLimit;
 }
 
+/** Jasper GETs still allowed in this tick (soft cap from beginJasperBudget). */
+export function jasperCallsRemaining(): number {
+  return Math.max(0, jasperCallLimit - jasperCalls);
+}
+
 export type JasperDevice = {
   iccid: string;
   status: string;
