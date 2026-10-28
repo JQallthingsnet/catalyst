@@ -29,14 +29,14 @@ const MANUAL_PAGES_PER_RUN = 20;
 const MANUAL_DETAILS_PER_RUN = 8;
 const MANUAL_BUDGET_MS = 25_000;
 /**
- * Auto poll wall budget — cron `*/8`; ~2 Jasper calls/s fits well under this.
+ * Auto poll wall budget — every-8-min cron; ~2 Jasper calls/s fits well under this.
  */
 const AUTO_BUDGET_MS = 3 * 60 * 1000;
 const JASPER_CALLS_MANUAL = 16;
 /**
  * Soft Jasper call cap per Auto tick (Workers Paid).
  * Split evenly: ~half CTD+session (2 calls/SIM), ~half details bulk (1 call / ≤50 SIMs).
- * ~150 calls × `*/8` still covers the estate ≥1×/day for both queues.
+ * ~150 calls × every-8-min cron still covers the estate at least once/day for both queues.
  */
 const JASPER_CALLS_AUTO = 150;
 /**
