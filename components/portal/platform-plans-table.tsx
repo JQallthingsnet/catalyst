@@ -53,7 +53,7 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Reseller Plan, rate plan, reseller…"
+              placeholder="Supplier code, Reseller Plan, plan description…"
               className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
             />
           </label>
@@ -111,9 +111,9 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
         <table className="w-full min-w-200 text-left text-sm">
           <thead className="border-b border-line text-quiet">
             <tr>
-              <th className="px-4 py-3 font-medium">Rate plan</th>
-              <th className="px-4 py-3 font-medium">Comm plan</th>
+              <th className="px-4 py-3 font-medium">Supplier code</th>
               <th className="px-4 py-3 font-medium">Reseller Plan</th>
+              <th className="px-4 py-3 font-medium">Plan description</th>
               <th className="px-4 py-3 font-medium">Supplier</th>
               <th className="px-4 py-3 font-medium">Bound resellers</th>
               <th className="px-4 py-3 font-medium">Status</th>
@@ -129,12 +129,12 @@ export function PlatformPlansTable({ plans }: { plans: PlatformPlanRow[] }) {
                     {plan.ccRatePlan}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-quiet">{plan.commPlan}</td>
                 <td className="max-w-56 px-4 py-3">
                   <span className="block wrap-break-word" title={plan.name}>
                     {plan.name}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-quiet">{plan.commPlan}</td>
                 <td className="px-4 py-3 text-quiet">{plan.supplier}</td>
                 <td className="max-w-72 px-4 py-3">
                   {plan.resellerNames.length > 0 ? (

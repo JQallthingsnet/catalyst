@@ -57,9 +57,9 @@ export function PlatformPlanWizard({
         <>
           <p>{name || "Reseller Plan"}</p>
           <p>
-            {supplier || "Supplier"} · {ccRatePlan || "rate plan"}
+            {supplier || "Supplier"} · {ccRatePlan || "Supplier code"}
           </p>
-          <p>{commPlan || "communication plan"}</p>
+          <p>{commPlan || "Plan description"}</p>
           <p>{boundNames.length ? boundNames.join(", ") : "No reseller bound"}</p>
           <p className="text-ok">Appears on Contract for bound resellers and on Plans with supplier mapping.</p>
         </>
@@ -93,25 +93,28 @@ export function PlatformPlanWizard({
             </select>
           </label>
           <label className="block text-sm">
-            Rate plan
+            Supplier code
             <input
               value={ccRatePlan}
               onChange={(event) => setCcRatePlan(event.target.value)}
-              placeholder="e.g. CM1GB, Optus / Jasper TCode"
+              placeholder="e.g. EN_5, Jasper rate plan / TCode"
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             />
             <span className="mt-1 block text-xs text-quiet">
-              Must match the supplier’s rate plan name (for Optus, the Jasper rate plan / TCode).
+              Must match the supplier’s rate plan code (for Optus, the Jasper rate plan / TCode).
             </span>
           </label>
           <label className="block text-sm">
-            Communication plan
+            Plan description
             <input
               value={commPlan}
               onChange={(event) => setCommPlan(event.target.value)}
-              placeholder="e.g. Data only"
+              placeholder="e.g. Data Only 1GB"
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
             />
+            <span className="mt-1 block text-xs text-quiet">
+              Human-readable description (maps to the supplier communication plan).
+            </span>
           </label>
         </div>
       ) : null}
