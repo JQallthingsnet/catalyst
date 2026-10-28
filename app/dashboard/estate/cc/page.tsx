@@ -209,6 +209,11 @@ export default async function CcSnapshotPage({
   const from = listedCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const to = Math.min(currentPage * PAGE_SIZE, listedCount);
   const exportQuery = snapshotFilterParams(filter).toString();
+  // <24h on Devices/Activated = stock counts still reflect Jasper (full list in D1 + last tick within 24h).
+  // Incremental Search keeps new/changed SIMs in that window. Not a per-SIM band like CTD/Details.
+  const listTickMs = sync.lastPolledAt ? Date.parse(sync.lastPolledAt) : NaN;
+  const listCountsFresh24h =
+    sync.lastPageComplete && Number.isFinite(listTickMs) && Date.now() - listTickMs < 24 * 60 * 60 * 1000;
 
   return (
     <div>
@@ -219,7 +224,7 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            Copy of Control Center in D1. Use <span className="text-ink">Sync device list</span> to pull the Jasper Search ICCID list into D1 (progress bar; Auto poll stays off until done). Auto poll then refreshes CTD and device profiles (customer, IMEI, …). Filter and export apply to the current view.
+            Copy of Control Center in D1. Turn <span className="text-ink">Auto poll ON</span> — cron every 8 min walks Jasper Search until the ICCID list is in D1, then refreshes CTD and profiles and pulls changed SIMs. <span className="text-ink">Sync device list</span> is optional if you want a faster catch-up now.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -242,7 +247,18 @@ export default async function CcSnapshotPage({
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-sm text-quiet">Devices in copy</p>
-              <p className="mt-2 text-3xl font-semibold">{total.toLocaleString("en-AU")}</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {total.toLocaleString("en-AU")}
+                {sync.lastPageComplete ? (
+                  <span
+                    className={`ml-2 text-base font-normal ${
+                      listCountsFresh24h ? "text-quiet" : "text-danger"
+                    }`}
+                  >
+                    {listCountsFresh24h ? "<24h" : ">24h"}
+                  </span>
+                ) : null}
+              </p>
               <p className="mt-1 text-xs text-quiet">
                 Jasper Search total{" "}
                 {sync.lastTotal != null && sync.lastTotal > 0 ? sync.lastTotal.toLocaleString("en-AU") : "—"}
@@ -253,16 +269,29 @@ export default async function CcSnapshotPage({
             </div>
             <div className="shrink-0 text-right">
               <p className="text-sm text-quiet">Activated</p>
-              <p className="mt-2 text-3xl font-semibold">{summary.activated.toLocaleString("en-AU")}</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {summary.activated.toLocaleString("en-AU")}
+                {sync.lastPageComplete ? (
+                  <span
+                    className={`ml-2 text-base font-normal ${
+                      listCountsFresh24h ? "text-quiet" : "text-danger"
+                    }`}
+                  >
+                    {listCountsFresh24h ? "<24h" : ">24h"}
+                  </span>
+                ) : null}
+              </p>
             </div>
           </div>
           <p className="mt-3 text-sm text-quiet">ICCID list (Jasper Search)</p>
           <p className="mt-1 text-sm font-medium">
             {sync.lastPageComplete
-              ? "Full list in D1 — auto poll only pulls changed SIMs"
-              : `Catching up · page ${sync.nextPage.toLocaleString("en-AU")}${
-                  sync.lastPage != null ? ` (last fetched ${sync.lastPage.toLocaleString("en-AU")})` : ""
-                }`}
+              ? "Full list in D1 — auto poll only pulls changed SIMs · <24h while counts reflect Jasper"
+              : sync.autoPoll
+                ? `Auto poll catching up · page ${sync.nextPage.toLocaleString("en-AU")}${
+                    sync.lastPage != null ? ` (last fetched ${sync.lastPage.toLocaleString("en-AU")})` : ""
+                  } · ~every 8 min`
+                : `List incomplete · turn Auto poll ON (or Sync device list) · page ${sync.nextPage.toLocaleString("en-AU")}`}
           </p>
           <p className="mt-1 text-xs text-quiet">
             Changes since {sync.modifiedSince ? formatAuDateTime(sync.modifiedSince) : "default ~360 days"}
@@ -318,7 +347,7 @@ export default async function CcSnapshotPage({
               <p className="text-sm text-quiet">Details enriched age</p>
               <p className="mt-2 text-3xl font-semibold">
                 {summary.detailsFresh24h.toLocaleString("en-AU")}
-                <span className="ml-2 text-base font-normal text-quiet">&lt;1d</span>
+                <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
               </p>
               <p className="mt-1 text-xs text-quiet">
                 <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
@@ -330,7 +359,7 @@ export default async function CcSnapshotPage({
                     summary.detailsStale1to7d + summary.detailsOlder7d > 0 ? "text-danger" : ""
                   }
                 >
-                  &gt;1d {(summary.detailsStale1to7d + summary.detailsOlder7d).toLocaleString("en-AU")}
+                  &gt;24h {(summary.detailsStale1to7d + summary.detailsOlder7d).toLocaleString("en-AU")}
                 </span>
               </p>
             </div>

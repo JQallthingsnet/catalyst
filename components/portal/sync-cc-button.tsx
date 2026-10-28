@@ -86,7 +86,7 @@ export function SyncCcButton({
       ) {
         setOk(
           `Device list already complete — ${started.devicesInCopy.toLocaleString("en-AU")} in copy` +
-            ` / ${started.jasperTotal.toLocaleString("en-AU")} Search. Profiles (customer, IMEI, …) and CTD refresh via Auto poll.`,
+            ` / ${started.jasperTotal.toLocaleString("en-AU")} Search. Leave Auto poll ON for CTD, profiles, and new/changed SIMs.`,
         );
         return;
       }
@@ -217,7 +217,7 @@ export function SyncCcButton({
         onClick={() => void runCatchUp()}
         className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent disabled:opacity-40"
       >
-        {busy ? "Syncing list…" : "Sync device list"}
+        {busy ? "Syncing list…" : "Sync device list now"}
       </button>
       {panel}
     </>

@@ -50,6 +50,11 @@ const CATCHUP_BUDGET_MS = 55_000;
  * After one full list cycle, at most one incremental Search page so enrich keeps the budget.
  */
 const AUTO_LIST_PAGES_WHEN_COMPLETE = 1;
+/**
+ * While the ICCID list is incomplete, Auto poll spends the tick on Search pages (no Sync click).
+ * ~40 pages × 50 ≈ 2k SIMs per every-8-min tick → ~6k estate in a few ticks.
+ */
+const AUTO_LIST_PAGES_WHEN_INCOMPLETE = CATCHUP_PAGES_PER_RUN;
 /** Manual Sync: refresh details if older than this. */
 const DETAILS_STALE_MS = 15 * 60 * 1000;
 /**
@@ -499,6 +504,8 @@ export async function setCcAutoPoll(enabled: boolean): Promise<void> {
     .prepare(`UPDATE cc_sync_state SET auto_poll = ? WHERE id = ?`)
     .bind(enabled ? 1 : 0, SYNC_ID)
     .run();
+  // Auto poll owns the Jasper Search walk — open/resume catch-up when enabling (no Sync click).
+  if (enabled) await ensureCcListCatchUpWindow({ turnAutoOff: false });
 }
 
 /** Clear sticky CC banner (e.g. when turning Auto poll off after a rate-limit night). */
@@ -533,12 +540,12 @@ export async function getCcCatchUpProgress(): Promise<CcCatchUpProgress> {
 }
 
 /**
- * Start / resume Sync now catch-up: Auto poll OFF.
- * Reopen ~360d Search only when the last cycle finished but D1 is still short of Jasper total
- * (early cursor advance). Mid-crawl resumes next_page. If already caught up, leave window as-is.
+ * Open or resume a Jasper Search catch-up window when the D1 list is incomplete or short.
+ * Auto poll uses this (turnAutoOff=false). Manual Sync device list pauses Auto poll (turnAutoOff=true).
  */
-export async function beginCcCatchUp(): Promise<CcCatchUpProgress> {
+async function ensureCcListCatchUpWindow(input?: { turnAutoOff?: boolean }): Promise<void> {
   await ensureSyncRow();
+  const turnAutoOff = Boolean(input?.turnAutoOff);
   const state = await getCcSyncState();
   const devicesInCopy = await countCcDevices();
   const shortOfSearch =
@@ -546,8 +553,10 @@ export async function beginCcCatchUp(): Promise<CcCatchUpProgress> {
     state.lastTotal != null &&
     state.lastTotal > 0 &&
     devicesInCopy < Math.floor(state.lastTotal * 0.95);
+  const needsWideWindow =
+    shortOfSearch || (state.lastPageComplete && (state.lastTotal == null || state.lastTotal <= 0));
 
-  if (shortOfSearch || (state.lastPageComplete && (state.lastTotal == null || state.lastTotal <= 0))) {
+  if (needsWideWindow) {
     const modifiedSince = defaultModifiedSince();
     await getDB()
       .prepare(
@@ -558,24 +567,36 @@ export async function beginCcCatchUp(): Promise<CcCatchUpProgress> {
              list_cycle_started_at = NULL,
              last_error = NULL,
              locked_until = NULL,
-             auto_poll = 0
+             auto_poll = CASE WHEN ? = 1 THEN 0 ELSE auto_poll END
          WHERE id = ?`,
       )
-      .bind(modifiedSince, SYNC_ID)
+      .bind(modifiedSince, turnAutoOff ? 1 : 0, SYNC_ID)
       .run();
-  } else if (!state.lastPageComplete) {
+    return;
+  }
+
+  if (!state.lastPageComplete) {
     await getDB()
       .prepare(
         `UPDATE cc_sync_state
-         SET auto_poll = 0,
-             last_error = NULL,
-             locked_until = NULL
+         SET last_error = NULL,
+             locked_until = NULL,
+             auto_poll = CASE WHEN ? = 1 THEN 0 ELSE auto_poll END,
+             modified_since = COALESCE(modified_since, ?)
          WHERE id = ?`,
       )
-      .bind(SYNC_ID)
+      .bind(turnAutoOff ? 1 : 0, defaultModifiedSince(), SYNC_ID)
       .run();
   }
-  // Already caught up: leave auto_poll / modified_since alone; batch may no-op quickly via lastPage.
+  // Already caught up: leave auto_poll / modified_since alone.
+}
+
+/**
+ * Start / resume optional Sync device list catch-up (Auto poll OFF while the UI chains batches).
+ * Prefer Auto poll ON for unattended list walks — cron pages Search until last_page_complete.
+ */
+export async function beginCcCatchUp(): Promise<CcCatchUpProgress> {
+  await ensureCcListCatchUpWindow({ turnAutoOff: true });
   return getCcCatchUpProgress();
 }
 
@@ -643,8 +664,9 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
     return null;
   }
   try {
-    // Pool daily snapshot runs once/day in worker.ts (IfNeeded). Do not re-scan all
-    // devices after every tick — that burns D1 headroom and hides enrich throughput.
+    // Heal / first crawl without Sync click: reopen wide Search when D1 is short or incomplete.
+    await ensureCcListCatchUpWindow({ turnAutoOff: false });
+    // Incomplete list → tick spends budget on Search pages. Complete → CTD/details + 1 incremental page.
     return await syncCcDevices({ mode: "auto" });
   } catch (err) {
     if (err instanceof CcBusyError) return null;
@@ -2061,13 +2083,14 @@ export async function syncCcDevices(input?: {
       details = await enrichStaleDevices({ unlimited, deadline });
     }
 
-    // Catch-up / first crawl: page forward only. Auto after complete: few incremental pages.
+    // Catch-up / first crawl: page forward only. Auto incomplete: list pages each tick.
+    // Auto after complete: one incremental Search page so enrich keeps the budget.
     const maxPages = catchup
       ? CATCHUP_PAGES_PER_RUN
       : unlimited
         ? state.lastPageComplete
           ? AUTO_LIST_PAGES_WHEN_COMPLETE
-          : Number.POSITIVE_INFINITY
+          : AUTO_LIST_PAGES_WHEN_INCOMPLETE
         : MANUAL_PAGES_PER_RUN;
     while (pages < maxPages && Date.now() < deadline && jasperHasBudget()) {
       // Identical search: same account, modifiedSince, pageSize=50; only pageNumber increases.

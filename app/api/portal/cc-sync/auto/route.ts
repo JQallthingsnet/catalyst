@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import { ensurePortalSchema } from "@/lib/portal/schema";
-import { clearCcLastError, getCcSyncState, setCcAutoPoll } from "@/lib/cc/devices";
+import { clearCcLastError, setCcAutoPoll } from "@/lib/cc/devices";
 
 export async function POST(request: Request) {
   const ctx = await requirePortalApi();
@@ -18,22 +18,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send { enabled: true | false }." }, { status: 400 });
   }
 
-  if (enabled) {
-    const state = await getCcSyncState();
-    if (!state.lastPageComplete) {
-      return NextResponse.json(
-        {
-          error:
-            "Finish Sync device list (Search catch-up) first. Auto poll refreshes CTD and profiles after the list is in D1.",
-        },
-        { status: 400 },
-      );
-    }
-  }
-
   await setCcAutoPoll(enabled);
-  // Do not fire syncCcDevices on enable — that instantly re-hits Optus after a cooldown
-  // night and rewrites the rate-limit banner. Hourly cron picks up Auto poll ON.
+  // Do not fire syncCcDevices on enable — cron */8 picks up Auto poll ON (list catch-up
+  // first if incomplete, then CTD/details + incremental Search).
   if (!enabled) {
     await clearCcLastError();
   }

@@ -99,7 +99,7 @@ export default async function DashboardPage() {
             <Kpi
               label="Details enriched age"
               value={ccSummary.detailsFresh24h.toLocaleString("en-AU")}
-              hint={`${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >1d ${(ccSummary.detailsStale1to7d + ccSummary.detailsOlder7d).toLocaleString("en-AU")}`}
+              hint={`${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >24h ${(ccSummary.detailsStale1to7d + ccSummary.detailsOlder7d).toLocaleString("en-AU")}`}
             />
           </>
         ) : (
