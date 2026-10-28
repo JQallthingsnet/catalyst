@@ -302,25 +302,27 @@ export default async function CcSnapshotPage({
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">Profiles in copy</p>
-          <p className="mt-2 text-3xl font-semibold">{summary.detailsFresh24h.toLocaleString("en-AU")}</p>
+          <p className="mt-0 text-3xl font-semibold">
+            {summary.detailsFresh24h.toLocaleString("en-AU")}{" "}
+            <span className="text-lg font-medium text-quiet">&lt;1d</span>
+          </p>
           <p className="mt-1 text-xs text-quiet">
-            Re-fetched from Jasper in the last 24h (customer, IMEI, custom fields, …)
+            Re-fetched from Supplier every 24h (customer, IMEI, custom fields, …)
           </p>
           <p className="mt-3 text-xs text-quiet">
             Auto poll refreshes ~100 profiles every 8 min · full estate ~1 day
           </p>
           <p className="mt-1 text-xs text-quiet">
-            {summary.detailsEnriched.toLocaleString("en-AU")} ever enriched
-            {" · "}
             <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
               {summary.neverEnriched.toLocaleString("en-AU")} list-only
             </span>
             {" · "}
-            1–7d {summary.detailsStale1to7d.toLocaleString("en-AU")}
-            {" · "}
-            <span className={summary.detailsOlder7d > 0 ? "text-danger" : ""}>
-              &gt;7d {summary.detailsOlder7d.toLocaleString("en-AU")}
+            <span
+              className={
+                summary.detailsStale1to7d + summary.detailsOlder7d > 0 ? "text-danger" : ""
+              }
+            >
+              &gt;1d {(summary.detailsStale1to7d + summary.detailsOlder7d).toLocaleString("en-AU")}
             </span>
           </p>
         </article>
