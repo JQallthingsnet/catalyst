@@ -276,20 +276,24 @@ export default async function CcSnapshotPage({
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">CTD usage age</p>
+          <p className="text-sm text-quiet">CTD usage and sessionage</p>
           <p className="mt-2 text-3xl font-semibold">
             {summary.sessionFresh24h.toLocaleString("en-AU")}
             <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
           </p>
           <p className="mt-1 text-xs text-quiet">
-            From Jasper <span className="text-ink">/ctdUsages</span>
+            From Supplier ctdUsages and sessionInfo
             {" · "}
-            24–48h {summary.sessionStale24to48h.toLocaleString("en-AU")}
-            {" · "}
-            <span className={summary.sessionOlder48h > 0 ? "text-danger" : ""}>
-              &gt;48h {summary.sessionOlder48h.toLocaleString("en-AU")}
+            <span
+              className={
+                summary.sessionStale24to48h + summary.sessionOlder48h > 0 ? "text-danger" : ""
+              }
+            >
+              &gt;1d{" "}
+              {(summary.sessionStale24to48h + summary.sessionOlder48h).toLocaleString("en-AU")}
             </span>
           </p>
+          <p className="mt-1 text-xs text-quiet">sessionInfo is best-effort base</p>
           <p className="mt-3 text-sm text-quiet">In session</p>
           <p className="mt-1 text-xs text-quiet">
             {summary.inSession.toLocaleString("en-AU")} yes
@@ -297,12 +301,11 @@ export default async function CcSnapshotPage({
             known {summary.sessionKnown.toLocaleString("en-AU")}
             {" · "}
             unknown {summary.sessionUnknown.toLocaleString("en-AU")}
-            {" · "}
-            from /sessionInfo (soft-fail if 30000001)
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="mt-0 text-3xl font-semibold">
+          <p className="text-sm text-quiet">Details enriched age</p>
+          <p className="mt-2 text-3xl font-semibold">
             {summary.detailsFresh24h.toLocaleString("en-AU")}{" "}
             <span className="text-lg font-medium text-quiet">&lt;1d</span>
           </p>
