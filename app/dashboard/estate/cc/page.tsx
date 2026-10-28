@@ -342,33 +342,25 @@ export default async function CcSnapshotPage({
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-quiet">Details enriched age</p>
-              <p className="mt-2 text-3xl font-semibold">
-                {summary.detailsFresh24h.toLocaleString("en-AU")}
-                <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
-              </p>
-              <p className="mt-1 text-xs text-quiet">
-                <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
-                  {summary.neverEnriched.toLocaleString("en-AU")} list-only
-                </span>
-                {" · "}
-                <span
-                  className={
-                    summary.detailsStale1to7d + summary.detailsOlder7d > 0 ? "text-danger" : ""
-                  }
-                >
-                  &gt;24h {(summary.detailsStale1to7d + summary.detailsOlder7d).toLocaleString("en-AU")}
-                </span>
-              </p>
-            </div>
-            <div className="shrink-0 text-right">
-              <p className="text-sm text-quiet">Ever enriched</p>
-              <p className="mt-2 text-3xl font-semibold">
-                {summary.detailsEnriched.toLocaleString("en-AU")}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <p className="text-sm text-quiet">Details enriched age</p>
+            <p className="mt-2 text-3xl font-semibold">
+              {summary.detailsFresh24h.toLocaleString("en-AU")}
+              <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
+            </p>
+            <p className="mt-1 text-xs text-quiet">
+              <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
+                {summary.neverEnriched.toLocaleString("en-AU")} list-only
+              </span>
+              {" · "}
+              <span
+                className={
+                  summary.detailsStale1to7d + summary.detailsOlder7d > 0 ? "text-danger" : ""
+                }
+              >
+                &gt;24h {(summary.detailsStale1to7d + summary.detailsOlder7d).toLocaleString("en-AU")}
+              </span>
+            </p>
           </div>
           <p className="mt-3 text-sm text-quiet">Profile refresh</p>
           <p className="mt-1 text-sm font-medium">
