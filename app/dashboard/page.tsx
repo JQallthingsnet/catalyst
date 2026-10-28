@@ -97,12 +97,12 @@ export default async function DashboardPage() {
               hint={`CTD <24h ${ccSummary.sessionFresh24h.toLocaleString("en-AU")} · >48h ${ccSummary.sessionOlder48h.toLocaleString("en-AU")}`}
             />
             <Kpi
-              label="Details enriched"
-              value={ccSummary.detailsEnriched.toLocaleString("en-AU")}
+              label="Profiles refreshed 24h"
+              value={ccSummary.detailsFresh24h.toLocaleString("en-AU")}
               hint={
                 ccSummary.neverEnriched > 0
                   ? `${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >7d ${ccSummary.detailsOlder7d.toLocaleString("en-AU")}`
-                  : `<24h ${ccSummary.detailsFresh24h.toLocaleString("en-AU")} · 1–7d ${ccSummary.detailsStale1to7d.toLocaleString("en-AU")}`
+                  : `ever ${ccSummary.detailsEnriched.toLocaleString("en-AU")} · >7d ${ccSummary.detailsOlder7d.toLocaleString("en-AU")}`
               }
             />
           </>

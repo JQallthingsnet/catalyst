@@ -302,20 +302,20 @@ export default async function CcSnapshotPage({
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">Details enriched</p>
-          <p className="mt-2 text-3xl font-semibold">{summary.detailsEnriched.toLocaleString("en-AU")}</p>
+          <p className="text-sm text-quiet">Profiles in copy</p>
+          <p className="mt-2 text-3xl font-semibold">{summary.detailsFresh24h.toLocaleString("en-AU")}</p>
           <p className="mt-1 text-xs text-quiet">
-            Full Jasper device profile (IMEI, customer, custom fields, …)
+            Re-fetched from Jasper in the last 24h (customer, IMEI, custom fields, …)
           </p>
           <p className="mt-3 text-xs text-quiet">
-            Profile refresh age (~1 day for full estate — bulk Get Device, Auto poll)
+            Auto poll refreshes ~100 profiles every 8 min · full estate ~1 day
           </p>
           <p className="mt-1 text-xs text-quiet">
-            <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
-              {summary.neverEnriched.toLocaleString("en-AU")} still list-only
-            </span>
+            {summary.detailsEnriched.toLocaleString("en-AU")} ever enriched
             {" · "}
-            &lt;24h {summary.detailsFresh24h.toLocaleString("en-AU")}
+            <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
+              {summary.neverEnriched.toLocaleString("en-AU")} list-only
+            </span>
             {" · "}
             1–7d {summary.detailsStale1to7d.toLocaleString("en-AU")}
             {" · "}
