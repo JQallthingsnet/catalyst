@@ -276,24 +276,45 @@ export default async function CcSnapshotPage({
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">CTD usage and sessionage</p>
-          <p className="mt-2 text-3xl font-semibold">
-            {summary.sessionFresh24h.toLocaleString("en-AU")}
-            <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
-          </p>
-          <p className="mt-1 text-xs text-quiet">
-            From Supplier ctdUsages and sessionInfo
-            {" · "}
-            <span
-              className={
-                summary.sessionStale24to48h + summary.sessionOlder48h > 0 ? "text-danger" : ""
-              }
-            >
-              &gt;1d{" "}
-              {(summary.sessionStale24to48h + summary.sessionOlder48h).toLocaleString("en-AU")}
-            </span>
-          </p>
-          <p className="mt-1 text-xs text-quiet">sessionInfo is best-effort base</p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-quiet">CTD usage age</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {summary.sessionFresh24h.toLocaleString("en-AU")}
+                <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
+              </p>
+              <p className="mt-1 text-xs text-quiet">From Supplier ctdUsages and sessionInfo</p>
+              <p className="mt-0.5 text-xs text-quiet">sessionInfo is best-effort base</p>
+              <p
+                className={`mt-3 text-xs ${
+                  summary.sessionStale24to48h + summary.sessionOlder48h > 0
+                    ? "text-danger"
+                    : "text-quiet"
+                }`}
+              >
+                &gt;1d{" "}
+                {(summary.sessionStale24to48h + summary.sessionOlder48h).toLocaleString("en-AU")}
+              </p>
+            </div>
+            <div className="w-px self-stretch bg-line" aria-hidden />
+            <div className="min-w-0 flex-1 text-right">
+              <p className="text-sm text-quiet">Session age</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {summary.sessionFresh24h.toLocaleString("en-AU")}
+                <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
+              </p>
+              <p
+                className={`mt-3 text-xs ${
+                  summary.sessionStale24to48h + summary.sessionOlder48h > 0
+                    ? "text-danger"
+                    : "text-quiet"
+                }`}
+              >
+                &gt;1d{" "}
+                {(summary.sessionStale24to48h + summary.sessionOlder48h).toLocaleString("en-AU")}
+              </p>
+            </div>
+          </div>
           <p className="mt-3 text-sm text-quiet">In session</p>
           <p className="mt-1 text-xs text-quiet">
             {summary.inSession.toLocaleString("en-AU")} yes
@@ -304,30 +325,40 @@ export default async function CcSnapshotPage({
           </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
-          <p className="text-sm text-quiet">Details enriched age</p>
-          <p className="mt-2 text-3xl font-semibold">
-            {summary.detailsFresh24h.toLocaleString("en-AU")}{" "}
-            <span className="text-lg font-medium text-quiet">&lt;1d</span>
-          </p>
-          <p className="mt-1 text-xs text-quiet">
-            Re-fetched from Supplier every 24h (customer, IMEI, custom fields, …)
-          </p>
-          <p className="mt-3 text-xs text-quiet">
-            Auto poll refreshes ~100 profiles every 8 min · full estate ~1 day
-          </p>
-          <p className="mt-1 text-xs text-quiet">
-            <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
-              {summary.neverEnriched.toLocaleString("en-AU")} list-only
-            </span>
-            {" · "}
-            <span
-              className={
-                summary.detailsStale1to7d + summary.detailsOlder7d > 0 ? "text-danger" : ""
-              }
-            >
-              &gt;1d {(summary.detailsStale1to7d + summary.detailsOlder7d).toLocaleString("en-AU")}
-            </span>
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-quiet">Details enriched age</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {summary.detailsFresh24h.toLocaleString("en-AU")}
+                <span className="ml-2 text-base font-normal text-quiet">&lt;1d</span>
+              </p>
+              <p className="mt-1 text-xs text-quiet">
+                Re-fetched from Supplier every 24h (customer, IMEI, custom fields, …)
+              </p>
+              <p className="mt-0.5 text-xs text-quiet">
+                Auto poll ~100 every 8 min · full estate ~1 day
+              </p>
+              <p className="mt-3 text-xs text-quiet">
+                <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
+                  {summary.neverEnriched.toLocaleString("en-AU")} list-only
+                </span>
+                {" · "}
+                <span
+                  className={
+                    summary.detailsStale1to7d + summary.detailsOlder7d > 0 ? "text-danger" : ""
+                  }
+                >
+                  &gt;1d {(summary.detailsStale1to7d + summary.detailsOlder7d).toLocaleString("en-AU")}
+                </span>
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-sm text-quiet">Ever enriched</p>
+              <p className="mt-2 text-3xl font-semibold">
+                {summary.detailsEnriched.toLocaleString("en-AU")}
+              </p>
+            </div>
+          </div>
         </article>
       </div>
 
