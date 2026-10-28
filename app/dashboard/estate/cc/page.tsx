@@ -283,19 +283,14 @@ export default async function CcSnapshotPage({
                 {summary.sessionFresh24h.toLocaleString("en-AU")}
                 <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
               </p>
-              <p className="mt-1 text-xs text-quiet">
-                From Supplier ctdUsages and sessionInfo
-                <br />
-                sessionInfo is best-effort base
-              </p>
               <p
-                className={`mt-3 text-xs ${
+                className={`mt-1 text-xs ${
                   summary.sessionStale24to48h + summary.sessionOlder48h > 0
                     ? "text-danger"
                     : "text-quiet"
                 }`}
               >
-                &gt;1d{" "}
+                &gt;24h{" "}
                 {(summary.sessionStale24to48h + summary.sessionOlder48h).toLocaleString("en-AU")}
               </p>
             </div>
@@ -303,14 +298,19 @@ export default async function CcSnapshotPage({
               <p className="text-sm text-quiet">In session</p>
               <p className="mt-2 text-3xl font-semibold">
                 {summary.inSession.toLocaleString("en-AU")}
-              </p>
-              <p className="mt-1 text-xs text-quiet">
-                known {summary.sessionKnown.toLocaleString("en-AU")}
-                {" · "}
-                unknown {summary.sessionUnknown.toLocaleString("en-AU")}
+                <span className="ml-2 text-base font-normal text-quiet">&lt;24h</span>
               </p>
             </div>
           </div>
+          <p className="mt-3 text-sm text-quiet">Supplier CTD / session</p>
+          <p className="mt-1 text-sm font-medium">
+            From Supplier ctdUsages and sessionInfo · sessionInfo is best-effort base
+          </p>
+          <p className="mt-1 text-xs text-quiet">
+            in-session known {summary.sessionKnown.toLocaleString("en-AU")}
+            {" · "}
+            unknown {summary.sessionUnknown.toLocaleString("en-AU")}
+          </p>
         </article>
         <article className="rounded-card border border-line bg-panel p-5">
           <div className="flex items-start justify-between gap-4">
@@ -321,11 +321,6 @@ export default async function CcSnapshotPage({
                 <span className="ml-2 text-base font-normal text-quiet">&lt;1d</span>
               </p>
               <p className="mt-1 text-xs text-quiet">
-                Re-fetched from Supplier every 24h (customer, IMEI, custom fields, …)
-                <br />
-                Auto poll ~100 every 8 min · full estate ~1 day
-              </p>
-              <p className="mt-3 text-xs text-quiet">
                 <span className={summary.neverEnriched > 0 ? "text-danger" : ""}>
                   {summary.neverEnriched.toLocaleString("en-AU")} list-only
                 </span>
@@ -346,6 +341,13 @@ export default async function CcSnapshotPage({
               </p>
             </div>
           </div>
+          <p className="mt-3 text-sm text-quiet">Profile refresh</p>
+          <p className="mt-1 text-sm font-medium">
+            Re-fetched from Supplier every 24h (customer, IMEI, custom fields, …)
+          </p>
+          <p className="mt-1 text-xs text-quiet">
+            Auto poll ~100 every 8 min · full estate ~1 day
+          </p>
         </article>
       </div>
 
