@@ -97,7 +97,7 @@ export default async function DashboardPage() {
               hint={`CTD <24h ${ccSummary.sessionFresh24h.toLocaleString("en-AU")} · >48h ${ccSummary.sessionOlder48h.toLocaleString("en-AU")}`}
             />
             <Kpi
-              label="Profiles <1d"
+              label="Details enriched age"
               value={ccSummary.detailsFresh24h.toLocaleString("en-AU")}
               hint={`${ccSummary.neverEnriched.toLocaleString("en-AU")} list-only · >1d ${(ccSummary.detailsStale1to7d + ccSummary.detailsOlder7d).toLocaleString("en-AU")}`}
             />
