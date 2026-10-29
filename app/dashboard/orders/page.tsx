@@ -105,7 +105,7 @@ export default async function OrdersPage({
           <h1 className="text-3xl font-semibold">Orders</h1>
           <p className="mt-1 text-sm text-quiet">
             {asPlatform
-              ? "Reseller Order SIMs (Accept → Ship → Receive for plastic or eSIM) and ATN Sell stock into warehouses."
+              ? "Reseller Order SIMs (Accept → Ship → Receive for plastic or eSIM) and ATN Sell stock (bind Jasper Customer → reseller)."
               : "Your organisation’s SIM orders. Submitted orders can be revoked until ATN accepts."}
           </p>
         </div>

@@ -1,9 +1,7 @@
 import Link from "next/link";
-import { OpenTenantButton } from "@/components/portal/tenant-switcher";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { requirePrivilege } from "@/lib/portal/guard";
-import { VIEW_ROLES } from "@/lib/portal/role-model";
-import { listPlatformEstate } from "@/lib/portal/tenant";
+import { listPlatformEstateIndex } from "@/lib/portal/tenant";
 
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
@@ -14,11 +12,6 @@ function Kpi({ label, value }: { label: string; value: string }) {
   );
 }
 
-function wholesaleLabel(id: string | null) {
-  if (!id) return "—";
-  return id;
-}
-
 export default async function EstatePage({
   searchParams,
 }: {
@@ -27,7 +20,7 @@ export default async function EstatePage({
   const ctx = await requirePrivilege("platform.estate");
   const params = await Promise.resolve(searchParams ?? {});
   const query = params.q ?? "";
-  const estate = await listPlatformEstate(ctx, query);
+  const estate = await listPlatformEstateIndex(ctx, query);
 
   return (
     <div>
@@ -36,8 +29,8 @@ export default async function EstatePage({
           <p className="text-sm text-quiet">ACMA key-information view</p>
           <h1 className="mt-1 text-3xl font-semibold">Estate</h1>
           <p className="mt-2 text-sm text-quiet">
-            Who each reseller sold to, on which retail plan, and which SIMs are still in their warehouse.
-            Sell stock from ATN first; the reseller assigns those SIMs to a customer.
+            Bird’s-eye of reseller organisations — bound Control Center customer, SIM counts, and members.
+            Open an organisation for customers, ICCIDs, and detail.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -54,7 +47,7 @@ export default async function EstatePage({
         <input
           name="q"
           defaultValue={query}
-          placeholder="Search organisation, customer, plan, ICCID, or member"
+          placeholder="Search organisation, CC customer, member, or ICCID"
           className="h-10 w-full max-w-md rounded-full border border-line bg-panel px-4 text-sm text-ink outline-none placeholder:text-quiet focus:border-accent"
         />
       </form>
@@ -66,116 +59,65 @@ export default async function EstatePage({
         <Kpi label="SIMs active" value={estate.totals.active.toLocaleString("en-AU")} />
       </div>
 
-      <div className="mt-6 space-y-4">
+      <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
+        <table className="w-full min-w-200 text-left text-sm">
+          <thead className="border-b border-line text-quiet">
+            <tr>
+              <th className="px-4 py-3 font-medium">Organisation</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Bound CC customer</th>
+              <th className="px-4 py-3 font-medium">End customers</th>
+              <th className="px-4 py-3 font-medium">SIMs</th>
+              <th className="px-4 py-3 font-medium">SIMs active</th>
+              <th className="px-4 py-3 font-medium">Members</th>
+              <th className="px-4 py-3 font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {estate.tenants.map((tenant) => (
+              <tr key={tenant.id} className="border-t border-line align-middle">
+                <td className="px-4 py-3">
+                  <Link
+                    href={`/dashboard/estate/${tenant.id}`}
+                    className="font-medium text-ink hover:text-accent"
+                  >
+                    {tenant.name}
+                  </Link>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={tenant.active ? "text-ok" : "text-danger"}>
+                    {tenant.active ? "Active" : "Deactivated"}
+                  </span>
+                </td>
+                <td className="max-w-56 px-4 py-3">
+                  {tenant.ccCustomer ? (
+                    <span className="wrap-break-word" title={tenant.ccCustomer}>
+                      {tenant.ccCustomer}
+                    </span>
+                  ) : (
+                    <span className="text-quiet">Not bound</span>
+                  )}
+                </td>
+                <td className="px-4 py-3">{tenant.customerCount.toLocaleString("en-AU")}</td>
+                <td className="px-4 py-3">{tenant.simCount.toLocaleString("en-AU")}</td>
+                <td className="px-4 py-3">{tenant.activeSimCount.toLocaleString("en-AU")}</td>
+                <td className="px-4 py-3">{tenant.memberCount.toLocaleString("en-AU")}</td>
+                <td className="px-4 py-3 text-right">
+                  <Link href={`/dashboard/estate/${tenant.id}`} className="text-accent">
+                    Open
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         {estate.tenants.length === 0 ? (
-          <p className="rounded-card border border-line bg-panel px-4 py-8 text-sm text-quiet">
-            No organisations match this search.
+          <p className="px-4 py-8 text-sm text-quiet">
+            {query.trim()
+              ? "No organisations match this search."
+              : "No reseller organisations yet. Create one from Admin, then Sell stock to bind a CC customer."}
           </p>
         ) : null}
-        {estate.tenants.map((tenant) => (
-          <article key={tenant.id} className="rounded-card border border-line bg-panel px-5 py-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <details open={Boolean(query) || estate.tenants.length <= 3} className="min-w-0 flex-1">
-                <summary className="cursor-pointer list-none">
-                  <p className="text-lg font-semibold">{tenant.name}</p>
-                  <p className="mt-1 text-sm text-quiet">
-                    {tenant.customerCount} customers · {tenant.simCount} SIMs · {tenant.activeCount} active ·{" "}
-                    {tenant.warehouse.count} in warehouse
-                  </p>
-                </summary>
-
-                {tenant.warehouse.count > 0 ? (
-                  <p className="mt-4 rounded-xl border border-line px-3 py-2 text-sm text-quiet">
-                    Warehouse: {tenant.warehouse.count} SIMs not yet sold to a customer
-                    {tenant.warehouse.plans.length > 0
-                      ? ` · ${tenant.warehouse.plans.map((item) => `${item.count} ${item.plan}`).join(", ")}`
-                      : ""}
-                  </p>
-                ) : (
-                  <p className="mt-4 text-sm text-quiet">No warehouse stock. Sell SIMs to this reseller to replenish.</p>
-                )}
-
-                <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                  <section>
-                    <h2 className="text-sm font-semibold">Customers and what they were sold</h2>
-                    <ul className="mt-2 space-y-2 text-sm">
-                      {tenant.customers.length === 0 ? <li className="text-quiet">No customers yet.</li> : null}
-                      {tenant.customers.map((customer) => (
-                        <li key={customer.id} className="rounded-xl border border-line px-3 py-2">
-                          <div className="flex justify-between gap-3">
-                            <span className="font-medium">{customer.name}</span>
-                            <span className="text-quiet">
-                              {customer.simCount} SIMs · {customer.activeCount} active
-                            </span>
-                          </div>
-                          <p className="mt-1 text-quiet">
-                            Retail: {customer.plansSold.length > 0 ? customer.plansSold.join(", ") : "—"}
-                          </p>
-                          <p className="text-quiet">
-                            Plan:{" "}
-                            {customer.wholesalePlans.length > 0 ? customer.wholesalePlans.join(", ") : "—"}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                  <section>
-                    <h2 className="text-sm font-semibold">Members</h2>
-                    <ul className="mt-2 space-y-2 text-sm">
-                      {tenant.members.length === 0 ? <li className="text-quiet">No members.</li> : null}
-                      {tenant.members.map((member) => (
-                        <li key={member.email} className="flex justify-between rounded-xl border border-line px-3 py-2">
-                          <span>{member.email}</span>
-                          <span className="text-quiet">
-                            {VIEW_ROLES.find((item) => item.id === member.role)?.label ?? member.role}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                </div>
-
-                <div className="mt-4 overflow-x-auto rounded-xl border border-line">
-                  <table className="w-full min-w-180 text-left text-sm">
-                    <thead className="text-quiet">
-                      <tr>
-                        <th className="px-3 py-2">ICCID</th>
-                        <th className="px-3 py-2">Customer</th>
-                        <th className="px-3 py-2">Retail plan</th>
-                        <th className="px-3 py-2">Plan</th>
-                        <th className="px-3 py-2">CC rate plan</th>
-                        <th className="px-3 py-2">CC status</th>
-                        <th className="px-3 py-2">Pool</th>
-                        <th className="px-3 py-2">State</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tenant.sims.map((sim) => (
-                        <tr key={sim.id} className="border-t border-line">
-                          <td className="whitespace-nowrap px-3 py-2 font-mono">{sim.iccid}</td>
-                          <td className="px-3 py-2">{sim.customerName ?? "Warehouse"}</td>
-                          <td className="px-3 py-2">{sim.planName ?? "—"}</td>
-                          <td className="px-3 py-2">{sim.platformPlanName ?? "—"}</td>
-                          <td className="px-3 py-2">{wholesaleLabel(sim.wholesalePlan)}</td>
-                          <td className="px-3 py-2">{sim.ccStatus ?? "—"}</td>
-                          <td className="px-3 py-2">{sim.poolName ?? "—"}</td>
-                          <td className="px-3 py-2">{sim.state}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {tenant.sims.length === 0 ? <p className="px-3 py-6 text-sm text-quiet">No SIMs.</p> : null}
-                </div>
-              </details>
-              <div className="flex flex-col items-end gap-2">
-                <OpenTenantButton tenantId={tenant.id} current={tenant.id === ctx.tenantId} />
-                <Link href="/dashboard/estate/allocate" className="text-sm text-accent">
-                  Sell stock
-                </Link>
-              </div>
-            </div>
-          </article>
-        ))}
       </div>
     </div>
   );
