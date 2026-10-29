@@ -197,7 +197,7 @@ function DeleteOrgButton({ tenantId, name }: { tenantId: string; name: string })
         title={`Delete ${name}?`}
         body={
           <p>
-            This permanently removes members, SIMs, customers, plans, orders, and invites for this organisation. The
+            This permanently removes members, SIMs, customers, plans, SKU/plan contract bindings, orders, and invites for this organisation. The
             Control Center device copy is not deleted. This cannot be undone.
           </p>
         }
