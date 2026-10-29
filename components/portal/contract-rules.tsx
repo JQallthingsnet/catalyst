@@ -8,8 +8,8 @@ const SUPER_ADMIN_RULES = [
   "Rate plans: only bound resellers can see and use a rate plan. Bind them on Contract before selling stock.",
   "Catalogue: on Contract, tick which Catalogue SKUs each reseller may Order SIMs for (multiple allowed). Binding a rate plan requires at least one catalogue SKU if none are bound yet.",
   "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
-  "Ready or Deactivated: rate-plan changes are free within contracted plans. Reseller admins or operators can change before shipping or after deactivation.",
-  "Active or Suspended: rate-plan changes only until 24:00 on the 24th of the month (Sydney); after that, reject with “Changes will be effective next month”. One change per ICCID per month.",
+  "Reseller Plan changes are allowed any time within contracted plans (any SIM state).",
+  "Each Sydney day keeps every Reseller Plan used on each ICCID (more than one row that day if the plan changed). Export daily plans CSV from Plan changes.",
   "Plan changes update the Reseller Plan. ATN bills from that Catalyst plan — not from Jasper. Whether to also change Jasper is ATN’s choice later.",
   "Snapshot differs / Push are super-admin only (CC vs Catalyst). They do not change reseller billing.",
   "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs.",
@@ -27,9 +27,8 @@ const RESELLER_ADMIN_RULES = [
   "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",
   "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
-  "Ready or Deactivated SIMs: change rate plan freely within this contract.",
-  "Active or Suspended: only until midnight on the 24th (Sydney), and only once per ICCID per month. After the cut-off: “Changes will be effective next month”.",
-  "Plan changes is your log of ICCID plan moves. Billing follows the plan on the SIM in Catalyst.",
+  "Change Reseller Plan any time within this contract (any SIM state).",
+  "Plan changes is your log of ICCID plan moves. Daily plans CSV lists every Reseller Plan used per ICCID per day. Billing follows the plan on the SIM in Catalyst.",
 ];
 
 export function ContractRules({ variant }: { variant: "super_admin" | "reseller_admin" }) {

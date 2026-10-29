@@ -452,6 +452,12 @@ export async function snapshotPoolCustomerDailyIfNeeded(): Promise<number | null
   } catch {
     // Column may not exist until migration 0038 is applied.
   }
+  try {
+    const { snapshotSimPlatformPlanDaily } = await import("@/lib/portal/sim-platform-plan-daily");
+    await snapshotSimPlatformPlanDaily(day);
+  } catch {
+    // Table may not exist until migration 0039 is applied.
+  }
   const [cust, plan, modem] = await Promise.all([
     db
       .prepare("SELECT 1 AS ok FROM pool_customer_daily WHERE day = ? LIMIT 1")

@@ -5,15 +5,10 @@ import {
   setCcDevicePlatformPlanId,
   tenantHasPlatformPlan,
 } from "@/lib/portal/platform-plans";
+import { recordSimPlatformPlanDay } from "@/lib/portal/sim-platform-plan-daily";
 import { writeAudit } from "@/lib/portal/repo";
 import type { SimState } from "@/lib/portal/catalogue";
-import {
-  isAfterActivatedRatePlanCutoff,
-  parseYmd,
-  sydneyDayEndExclusiveIso,
-  sydneyDayStartIso,
-  sydneyMonthUtcBounds,
-} from "@/lib/portal/time";
+import { parseYmd, sydneyDayEndExclusiveIso, sydneyDayStartIso } from "@/lib/portal/time";
 
 /** Outbound supplier push queue state (Jasper write still on hold). */
 export type RatePlanPushStatus = "pending" | "pushed" | "failed" | "skipped";
@@ -52,29 +47,12 @@ export type RatePlanChangeResult = {
   clearedRetailPlan: boolean;
 };
 
-/** In-service SIMs only — Ready and Deactivated change freely. */
-function isActivatedState(state: SimState): boolean {
-  return state === "Active" || state === "Suspended";
-}
-
-async function countChangesThisSydneyMonth(iccid: string, at = new Date()): Promise<number> {
-  const { startIso, endExclusiveIso } = sydneyMonthUtcBounds(at);
-  const row = await getDB()
-    .prepare(
-      `SELECT COUNT(*) AS c FROM sim_rate_plan_changes
-       WHERE iccid = ? AND created_at >= ? AND created_at < ?`,
-    )
-    .bind(iccid, startIso, endExclusiveIso)
-    .first<{ c: number }>();
-  return row?.c ?? 0;
-}
-
 /**
- * Catalyst portal policy for ICCID rate-plan changes.
+ * Catalyst portal policy for ICCID Reseller Plan changes.
  * Records push_status=pending for the future Jasper write queue (push still on hold).
  * - Target must be on the reseller contract and active.
- * - Ready / Deactivated SIMs: change freely within contracted plans.
- * - Active / Suspended: only until 24:00 on the 24th (Sydney); one change per ICCID per Sydney month.
+ * - Changes allowed any time (no calendar / per-month limit).
+ * - Daily usage log keeps every Reseller Plan used that Sydney day per ICCID.
  */
 export async function changeSimRatePlan(
   tenantId: string,
@@ -114,17 +92,8 @@ export async function changeSimRatePlan(
   if (!target.active) throw new Error("That rate plan is deactivated.");
 
   const now = new Date();
-  if (isActivatedState(sim.state)) {
-    if (isAfterActivatedRatePlanCutoff(now)) {
-      throw new Error("Changes will be effective next month");
-    }
-    const prior = await countChangesThisSydneyMonth(iccid, now);
-    if (prior >= 1) {
-      throw new Error("Only one rate-plan change per ICCID is allowed each month.");
-    }
-  }
 
-  // Reseller-facing From/To = modem_ID (never Jasper TCode / wholesale_plan).
+  // Reseller-facing From/To = Reseller Plan name (never Jasper TCode / wholesale_plan).
   const fromPlan = sim.platform_plan_id ? await loadPlatformPlanRecord(sim.platform_plan_id) : null;
   const toModemId = target.name.trim();
   const jasperRatePlan = target.cc_rate_plan;
@@ -160,6 +129,26 @@ export async function changeSimRatePlan(
     .run();
   // Catalyst source of truth on the snapshot — do not push Jasper modem_ID.
   await setCcDevicePlatformPlanId(iccid, platformPlanId);
+
+  // Daily usage: keep every Reseller Plan used on this Sydney day (from + to).
+  if (sim.platform_plan_id) {
+    await recordSimPlatformPlanDay({
+      tenantId,
+      iccid,
+      platformPlanId: sim.platform_plan_id,
+      planName: fromPlan?.name,
+      supplierCode: fromPlan?.cc_rate_plan,
+      at: now,
+    });
+  }
+  await recordSimPlatformPlanDay({
+    tenantId,
+    iccid,
+    platformPlanId,
+    planName: target.name,
+    supplierCode: target.cc_rate_plan,
+    at: now,
+  });
 
   const changeId = newId("rpc");
   const createdAt = now.toISOString();

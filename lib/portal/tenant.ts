@@ -891,6 +891,7 @@ export async function deleteResellerOrganisation(
     db.prepare("DELETE FROM tenant_plan_assignments WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM tenant_sku_assignments WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM sim_rate_plan_changes WHERE tenant_id = ?").bind(id),
+    db.prepare("DELETE FROM sim_platform_plan_daily WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM sim_lifecycle_requests WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM alert_settings WHERE scope_id = ?").bind(id),
     db.prepare("DELETE FROM tenant_members WHERE tenant_id = ?").bind(id),

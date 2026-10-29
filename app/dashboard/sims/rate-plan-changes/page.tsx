@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { PlanChangesExportButton } from "@/components/portal/plan-changes-export-button";
+import { ResellerPlanDailyExportButton } from "@/components/portal/reseller-plan-daily-export-button";
+import { ResellerPlanDailyMatrix } from "@/components/portal/reseller-plan-daily-matrix";
 import { requirePrivilege } from "@/lib/portal/guard";
 import { formatIccid } from "@/lib/portal/ids";
 import {
@@ -10,6 +12,7 @@ import {
   ratePlanChangeFilterActive,
   type RatePlanChangeFilter,
 } from "@/lib/portal/rate-plan-change";
+import { listSimPlatformPlanDailyMatrix } from "@/lib/portal/sim-platform-plan-daily";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { formatAuDateTime } from "@/lib/portal/time";
 
@@ -148,16 +151,28 @@ export default async function RatePlanChangesPage({
   });
   const filtered = ratePlanChangeFilterActive(filter);
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
-  const [changes, listedCount, options] = await Promise.all([
+  const matrixTenantId = onPlatform ? filter.organisationId || "" : ctx.tenantId;
+  const [changes, listedCount, options, dailyMatrix] = await Promise.all([
     listRatePlanChanges(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     countRatePlanChanges(filter),
     listRatePlanChangeFilterOptions({ scopeTenantId: filter.scopeTenantId }),
+    matrixTenantId
+      ? listSimPlatformPlanDailyMatrix({
+          tenantId: matrixTenantId,
+          dateFrom: filter.dateFrom,
+          dateTo: filter.dateTo,
+        })
+      : Promise.resolve(null),
   ]);
   const pageCount = Math.max(1, Math.ceil(listedCount / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const from = listedCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const to = Math.min(currentPage * PAGE_SIZE, listedCount);
   const exportQuery = changesFilterParams(filter, onPlatform).toString();
+  const dailyExport = new URLSearchParams();
+  if (onPlatform && filter.organisationId) dailyExport.set("org", filter.organisationId);
+  if (filter.dateFrom) dailyExport.set("dateFrom", filter.dateFrom);
+  if (filter.dateTo) dailyExport.set("dateTo", filter.dateTo);
 
   return (
     <div>
@@ -167,11 +182,13 @@ export default async function RatePlanChangesPage({
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
               ? "Log of Reseller Plan changes. Billing follows the Catalyst plan; Jasper update is optional for ATN."
-              : "Log of Reseller Plan changes for your organisation. Billing follows the plan on each SIM in Catalyst."}{" "}
-            Export CSV downloads the current filtered view (all matching rows).
+              : "Log of Reseller Plan changes for your organisation. Billing follows the plan on each SIM in Catalyst. Changes are allowed any time."}{" "}
+            Change-log CSV uses the filters below. Daily plans CSV lists every Reseller Plan used per ICCID per
+            Sydney day (multiple rows if the plan changed that day).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ResellerPlanDailyExportButton queryString={dailyExport.toString()} />
           <PlanChangesExportButton queryString={exportQuery} />
           <Link href="/dashboard/sims" className={btnSecondary}>
             Back to SIMs
@@ -303,7 +320,26 @@ export default async function RatePlanChangesPage({
         </div>
       </form>
 
-      <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
+      <section className="mt-8 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Daily Reseller Plans</h2>
+          <p className="mt-1 text-sm text-quiet">
+            Rows are ICCIDs; columns are Sydney dates. Cell value is how many Reseller Plans applied that day
+            (1 = unchanged, 2+ = changed). Click a cell for plan names. Uses From/To dates above
+            {onPlatform ? " and Organisation filter" : ""} (default last 14 days).
+          </p>
+        </div>
+        {dailyMatrix ? (
+          <ResellerPlanDailyMatrix matrix={dailyMatrix} />
+        ) : (
+          <p className="rounded-card border border-line bg-panel px-4 py-6 text-sm text-quiet">
+            Choose an organisation filter to view the daily ICCID × date matrix.
+          </p>
+        )}
+      </section>
+
+      <h2 className="mt-10 text-lg font-semibold">Change log</h2>
+      <div className="mt-3 overflow-x-auto rounded-card border border-line bg-panel">
         <table className="w-full min-w-180 text-left text-sm">
           <thead className="text-quiet">
             <tr>

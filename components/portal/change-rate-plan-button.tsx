@@ -95,9 +95,9 @@ export function ChangeRatePlanButton({
               </select>
             </label>
             <p className="text-xs text-quiet">
-              Active or Suspended: only until midnight on the 24th (Sydney), one change per ICCID per
-              month. Ready and Deactivated change freely. A mismatched retail plan on this SIM will be
-              cleared.
+              You can change Reseller Plan any time within contracted plans. Each plan used on a Sydney day
+              is kept in the daily usage log (exportable as CSV). A mismatched retail plan on this SIM will
+              be cleared.
             </p>
           </div>
         }
