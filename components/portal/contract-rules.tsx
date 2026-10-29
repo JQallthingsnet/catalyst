@@ -3,7 +3,7 @@ import Link from "next/link";
 const SUPER_ADMIN_RULES = [
   "ICCID is the unique identifier across Catalyst and every supplier feed.",
   "Every SIM a reseller assigns to a customer must map to one contracted rate plan.",
-  "Sell stock (once per org): set Customer on SIMs in Jasper, Sync, then bind that Customer to the reseller. First import: modem_ID set → mirror; modem_ID empty → Supplier code (exact one) → contract default. Later Sync adds new SIMs; change Reseller Plan only in Catalyst.",
+  "Sell stock (once per org): set Customer on SIMs in Jasper, Sync, then bind that Customer to the reseller. First import: modem_ID set → mirror as-is (may be off-contract); modem_ID empty → Supplier code (exact one) → contract default. Later Sync adds new SIMs; Change plan moves to a contracted Reseller Plan.",
   "Assign SIMs (reseller → end customer) is separate: operators attach an org ICCID to a portal end customer and any retail plan on contract. If the SIM’s Reseller Plan differs, Assign applies the same Plan changes rules. Physical shipping is outside Catalyst.",
   "Rate plans: only bound resellers can see and use a rate plan. Bind them on Contract before selling stock.",
   "Catalogue: on Contract, tick which Catalogue SKUs each reseller may Order SIMs for (multiple allowed). Binding a rate plan requires at least one catalogue SKU if none are bound yet.",
@@ -22,7 +22,7 @@ const SUPER_ADMIN_COMING = [
 const RESELLER_ADMIN_RULES = [
   "ICCID is the unique identifier for every SIM.",
   "When you assign a SIM to a customer, it must use one of the rate plans on this contract.",
-  "ATN binds your organisation once to a Control Center Customer. SIMs with that Customer become yours in Catalyst (Sync keeps adding new ones). Reseller Plan starts from modem_ID (or Supplier code / contract default if empty); later changes are in Catalyst.",
+  "ATN binds your organisation once to a Control Center Customer. SIMs with that Customer become yours in Catalyst (Sync keeps adding new ones). Reseller Plan starts from modem_ID as-is (or Supplier code / contract default if empty); later Change plan uses contracted plans only.",
   "Assign SIMs maps your ICCIDs to end customers and any retail plan on this contract. Shipping is outside Catalyst.",
   "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",

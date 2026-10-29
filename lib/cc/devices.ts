@@ -316,7 +316,7 @@ export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCu
 /**
  * Ensure every CC SIM for this Customer exists in Catalyst for the reseller (sims).
  * Idempotent — safe to run on sell stock and after Jasper sync.
- * Reseller Plan: modem_ID mirror; if empty → Supplier code (exact one) → contract default.
+ * Reseller Plan: modem_ID mirrored as-is (even off-contract); if empty → Supplier code → contract default.
  */
 export async function materializeWarehouseForCcCustomer(input: {
   tenantId: string;
