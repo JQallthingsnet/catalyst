@@ -455,12 +455,12 @@ export function PoolsDashboard({
   canEdit: boolean;
   scopedCustomer?: string | null;
   platformView?: boolean;
-  /** Pools plot groups by modem_ID (customer SIM groups). */
+  /** Pools plot groups by Catalyst Reseller Plan (platform_plan_id). */
   groupBy?: PoolGroupBy;
   /** `chart` = embeddable CTD plot only (e.g. Dashboard). */
   mode?: "full" | "chart";
 }) {
-  // Super admin: Jasper rate plan → Supplier code. Reseller: modem_ID → Reseller Plan.
+  // Super admin: Jasper rate plan → Supplier code. Reseller: platform_plan_id → Reseller Plan.
   const entityLabel =
     groupBy === "modem" ? "Reseller Plan" : groupBy === "rate_plan" ? "Supplier code" : "CC customer";
   const allowanceLabel =
@@ -585,7 +585,7 @@ export function PoolsDashboard({
             {groupBy === "rate_plan"
               ? "Grouped by Supplier code (Jasper rate plan): daily Σ CTD MB and Σ Supplier code allowance across SIMs on that plan (one point per Sydney calendar day)."
               : groupBy === "modem" && scopedCustomer
-                ? `Grouped by Reseller Plan (modem_ID) for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ Reseller Plan allowance across SIMs on that plan (one point per Sydney calendar day).`
+                ? `Grouped by Reseller Plan (Catalyst platform_plan_id) for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ Reseller Plan allowance across SIMs on that plan (one point per Sydney calendar day).`
                 : groupBy === "modem"
                   ? "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see Reseller Plan pools."
                   : scopedCustomer

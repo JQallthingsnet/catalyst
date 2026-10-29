@@ -71,7 +71,10 @@ export type PoolEntityLatest = {
   customer?: string | null;
 };
 
-/** Distinct modem_IDs from CC snapshot with optional manual allowance. */
+/**
+ * Reseller pool rows: group CC SIMs by Catalyst Reseller Plan (`platform_plan_id` → plan name).
+ * Allowance keys stay on plan name (`modem_allowances.modem_id`).
+ */
 export async function listModemAllowances(input?: {
   q?: string;
   /** Exact Jasper/CC customer (reseller scope). */
@@ -84,7 +87,7 @@ export async function listModemAllowances(input?: {
 
   const rows = await getDB()
     .prepare(
-      `SELECT d.modem_id AS modem_id,
+      `SELECT pp.name AS modem_id,
               MAX(d.customer) AS customer,
               COUNT(*) AS sim_count,
               IFNULL(SUM(d.ctd_usage_mb), 0) AS ctd_usage_mb,
@@ -92,11 +95,13 @@ export async function listModemAllowances(input?: {
               a.updated_at AS updated_at,
               a.updated_by AS updated_by
        FROM cc_devices d
-       LEFT JOIN modem_allowances a ON a.modem_id = d.modem_id
-       WHERE d.modem_id IS NOT NULL AND TRIM(d.modem_id) != ''
+       JOIN platform_plans pp ON pp.id = d.platform_plan_id
+       LEFT JOIN modem_allowances a ON a.modem_id = pp.name
+       WHERE d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != ''
+         AND TRIM(IFNULL(pp.name, '')) != ''
          AND (? = '' OR IFNULL(d.customer, '') = ?)
-         AND (? = '' OR d.modem_id LIKE ? OR IFNULL(d.customer, '') LIKE ?)
-       GROUP BY d.modem_id
+         AND (? = '' OR pp.name LIKE ? OR IFNULL(d.customer, '') LIKE ?)
+       GROUP BY d.platform_plan_id
        ORDER BY modem_id COLLATE NOCASE
        LIMIT 2000`,
     )
@@ -229,8 +234,8 @@ export async function clearRatePlanAllowance(ratePlan: string): Promise<void> {
 
 /**
  * Snapshot for the Sydney day (upsert).
- * - pool_rate_plan_daily: super-admin Pools (group by rate plan)
- * - pool_modem_daily: reseller Pools (group by modem_ID, scoped by CC customer)
+ * - pool_rate_plan_daily: super-admin Pools (group by Supplier code / Jasper rate plan)
+ * - pool_modem_daily: reseller Pools (group by Catalyst Reseller Plan name via platform_plan_id)
  * - pool_customer_daily: kept for history / rollups
  * Full run writes all. Scoped reseller snapshot updates customer + modem rows only.
  */
@@ -246,17 +251,21 @@ export async function snapshotPoolCustomerDaily(
   const db = getDB();
   const deviceRows = await db
     .prepare(
-      `SELECT customer, modem_id, rate_plan, IFNULL(ctd_usage_mb, 0) AS ctd_usage_mb
-       FROM cc_devices
-       WHERE (customer IS NOT NULL AND TRIM(customer) != '')
-          OR (rate_plan IS NOT NULL AND TRIM(rate_plan) != '')
-          OR (modem_id IS NOT NULL AND TRIM(modem_id) != '')`,
+      `SELECT d.customer AS customer,
+              d.rate_plan AS rate_plan,
+              IFNULL(d.ctd_usage_mb, 0) AS ctd_usage_mb,
+              NULLIF(TRIM(pp.name), '') AS plan_name
+       FROM cc_devices d
+       LEFT JOIN platform_plans pp ON pp.id = d.platform_plan_id
+       WHERE (d.customer IS NOT NULL AND TRIM(d.customer) != '')
+          OR (d.rate_plan IS NOT NULL AND TRIM(d.rate_plan) != '')
+          OR (d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != '')`,
     )
     .all<{
       customer: string | null;
-      modem_id: string | null;
       rate_plan: string | null;
       ctd_usage_mb: number;
+      plan_name: string | null;
     }>();
 
   const [modemAllowanceRows, ratePlanAllowanceRows] = await Promise.all([
@@ -293,6 +302,7 @@ export async function snapshotPoolCustomerDaily(
     const ctd = row.ctd_usage_mb ?? 0;
     const customer = row.customer?.trim() ?? "";
     const inCustomerScope = !only || (customer !== "" && only.includes(customer.toLowerCase()));
+    const planName = row.plan_name?.trim() ?? "";
 
     if (customer && inCustomerScope) {
       let agg = byCustomer.get(customer);
@@ -302,10 +312,9 @@ export async function snapshotPoolCustomerDaily(
       }
       agg.ctd += ctd;
       agg.simCount += 1;
-      const modem = row.modem_id?.trim();
-      if (modem) {
+      if (planName) {
         agg.simsWithModem += 1;
-        agg.modemAllowance += allowanceByModem.get(modem) ?? 0;
+        agg.modemAllowance += allowanceByModem.get(planName) ?? 0;
       }
       const rp = row.rate_plan?.trim();
       if (rp) agg.ratePlanAllowance += allowanceByRatePlan.get(rp) ?? 0;
@@ -325,20 +334,17 @@ export async function snapshotPoolCustomerDaily(
       }
     }
 
-    if (inCustomerScope) {
-      const modemId = row.modem_id?.trim() ?? "";
-      if (modemId) {
-        let agg = byModem.get(modemId);
-        if (!agg) {
-          agg = { ctd: 0, allowance: 0, simCount: 0, customer: customer || null };
-          byModem.set(modemId, agg);
-        }
-        agg.ctd += ctd;
-        agg.simCount += 1;
-        // Per-SIM application: same modem_ID on N SIMs counts N times.
-        agg.allowance += allowanceByModem.get(modemId) ?? 0;
-        if (customer) agg.customer = customer;
+    if (inCustomerScope && planName) {
+      let agg = byModem.get(planName);
+      if (!agg) {
+        agg = { ctd: 0, allowance: 0, simCount: 0, customer: customer || null };
+        byModem.set(planName, agg);
       }
+      agg.ctd += ctd;
+      agg.simCount += 1;
+      // Per-SIM application: same Reseller Plan on N SIMs counts N times.
+      agg.allowance += allowanceByModem.get(planName) ?? 0;
+      if (customer) agg.customer = customer;
     }
   }
 
@@ -413,10 +419,39 @@ export async function snapshotPoolCustomerDaily(
   return byModem.size;
 }
 
+/** Copy warehouse Reseller Plan onto CC rows that still lack platform_plan_id. */
+async function backfillCcDevicePlatformPlansFromSims(): Promise<void> {
+  await getDB()
+    .prepare(
+      `UPDATE cc_devices
+       SET platform_plan_id = (
+         SELECT s.platform_plan_id
+         FROM sims s
+         WHERE s.iccid = cc_devices.iccid
+           AND s.platform_plan_id IS NOT NULL
+           AND TRIM(s.platform_plan_id) != ''
+         LIMIT 1
+       )
+       WHERE (platform_plan_id IS NULL OR TRIM(platform_plan_id) = '')
+         AND EXISTS (
+           SELECT 1 FROM sims s
+           WHERE s.iccid = cc_devices.iccid
+             AND s.platform_plan_id IS NOT NULL
+             AND TRIM(s.platform_plan_id) != ''
+         )`,
+    )
+    .run();
+}
+
 /** Run at most once per Sydney day from cron (cheap existence check). */
 export async function snapshotPoolCustomerDailyIfNeeded(): Promise<number | null> {
   const day = sydneyDayKey();
   const db = getDB();
+  try {
+    await backfillCcDevicePlatformPlansFromSims();
+  } catch {
+    // Column may not exist until migration 0038 is applied.
+  }
   const [cust, plan, modem] = await Promise.all([
     db
       .prepare("SELECT 1 AS ok FROM pool_customer_daily WHERE day = ? LIMIT 1")
@@ -802,7 +837,7 @@ export function toPoolEntityFromModem(row: PoolModemLatest): PoolEntityLatest {
   };
 }
 
-/** Live Σ modem allowance per modem_ID (mapped MB × each SIM with that ID). */
+/** Live Σ Reseller Plan allowance (mapped MB × each SIM on that Catalyst plan). */
 export async function sumLivePoolAllowancesByModem(input?: {
   exactCustomer?: string;
 }): Promise<Map<string, number>> {
@@ -810,13 +845,15 @@ export async function sumLivePoolAllowancesByModem(input?: {
   const exact = input?.exactCustomer?.trim() ?? "";
   const rows = await getDB()
     .prepare(
-      `SELECT d.modem_id AS modem_id,
+      `SELECT pp.name AS modem_id,
               IFNULL(SUM(IFNULL(a.allowance_mb, 0)), 0) AS allowance_mb
        FROM cc_devices d
-       LEFT JOIN modem_allowances a ON a.modem_id = d.modem_id
-       WHERE d.modem_id IS NOT NULL AND TRIM(d.modem_id) != ''
+       JOIN platform_plans pp ON pp.id = d.platform_plan_id
+       LEFT JOIN modem_allowances a ON a.modem_id = pp.name
+       WHERE d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != ''
+         AND TRIM(IFNULL(pp.name, '')) != ''
          AND (? = '' OR IFNULL(d.customer, '') = ?)
-       GROUP BY d.modem_id`,
+       GROUP BY d.platform_plan_id`,
     )
     .bind(exact, exact)
     .all<{ modem_id: string; allowance_mb: number }>();

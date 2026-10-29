@@ -1,6 +1,10 @@
 import { getDB } from "@/lib/env";
 import { newId } from "@/lib/portal/ids";
-import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
+import {
+  loadPlatformPlanRecord,
+  setCcDevicePlatformPlanId,
+  tenantHasPlatformPlan,
+} from "@/lib/portal/platform-plans";
 import { writeAudit } from "@/lib/portal/repo";
 import type { SimState } from "@/lib/portal/catalogue";
 import {
@@ -154,6 +158,8 @@ export async function changeSimRatePlan(
     )
     .bind(platformPlanId, jasperRatePlan, sim.id, tenantId)
     .run();
+  // Catalyst source of truth on the snapshot — do not push Jasper modem_ID.
+  await setCcDevicePlatformPlanId(iccid, platformPlanId);
 
   const changeId = newId("rpc");
   const createdAt = now.toISOString();

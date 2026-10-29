@@ -18,6 +18,10 @@ import {
 import { type SimState } from "@/lib/portal/catalogue";
 import { newId } from "@/lib/portal/ids";
 import { DEFAULT_PLAN_SUPPLIER, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
+import {
+  resolveResellerPlatformPlanId,
+  setCcDevicePlatformPlanId,
+} from "@/lib/portal/platform-plans";
 import { getSimSku } from "@/lib/portal/skus";
 import { listCcCustomerBindings, type CcCustomerBinding } from "@/lib/portal/tenant";
 import { ccDevicesToCsv } from "@/lib/cc/csv";
@@ -112,6 +116,8 @@ export type CcDevice = {
   simNotes: string | null;
   deviceId: string | null;
   modemId: string | null;
+  /** Catalyst Reseller Plan id (not Jasper modem_ID). */
+  platformPlanId: string | null;
   globalSimType: string | null;
   mec: string | null;
   euiccid: string | null;
@@ -307,6 +313,7 @@ export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCu
 /**
  * Ensure every CC SIM for this Customer exists in the reseller warehouse (sims).
  * Idempotent — safe to run on sell stock and after Jasper sync.
+ * Reseller Plan: 1:1 Supplier-code match, else org default (`platformPlanId` fallback).
  */
 export async function materializeWarehouseForCcCustomer(input: {
   tenantId: string;
@@ -320,27 +327,36 @@ export async function materializeWarehouseForCcCustomer(input: {
 
   const db = getDB();
   const now = isoNow();
-  const owned = new Map<string, string>();
+  const owned = new Map<string, { tenantId: string; platformPlanId: string | null }>();
   const iccids = devices.map((device) => device.iccid);
   for (let i = 0; i < iccids.length; i += 80) {
     const chunk = iccids.slice(i, i + 80);
     const placeholders = chunk.map(() => "?").join(", ");
     const rows = await db
-      .prepare(`SELECT iccid, tenant_id FROM sims WHERE iccid IN (${placeholders})`)
+      .prepare(
+        `SELECT iccid, tenant_id, platform_plan_id FROM sims WHERE iccid IN (${placeholders})`,
+      )
       .bind(...chunk)
-      .all<{ iccid: string; tenant_id: string }>();
+      .all<{ iccid: string; tenant_id: string; platform_plan_id: string | null }>();
     for (const row of rows.results ?? []) {
-      owned.set(row.iccid, row.tenant_id);
+      owned.set(row.iccid, {
+        tenantId: row.tenant_id,
+        platformPlanId: row.platform_plan_id,
+      });
     }
   }
 
   let inserted = 0;
   const statements: D1PreparedStatement[] = [];
+  const ccPlanUpdates: Array<{ iccid: string; platformPlanId: string }> = [];
 
   for (const device of devices) {
-    const existingTenant = owned.get(device.iccid);
-    if (existingTenant) {
-      if (existingTenant !== input.tenantId) continue;
+    const resolved =
+      (await resolveResellerPlatformPlanId(input.tenantId, device.ratePlan)) ??
+      input.platformPlanId;
+    const existing = owned.get(device.iccid);
+    if (existing) {
+      if (existing.tenantId !== input.tenantId) continue;
       statements.push(
         overlaySimStatement(device.iccid, {
           status: device.status,
@@ -351,6 +367,22 @@ export async function materializeWarehouseForCcCustomer(input: {
           usageMb: device.ctdUsageMb,
         }),
       );
+      if (!existing.platformPlanId?.trim() && resolved) {
+        statements.push(
+          db
+            .prepare(
+              `UPDATE sims SET platform_plan_id = COALESCE(NULLIF(TRIM(platform_plan_id), ''), ?)
+               WHERE iccid = ? AND tenant_id = ?`,
+            )
+            .bind(resolved, device.iccid, input.tenantId),
+        );
+        ccPlanUpdates.push({ iccid: device.iccid, platformPlanId: resolved });
+      } else if (existing.platformPlanId?.trim()) {
+        ccPlanUpdates.push({
+          iccid: device.iccid,
+          platformPlanId: existing.platformPlanId.trim(),
+        });
+      }
       continue;
     }
 
@@ -369,7 +401,7 @@ export async function materializeWarehouseForCcCustomer(input: {
           state,
           input.orderId ?? null,
           device.ratePlan,
-          input.platformPlanId,
+          resolved,
           now,
           device.imsi,
           device.msisdn,
@@ -378,11 +410,15 @@ export async function materializeWarehouseForCcCustomer(input: {
           now,
         ),
     );
+    if (resolved) ccPlanUpdates.push({ iccid: device.iccid, platformPlanId: resolved });
     inserted += 1;
   }
 
   for (let i = 0; i < statements.length; i += 40) {
     await db.batch(statements.slice(i, i + 40));
+  }
+  for (const row of ccPlanUpdates) {
+    await setCcDevicePlatformPlanId(row.iccid, row.platformPlanId, { onlyIfEmpty: true });
   }
   return { inserted, total: devices.length };
 }
@@ -416,15 +452,19 @@ async function ensureBoundWarehouseSim(input: {
   const customer = input.customer?.trim();
   if (!customer) return;
   const binding = await bindingForCcCustomer(customer);
-  if (!binding?.skuId || !binding.platformPlanId) return;
+  if (!binding?.skuId) return;
   const sku = await getSimSku(binding.skuId);
   if (!sku) return;
 
+  const resolved =
+    (await resolveResellerPlatformPlanId(binding.tenantId, input.ratePlan)) ??
+    binding.platformPlanId;
+
   const db = getDB();
   const existing = await db
-    .prepare("SELECT tenant_id FROM sims WHERE iccid = ?")
+    .prepare("SELECT tenant_id, platform_plan_id FROM sims WHERE iccid = ?")
     .bind(input.iccid)
-    .first<{ tenant_id: string }>();
+    .first<{ tenant_id: string; platform_plan_id: string | null }>();
   const now = isoNow();
   if (existing) {
     if (existing.tenant_id !== binding.tenantId) return;
@@ -436,8 +476,24 @@ async function ensureBoundWarehouseSim(input: {
       msisdn: input.msisdn,
       usageMb: input.usageMb,
     }).run();
+    if (!existing.platform_plan_id?.trim() && resolved) {
+      await db
+        .prepare(
+          `UPDATE sims SET platform_plan_id = ?
+           WHERE iccid = ? AND tenant_id = ?
+             AND (platform_plan_id IS NULL OR TRIM(platform_plan_id) = '')`,
+        )
+        .bind(resolved, input.iccid, binding.tenantId)
+        .run();
+    }
+    const planForCc = existing.platform_plan_id?.trim() || resolved;
+    if (planForCc) {
+      await setCcDevicePlatformPlanId(input.iccid, planForCc, { onlyIfEmpty: true });
+    }
     return;
   }
+
+  if (!resolved) return;
 
   const state = mapCcStatus(input.status) ?? "Ready";
   await db
@@ -452,7 +508,7 @@ async function ensureBoundWarehouseSim(input: {
       sku.formFactor,
       state,
       input.ratePlan ?? null,
-      binding.platformPlanId,
+      resolved,
       now,
       input.imsi ?? null,
       input.msisdn ?? null,
@@ -461,6 +517,7 @@ async function ensureBoundWarehouseSim(input: {
       now,
     )
     .run();
+  await setCcDevicePlatformPlanId(input.iccid, resolved, { onlyIfEmpty: true });
 }
 
 export async function getCcSyncState(): Promise<CcSyncState> {
@@ -680,6 +737,7 @@ const CC_DEVICE_COLUMNS = `iccid, IFNULL(NULLIF(TRIM(supplier), ''), '${DEFAULT_
               date_added, date_activated, polled_at, details_polled_at,
               imei, customer, end_consumer_id, end_customer, date_updated, date_shipped, account_id,
               fixed_ip_address, fixed_ipv6_address, sim_notes, device_id, modem_id,
+              platform_plan_id,
               global_sim_type, mec, euiccid, sim_profile_id, custom_fields`;
 
 type CcDeviceRow = {
@@ -712,6 +770,7 @@ type CcDeviceRow = {
   sim_notes: string | null;
   device_id: string | null;
   modem_id: string | null;
+  platform_plan_id: string | null;
   global_sim_type: string | null;
   mec: string | null;
   euiccid: string | null;
@@ -764,6 +823,7 @@ function mapCcDevice(row: CcDeviceRow): CcDevice {
     simNotes: row.sim_notes,
     deviceId: row.device_id,
     modemId: row.modem_id,
+    platformPlanId: row.platform_plan_id,
     globalSimType: row.global_sim_type,
     mec: row.mec,
     euiccid: row.euiccid,

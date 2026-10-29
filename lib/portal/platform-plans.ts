@@ -420,6 +420,11 @@ export async function setDefaultContractPlan(
     .prepare("UPDATE tenant_plan_assignments SET is_default = 1 WHERE tenant_id = ? AND platform_plan_id = ?")
     .bind(tenantId, platformPlanId)
     .run();
+  // Keep sell-stock / warehouse binding default in sync with Contract "Make default".
+  await db
+    .prepare(`UPDATE tenants SET cc_default_platform_plan_id = ? WHERE id = ?`)
+    .bind(platformPlanId, tenantId)
+    .run();
   const plan = await getPlatformPlan(platformPlanId);
   await db
     .prepare(
@@ -430,9 +435,74 @@ export async function setDefaultContractPlan(
       tenantId,
       actorEmail,
       "plan",
-      `Default plan: ${plan?.ccRatePlan ?? platformPlanId}`,
+      `Default plan: ${plan?.name ?? platformPlanId}`,
       new Date().toISOString(),
     )
+    .run();
+}
+
+/**
+ * Auto-assign Reseller Plan for a warehouse / CC SIM:
+ * - exactly one contracted plan whose Supplier code matches Jasper rate_plan → that plan
+ * - otherwise (0/many matches, or blank Supplier code) → org default if set
+ * - else null (leave unassigned)
+ */
+export async function resolveResellerPlatformPlanId(
+  tenantId: string,
+  supplierCode: string | null | undefined,
+): Promise<string | null> {
+  const rows = await getDB()
+    .prepare(
+      `SELECT p.id, p.cc_rate_plan, IFNULL(a.is_default, 0) AS is_default
+       FROM tenant_plan_assignments a
+       JOIN platform_plans p ON p.id = a.platform_plan_id
+       WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1`,
+    )
+    .bind(tenantId)
+    .all<{ id: string; cc_rate_plan: string; is_default: number }>();
+  const contracted = rows.results ?? [];
+  if (contracted.length === 0) return null;
+
+  const code = supplierCode?.trim().toLowerCase() ?? "";
+  if (code) {
+    const matches = contracted.filter(
+      (row) => row.cc_rate_plan.trim().toLowerCase() === code,
+    );
+    if (matches.length === 1) return matches[0].id;
+  }
+
+  const flagged = contracted.find((row) => row.is_default === 1);
+  if (flagged) return flagged.id;
+
+  const tenant = await loadTenant(tenantId);
+  const fallback = tenant?.ccDefaultPlatformPlanId?.trim() ?? "";
+  if (fallback && contracted.some((row) => row.id === fallback)) return fallback;
+  return null;
+}
+
+/** Write Catalyst Reseller Plan onto the CC snapshot (does not push Jasper modem_ID). */
+export async function setCcDevicePlatformPlanId(
+  iccid: string,
+  platformPlanId: string | null,
+  opts?: { onlyIfEmpty?: boolean },
+): Promise<void> {
+  const id = iccid.replace(/\s/g, "");
+  if (!id) return;
+  if (opts?.onlyIfEmpty) {
+    await getDB()
+      .prepare(
+        `UPDATE cc_devices
+         SET platform_plan_id = ?
+         WHERE iccid = ?
+           AND (platform_plan_id IS NULL OR TRIM(platform_plan_id) = '')`,
+      )
+      .bind(platformPlanId, id)
+      .run();
+    return;
+  }
+  await getDB()
+    .prepare(`UPDATE cc_devices SET platform_plan_id = ? WHERE iccid = ?`)
+    .bind(platformPlanId, id)
     .run();
 }
 
