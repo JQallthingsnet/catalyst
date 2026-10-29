@@ -947,10 +947,16 @@ export async function allocateWholesaleStock(
   },
 ): Promise<Order> {
   if (!actor.isSuperAdmin || actor.role !== "super_admin") {
-    throw new Error("Only a super admin can sell stock into a reseller warehouse.");
+    throw new Error("Only a super admin can sell stock to a reseller.");
   }
   const tenant = await loadTenant(input.tenantId);
   if (!tenant) throw new Error("Organisation not found.");
+  // Sell stock is once per org — bind Customer + first SIM import. Later SIMs arrive via Sync.
+  if (tenant.ccCustomer?.trim()) {
+    throw new Error(
+      `Already bound to Control Center customer “${tenant.ccCustomer}”. Sell stock runs once; new SIMs for that Customer are added by Sync. Change Reseller Plan on SIMs in Catalyst.`,
+    );
+  }
   const sku = await resolveSellStockSku(tenant.id, input.skuId);
   const platformPlan = await loadPlatformPlanRecord(input.platformPlanId);
   if (!platformPlan) throw new Error("Plan not found.");
@@ -962,11 +968,6 @@ export async function allocateWholesaleStock(
   if (!ccCustomer) {
     throw new Error(
       "Choose the Control Center customer name (set on SIMs in Jasper, then synced into the snapshot).",
-    );
-  }
-  if (tenant.ccCustomer && tenant.ccCustomer.toLowerCase() !== ccCustomer.toLowerCase()) {
-    throw new Error(
-      `This reseller is bound to Control Center customer “${tenant.ccCustomer}”. Sell stock for that customer only.`,
     );
   }
   const taken = await findTenantByCcCustomer(ccCustomer);

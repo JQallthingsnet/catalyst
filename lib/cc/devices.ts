@@ -246,6 +246,7 @@ export type CcCustomerDevice = {
   iccid: string;
   status: string;
   ratePlan: string | null;
+  modemId: string | null;
   imsi: string | null;
   msisdn: string | null;
   ctdUsageMb: number | null;
@@ -286,7 +287,7 @@ export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCu
   if (!customer) return [];
   const rows = await getDB()
     .prepare(
-      `SELECT d.iccid, d.status, d.rate_plan, d.imsi, d.msisdn, d.ctd_usage_mb
+      `SELECT d.iccid, d.status, d.rate_plan, d.modem_id, d.imsi, d.msisdn, d.ctd_usage_mb
        FROM cc_devices d
        WHERE UPPER(TRIM(IFNULL(d.customer, ''))) = UPPER(TRIM(?))
        ORDER BY d.iccid ASC`,
@@ -296,6 +297,7 @@ export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCu
       iccid: string;
       status: string;
       rate_plan: string | null;
+      modem_id: string | null;
       imsi: string | null;
       msisdn: string | null;
       ctd_usage_mb: number | null;
@@ -304,6 +306,7 @@ export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCu
     iccid: row.iccid,
     status: row.status,
     ratePlan: row.rate_plan,
+    modemId: row.modem_id,
     imsi: row.imsi,
     msisdn: row.msisdn,
     ctdUsageMb: row.ctd_usage_mb,
@@ -313,7 +316,7 @@ export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCu
 /**
  * Ensure every CC SIM for this Customer exists in Catalyst for the reseller (sims).
  * Idempotent — safe to run on sell stock and after Jasper sync.
- * Reseller Plan: 1:1 Supplier-code match, else org default (`platformPlanId` fallback).
+ * Reseller Plan: modem_ID mirror; if empty → Supplier code (exact one) → contract default.
  */
 export async function materializeWarehouseForCcCustomer(input: {
   tenantId: string;
@@ -351,9 +354,11 @@ export async function materializeWarehouseForCcCustomer(input: {
   const ccPlanUpdates: Array<{ iccid: string; platformPlanId: string }> = [];
 
   for (const device of devices) {
+    const modemEmpty = !device.modemId?.trim();
     const resolved =
-      (await resolveResellerPlatformPlanId(input.tenantId, device.ratePlan)) ??
-      input.platformPlanId;
+      (await resolveResellerPlatformPlanId(input.tenantId, device.ratePlan, device.modemId)) ??
+      // Contract default only when modem_ID is empty (resolve already prefers assignment default).
+      (modemEmpty ? input.platformPlanId : null);
     const existing = owned.get(device.iccid);
     if (existing) {
       if (existing.tenantId !== input.tenantId) continue;
@@ -445,6 +450,7 @@ async function ensureBoundWarehouseSim(input: {
   customer: string | null | undefined;
   status: string;
   ratePlan?: string | null;
+  modemId?: string | null;
   imsi?: string | null;
   msisdn?: string | null;
   usageMb?: number | null;
@@ -456,11 +462,23 @@ async function ensureBoundWarehouseSim(input: {
   const sku = await getSimSku(binding.skuId);
   if (!sku) return;
 
-  const resolved =
-    (await resolveResellerPlatformPlanId(binding.tenantId, input.ratePlan)) ??
-    binding.platformPlanId;
-
   const db = getDB();
+  let modemId = input.modemId?.trim() || null;
+  let ratePlan = input.ratePlan ?? null;
+  if (!modemId || !ratePlan) {
+    const cc = await db
+      .prepare("SELECT modem_id, rate_plan FROM cc_devices WHERE iccid = ?")
+      .bind(input.iccid)
+      .first<{ modem_id: string | null; rate_plan: string | null }>();
+    modemId = modemId || cc?.modem_id?.trim() || null;
+    ratePlan = ratePlan || cc?.rate_plan || null;
+  }
+
+  const modemEmpty = !modemId?.trim();
+  const resolved =
+    (await resolveResellerPlatformPlanId(binding.tenantId, ratePlan, modemId)) ??
+    (modemEmpty ? binding.platformPlanId : null);
+
   const existing = await db
     .prepare("SELECT tenant_id, platform_plan_id FROM sims WHERE iccid = ?")
     .bind(input.iccid)
@@ -470,7 +488,7 @@ async function ensureBoundWarehouseSim(input: {
     if (existing.tenant_id !== binding.tenantId) return;
     await overlaySimStatement(input.iccid, {
       status: input.status,
-      ratePlan: input.ratePlan,
+      ratePlan,
       polledAt: now,
       imsi: input.imsi,
       msisdn: input.msisdn,
@@ -507,7 +525,7 @@ async function ensureBoundWarehouseSim(input: {
       input.iccid,
       sku.formFactor,
       state,
-      input.ratePlan ?? null,
+      ratePlan,
       resolved,
       now,
       input.imsi ?? null,
@@ -1450,6 +1468,7 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
     customer: string | null;
     status: string;
     ratePlan: string | null;
+    modemId: string | null;
   }[] = [];
   for (const device of devices) {
     const iccid = device.iccid.replace(/\s/g, "");
@@ -1460,6 +1479,7 @@ async function persistDevices(devices: JasperDevice[], polledAt: string): Promis
       customer,
       status: device.status,
       ratePlan: device.ratePlan ?? null,
+      modemId: textOrNull(device.modemID),
     });
     upserts.push(
       db

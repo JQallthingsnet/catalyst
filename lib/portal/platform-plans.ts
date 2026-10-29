@@ -442,26 +442,38 @@ export async function setDefaultContractPlan(
 }
 
 /**
- * Auto-assign Reseller Plan for a warehouse / CC SIM:
- * - exactly one contracted plan whose Supplier code matches Jasper rate_plan → that plan
- * - otherwise (0/many matches, or blank Supplier code) → org default if set
- * - else null (leave unassigned)
+ * Initial Reseller Plan only (first insert / empty platform_plan_id).
+ * Never used to overwrite after sell stock — later changes are Catalyst Change plan only.
+ * 1. modem_ID not empty → mirror to contracted Reseller Plan name
+ * 2. modem_ID empty → exactly one Supplier-code match
+ * 3. modem_ID empty → contract default Reseller Plan
+ * 4. else null
  */
 export async function resolveResellerPlatformPlanId(
   tenantId: string,
   supplierCode: string | null | undefined,
+  modemId?: string | null,
 ): Promise<string | null> {
   const rows = await getDB()
     .prepare(
-      `SELECT p.id, p.cc_rate_plan, IFNULL(a.is_default, 0) AS is_default
+      `SELECT p.id, p.name, p.cc_rate_plan, IFNULL(a.is_default, 0) AS is_default
        FROM tenant_plan_assignments a
        JOIN platform_plans p ON p.id = a.platform_plan_id
        WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1`,
     )
     .bind(tenantId)
-    .all<{ id: string; cc_rate_plan: string; is_default: number }>();
+    .all<{ id: string; name: string; cc_rate_plan: string; is_default: number }>();
   const contracted = rows.results ?? [];
   if (contracted.length === 0) return null;
+
+  const modem = modemId?.trim().toLowerCase() ?? "";
+  if (modem) {
+    // Non-empty modem_ID: mirror only — do not fall through to Supplier code / default.
+    const byModem = contracted.filter((row) => row.name.trim().toLowerCase() === modem);
+    if (byModem.length === 1) return byModem[0].id;
+    if (byModem.length > 1) return byModem.find((row) => row.is_default === 1)?.id ?? byModem[0].id;
+    return null;
+  }
 
   const code = supplierCode?.trim().toLowerCase() ?? "";
   if (code) {

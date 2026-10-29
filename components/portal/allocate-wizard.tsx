@@ -23,15 +23,17 @@ export function AllocateWizard({
   plans: Plan[];
   customerOptions: CustomerOption[];
 }) {
+  const unbound = useMemo(() => resellers.filter((item) => !item.ccCustomer), [resellers]);
   const [step, setStep] = useState(0);
-  const [tenantId, setTenantId] = useState(resellers[0]?.id ?? "");
-  const [platformPlanId, setPlatformPlanId] = useState(resellers[0]?.defaultPlanId ?? "");
-  const [ccCustomer, setCcCustomer] = useState(resellers[0]?.ccCustomer ?? "");
+  const [tenantId, setTenantId] = useState(unbound[0]?.id ?? "");
+  const [platformPlanId, setPlatformPlanId] = useState(unbound[0]?.defaultPlanId ?? "");
+  const [ccCustomer, setCcCustomer] = useState("");
   const [poNumber, setPoNumber] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const reseller = resellers.find((item) => item.id === tenantId);
+  const alreadyBound = Boolean(reseller?.ccCustomer);
   const contracted = useMemo(
     () => plans.filter((plan) => reseller?.planIds.includes(plan.id)),
     [plans, reseller],
@@ -44,29 +46,27 @@ export function AllocateWizard({
         : (contracted[0]?.id ?? "");
   const plan = contracted.find((item) => item.id === selectedPlanId);
 
-  const lockedCustomer = reseller?.ccCustomer ?? null;
-  const effectiveCustomer = lockedCustomer || ccCustomer;
   const availableForSelection = useMemo(() => {
-    if (lockedCustomer) {
-      return customerOptions.filter(
-        (item) => item.customer.toLowerCase() === lockedCustomer.toLowerCase(),
-      );
-    }
     const boundElsewhere = new Set(
       resellers
         .filter((item) => item.id !== tenantId && item.ccCustomer)
         .map((item) => item.ccCustomer!.toLowerCase()),
     );
     return customerOptions.filter((item) => !boundElsewhere.has(item.customer.toLowerCase()));
-  }, [customerOptions, lockedCustomer, resellers, tenantId]);
+  }, [customerOptions, resellers, tenantId]);
 
   const selectedStock = availableForSelection.find(
-    (item) => item.customer.toLowerCase() === effectiveCustomer.toLowerCase(),
+    (item) => item.customer.toLowerCase() === ccCustomer.toLowerCase(),
   );
   const totalForCustomer = selectedStock?.totalCount ?? 0;
-  const alreadyInWarehouse = selectedStock?.inWarehouseCount ?? 0;
 
   async function submit() {
+    if (alreadyBound) {
+      setError(
+        "Sell stock already completed for this organisation. New SIMs arrive via Sync; change Reseller Plan on SIMs.",
+      );
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -76,7 +76,7 @@ export function AllocateWizard({
         body: JSON.stringify({
           tenantId,
           platformPlanId: selectedPlanId || plan?.id,
-          ccCustomer: effectiveCustomer,
+          ccCustomer,
           poNumber,
         }),
       });
@@ -102,16 +102,16 @@ export function AllocateWizard({
         <>
           <p>{reseller?.name ?? "Choose a reseller"}</p>
           <p className="text-quiet">{reseller?.adminEmail ?? "No reseller admin email"}</p>
-          <p>CC customer: {effectiveCustomer || "—"}</p>
+          <p>CC customer: {ccCustomer || "—"}</p>
           <p>PO: {poNumber.trim() || "—"}</p>
           <p>
             {totalForCustomer > 0
-              ? `${totalForCustomer.toLocaleString("en-AU")} SIMs · ${plan?.name ?? "No contracted plan"}`
+              ? `${totalForCustomer.toLocaleString("en-AU")} SIMs · default ${plan?.name ?? "—"}`
               : plan?.name ?? "No contracted plan"}
           </p>
           <p className="text-ok">
-            Bind once — SIMs with this Jasper Customer become visible to this organisation. Sync keeps adding new
-            ones. Catalogue is not selected here (contract / Order SIMs only).
+            One-time bind. Reseller Plan is taken from Jasper modem_ID on first import; later plan changes stay in
+            Catalyst. Sync adds new SIMs for the same Customer.
           </p>
         </>
       }
@@ -119,56 +119,77 @@ export function AllocateWizard({
       {step === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-quiet">
-            Sell stock binds the reseller admin email to a Control Center <span className="text-ink">Customer</span>{" "}
-            name. After that, this organisation sees and manages those SIMs only.
+            Sell stock runs <span className="text-ink">once</span> per organisation: bind a Control Center{" "}
+            <span className="text-ink">Customer</span> and import SIMs. After that, Sync brings new SIMs; Reseller
+            Plan changes are done on SIMs in Catalyst.
           </p>
           {resellers.length === 0 ? <p className="text-sm text-quiet">Create a reseller from Admin first.</p> : null}
+          {unbound.length === 0 && resellers.length > 0 ? (
+            <p className="rounded-xl border border-line px-3 py-3 text-sm text-quiet">
+              Every reseller is already bound. Open Estate for an organisation, or use Sync for new SIMs.
+            </p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
-            {resellers.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  setTenantId(item.id);
-                  setPlatformPlanId(item.defaultPlanId);
-                  setCcCustomer(item.ccCustomer ?? "");
-                }}
-                className={`rounded-card border p-4 text-left ${
-                  tenantId === item.id ? "border-accent bg-panel-2" : "border-line hover:border-accent"
-                }`}
-              >
-                <p className="font-semibold">{item.name}</p>
-                <p className="mt-1 text-xs text-quiet">{item.adminEmail ?? "No reseller admin yet"}</p>
-                <p className="mt-1 text-xs text-quiet">
-                  {item.ccCustomer
-                    ? `Bound CC customer: ${item.ccCustomer}`
-                    : item.planIds.length
-                      ? `${item.planIds.length} contracted rate plan${item.planIds.length === 1 ? "" : "s"}`
-                      : "No contract — bind on Contract first"}
-                </p>
-              </button>
-            ))}
+            {resellers.map((item) => {
+              const bound = Boolean(item.ccCustomer);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={bound}
+                  onClick={() => {
+                    if (bound) return;
+                    setTenantId(item.id);
+                    setPlatformPlanId(item.defaultPlanId);
+                    setCcCustomer("");
+                  }}
+                  className={`rounded-card border p-4 text-left ${
+                    bound
+                      ? "cursor-not-allowed border-line opacity-50"
+                      : tenantId === item.id
+                        ? "border-accent bg-panel-2"
+                        : "border-line hover:border-accent"
+                  }`}
+                >
+                  <p className="font-semibold">{item.name}</p>
+                  <p className="mt-1 text-xs text-quiet">{item.adminEmail ?? "No reseller admin yet"}</p>
+                  <p className="mt-1 text-xs text-quiet">
+                    {bound
+                      ? `Already bound · ${item.ccCustomer}`
+                      : item.planIds.length
+                        ? `${item.planIds.length} contracted Reseller Plan${item.planIds.length === 1 ? "" : "s"}`
+                        : "No contract — bind on Contract first"}
+                  </p>
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : null}
 
       {step === 1 ? (
         <div className="space-y-4">
-          <p className="text-sm text-quiet">
-            Bring every SIM with this Jasper <span className="text-ink">Customer</span> into Catalyst for this
-            organisation (any rate plan / status). Binding uses{" "}
-            <span className="text-ink">{reseller?.adminEmail ?? "the reseller admin email"}</span>. Later Sync
-            adds new SIMs for the same Customer automatically. Form factor is stamped from the reseller’s contract
-            catalogue (not chosen here).
-          </p>
+          {alreadyBound ? (
+            <p className="rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">
+              This organisation is already bound to “{reseller?.ccCustomer}”. Sell stock cannot run again. New SIMs
+              for that Customer are added by Sync; change Reseller Plan on the SIMs page.
+            </p>
+          ) : (
+            <p className="text-sm text-quiet">
+              Import every SIM with this Jasper <span className="text-ink">Customer</span>. If{" "}
+              <span className="text-ink">modem_ID</span> is set, Reseller Plan is mirrored from it. If empty, match by
+              Supplier code (exactly one contracted plan), else the contract default below. Binding uses{" "}
+              <span className="text-ink">{reseller?.adminEmail ?? "the reseller admin email"}</span>.
+            </p>
+          )}
           {!reseller?.adminEmail ? (
             <p className="text-sm text-danger">Invite a reseller admin for this organisation before selling stock.</p>
           ) : null}
           <label className="block text-sm">
             Control Center customer
             <select
-              value={effectiveCustomer}
-              disabled={Boolean(lockedCustomer)}
+              value={ccCustomer}
+              disabled={alreadyBound}
               onChange={(event) => setCcCustomer(event.target.value)}
               className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 disabled:opacity-60"
             >
@@ -183,22 +204,21 @@ export function AllocateWizard({
               ))}
             </select>
           </label>
-          {lockedCustomer ? (
-            <p className="text-xs text-quiet">
-              Already bound — sell stock pulls in any SIMs for this Customer that are still missing in Catalyst.
-            </p>
-          ) : null}
           {availableForSelection.length === 0 ? (
             <p className="text-sm text-danger">
               No SIMs with a Customer name in the CC snapshot. Set Customer in Jasper, Sync, then return here.
             </p>
           ) : null}
           <label className="block text-sm">
-            Default contracted plan (portal stamp — does not filter which SIMs)
+            Contract default Reseller Plan
+            <span className="mt-1 block text-xs font-normal text-quiet">
+              Used only when Jasper modem_ID is blank (after Supplier-code match fails).
+            </span>
             <select
               value={selectedPlanId}
+              disabled={alreadyBound}
               onChange={(event) => setPlatformPlanId(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 disabled:opacity-60"
             >
               {contracted.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -208,27 +228,26 @@ export function AllocateWizard({
               ))}
             </select>
           </label>
-          {effectiveCustomer ? (
+          {ccCustomer && !alreadyBound ? (
             <p className={totalForCustomer > 0 ? "text-sm text-quiet" : "text-sm text-danger"}>
               {totalForCustomer.toLocaleString("en-AU")} SIM{totalForCustomer === 1 ? "" : "s"} for “
-              {effectiveCustomer}” in the CC snapshot
-              {alreadyInWarehouse > 0
-                ? ` · ${alreadyInWarehouse.toLocaleString("en-AU")} already in Catalyst`
-                : ""}
-              .
+              {ccCustomer}” in the CC snapshot.
             </p>
           ) : null}
           {contracted.length === 0 ? (
-            <p className="text-sm text-danger">Bind a rate plan for this reseller on Contract before selling stock.</p>
+            <p className="text-sm text-danger">
+              Bind a Reseller Plan for this reseller on Contract before selling stock.
+            </p>
           ) : null}
           <label className="block text-sm">
             PO number <span className="text-quiet">(optional)</span>
             <input
               value={poNumber}
+              disabled={alreadyBound}
               onChange={(event) => setPoNumber(event.target.value)}
               maxLength={64}
               placeholder="Purchase order reference"
-              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 disabled:opacity-60"
             />
           </label>
         </div>
@@ -241,12 +260,14 @@ export function AllocateWizard({
           if (step < 1) setStep(step + 1);
           else void submit();
         }}
-        nextLabel={step < 1 ? "Continue" : "Sell stock"}
+        nextLabel={step < 1 ? "Continue" : "Sell stock (once)"}
         busy={busy}
         disabled={
-          (step === 0 && (!tenantId || !reseller?.adminEmail)) ||
+          alreadyBound ||
+          unbound.length === 0 ||
+          (step === 0 && (!tenantId || !reseller?.adminEmail || alreadyBound)) ||
           (step === 1 &&
-            (!plan || !effectiveCustomer || totalForCustomer < 1 || !reseller?.adminEmail))
+            (!plan || !ccCustomer || totalForCustomer < 1 || !reseller?.adminEmail || alreadyBound))
         }
       />
     </WizardFrame>
