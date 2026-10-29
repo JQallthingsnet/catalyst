@@ -126,7 +126,7 @@ export default async function DashboardPage() {
         <div className="mt-8 space-y-3">
           <TenantDirectory tenants={resellers} currentId={ctx.tenantId} />
           <p className="text-sm text-quiet">
-            See every customer and warehouse on{" "}
+            See reseller organisations on{" "}
             <Link href="/dashboard/estate" className="text-accent">
               Estate
             </Link>
@@ -134,7 +134,7 @@ export default async function DashboardPage() {
             <Link href="/dashboard/estate/allocate" className="text-accent">
               sell stock
             </Link>{" "}
-            into a reseller warehouse.
+            to bind a Jasper Customer to a reseller.
           </p>
         </div>
       ) : null}

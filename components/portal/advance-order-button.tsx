@@ -27,7 +27,7 @@ export function AdvanceOrderButton({
       ? "Confirm ATN will fulfil this Order SIMs (plastic courier or eSIM provision). Reseller can no longer revoke."
       : nextStatus === "Shipped"
         ? "Mark as shipped: physical SIMs handed to courier, or eSIMs provisioned / sent to the destination email."
-        : "Mark received: SIMs are with the reseller (in Jasper under their CC Customer). Sync so they appear in warehouse inventory.";
+        : "Mark received: SIMs are with the reseller (in Jasper under their CC Customer). Sync so they appear in Catalyst for that organisation.";
 
   async function confirm() {
     setBusy(true);

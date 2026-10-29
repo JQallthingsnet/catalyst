@@ -81,7 +81,7 @@ export default async function PlatformPlanPage({ params }: { params: { id: strin
                 <th className="py-2">Organisation</th>
                 <th className="py-2">SIMs (bought)</th>
                 <th className="py-2">With customer</th>
-                <th className="py-2">Warehouse</th>
+                <th className="py-2">Unassigned</th>
                 <th className="py-2">Usage</th>
                 <th className="py-2" />
               </tr>

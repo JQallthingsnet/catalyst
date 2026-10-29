@@ -110,7 +110,7 @@ export function AllocateWizard({
               : plan?.name ?? "No contracted plan"}
           </p>
           <p className="text-ok">
-            Bind once — all SIMs with this Jasper customer land in this reseller’s warehouse. Sync keeps adding new
+            Bind once — SIMs with this Jasper Customer become visible to this organisation. Sync keeps adding new
             ones. Catalogue is not selected here (contract / Order SIMs only).
           </p>
         </>
@@ -155,10 +155,10 @@ export function AllocateWizard({
       {step === 1 ? (
         <div className="space-y-4">
           <p className="text-sm text-quiet">
-            Materialize every SIM with this Jasper <span className="text-ink">Customer</span> into the reseller
-            warehouse (any rate plan / status). Binding uses{" "}
+            Bring every SIM with this Jasper <span className="text-ink">Customer</span> into Catalyst for this
+            organisation (any rate plan / status). Binding uses{" "}
             <span className="text-ink">{reseller?.adminEmail ?? "the reseller admin email"}</span>. Later Sync
-            auto-warehouses new SIMs for the same customer. Form factor is stamped from the reseller’s contract
+            adds new SIMs for the same Customer automatically. Form factor is stamped from the reseller’s contract
             catalogue (not chosen here).
           </p>
           {!reseller?.adminEmail ? (
@@ -185,7 +185,7 @@ export function AllocateWizard({
           </label>
           {lockedCustomer ? (
             <p className="text-xs text-quiet">
-              Already bound — sell stock rematerializes any SIMs still missing from the warehouse.
+              Already bound — sell stock pulls in any SIMs for this Customer that are still missing in Catalyst.
             </p>
           ) : null}
           {availableForSelection.length === 0 ? (
@@ -213,7 +213,7 @@ export function AllocateWizard({
               {totalForCustomer.toLocaleString("en-AU")} SIM{totalForCustomer === 1 ? "" : "s"} for “
               {effectiveCustomer}” in the CC snapshot
               {alreadyInWarehouse > 0
-                ? ` · ${alreadyInWarehouse.toLocaleString("en-AU")} already in a warehouse`
+                ? ` · ${alreadyInWarehouse.toLocaleString("en-AU")} already in Catalyst`
                 : ""}
               .
             </p>
