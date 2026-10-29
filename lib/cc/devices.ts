@@ -255,7 +255,7 @@ export type CcCustomerStockOption = {
   customer: string;
   /** All SIMs in CC snapshot with this Customer. */
   totalCount: number;
-  /** Already in some Catalyst warehouse (sims). */
+  /** Already present in Catalyst sims for some organisation. */
   inWarehouseCount: number;
 };
 
@@ -311,7 +311,7 @@ export async function listCcDevicesForCustomer(ccCustomer: string): Promise<CcCu
 }
 
 /**
- * Ensure every CC SIM for this Customer exists in the reseller warehouse (sims).
+ * Ensure every CC SIM for this Customer exists in Catalyst for the reseller (sims).
  * Idempotent — safe to run on sell stock and after Jasper sync.
  * Reseller Plan: 1:1 Supplier-code match, else org default (`platformPlanId` fallback).
  */
@@ -439,7 +439,7 @@ async function bindingForCcCustomer(ccCustomer: string): Promise<CcCustomerBindi
   return ccBindingCache.get(key) ?? null;
 }
 
-/** After Jasper upsert/enrich: if Customer is bound, ensure this ICCID is in that reseller warehouse. */
+/** After Jasper upsert/enrich: if Customer is bound, ensure this ICCID is in that reseller’s Catalyst inventory. */
 async function ensureBoundWarehouseSim(input: {
   iccid: string;
   customer: string | null | undefined;

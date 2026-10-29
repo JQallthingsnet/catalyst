@@ -327,13 +327,279 @@ export type PlatformEstate = {
   totals: { orgs: number; sims: number; active: number; customers: number };
 };
 
+/** Bird’s-eye Estate row — no SIM dump. */
+export type PlatformEstateIndexRow = {
+  id: string;
+  name: string;
+  active: boolean;
+  ccCustomer: string | null;
+  customerCount: number;
+  simCount: number;
+  activeSimCount: number;
+  memberCount: number;
+  unassignedSimCount: number;
+};
+
+export type PlatformEstateIndex = {
+  tenants: PlatformEstateIndexRow[];
+  totals: { orgs: number; sims: number; active: number; customers: number };
+};
+
 const EMPTY_ESTATE: PlatformEstate = {
+  tenants: [],
+  totals: { orgs: 0, sims: 0, active: 0, customers: 0 },
+};
+
+const EMPTY_ESTATE_INDEX: PlatformEstateIndex = {
   tenants: [],
   totals: { orgs: 0, sims: 0, active: 0, customers: 0 },
 };
 
 export function excludeHomeTenant<T extends { id: string }>(rows: T[], homeTenantId: string): T[] {
   return rows.filter((row) => row.id !== homeTenantId);
+}
+
+/** Compact org index for Estate (scales to many resellers). */
+export async function listPlatformEstateIndex(
+  actor: { isSuperAdmin: boolean; role: string; homeTenantId?: string },
+  query = "",
+): Promise<PlatformEstateIndex> {
+  if (!actor.isSuperAdmin || actor.role !== "super_admin") return EMPTY_ESTATE_INDEX;
+
+  const db = getDB();
+  const hasActive = await portalTableHasColumn("tenants", "active");
+  const hasCc = await portalTableHasColumn("tenants", "cc_customer");
+  const rows = await db
+    .prepare(
+      hasCc
+        ? hasActive
+          ? `SELECT t.id, t.name, IFNULL(t.active, 1) AS active, t.cc_customer,
+                    (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.state = 'Active') AS active_sim_count,
+                    (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.customer_id IS NULL) AS unassigned_sim_count
+             FROM tenants t
+             ORDER BY IFNULL(t.active, 1) DESC, t.name COLLATE NOCASE`
+          : `SELECT t.id, t.name, 1 AS active, t.cc_customer,
+                    (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.state = 'Active') AS active_sim_count,
+                    (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.customer_id IS NULL) AS unassigned_sim_count
+             FROM tenants t
+             ORDER BY t.name COLLATE NOCASE`
+        : hasActive
+          ? `SELECT t.id, t.name, IFNULL(t.active, 1) AS active, NULL AS cc_customer,
+                    (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.state = 'Active') AS active_sim_count,
+                    (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.customer_id IS NULL) AS unassigned_sim_count
+             FROM tenants t
+             ORDER BY IFNULL(t.active, 1) DESC, t.name COLLATE NOCASE`
+          : `SELECT t.id, t.name, 1 AS active, NULL AS cc_customer,
+                    (SELECT COUNT(*) FROM customers c WHERE c.tenant_id = t.id) AS customer_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id) AS sim_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.state = 'Active') AS active_sim_count,
+                    (SELECT COUNT(*) FROM tenant_members m WHERE m.tenant_id = t.id) AS member_count,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = t.id AND s.customer_id IS NULL) AS unassigned_sim_count
+             FROM tenants t
+             ORDER BY t.name COLLATE NOCASE`,
+    )
+    .all<{
+      id: string;
+      name: string;
+      active: number;
+      cc_customer: string | null;
+      customer_count: number;
+      sim_count: number;
+      active_sim_count: number;
+      member_count: number;
+      unassigned_sim_count: number;
+    }>();
+
+  const memberRows = await db
+    .prepare("SELECT email, tenant_id FROM tenant_members")
+    .all<{ email: string; tenant_id: string }>();
+  const membersByTenant = new Map<string, string[]>();
+  for (const row of memberRows.results ?? []) {
+    const list = membersByTenant.get(row.tenant_id) ?? [];
+    list.push(row.email.toLowerCase());
+    membersByTenant.set(row.tenant_id, list);
+  }
+
+  let tenants: PlatformEstateIndexRow[] = (rows.results ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    active: Boolean(row.active),
+    ccCustomer: row.cc_customer?.trim() || null,
+    customerCount: row.customer_count,
+    simCount: row.sim_count,
+    activeSimCount: row.active_sim_count,
+    memberCount: row.member_count,
+    unassignedSimCount: row.unassigned_sim_count,
+  }));
+
+  if (actor.homeTenantId) {
+    tenants = tenants.filter((tenant) => tenant.id !== actor.homeTenantId);
+  }
+
+  const q = query.trim().toLowerCase();
+  const iccidQ = q.replace(/\s/g, "");
+  if (q) {
+    const iccidHits = iccidQ
+      ? await db
+          .prepare(
+            `SELECT DISTINCT tenant_id FROM sims
+             WHERE REPLACE(LOWER(iccid), ' ', '') LIKE ?`,
+          )
+          .bind(`%${iccidQ}%`)
+          .all<{ tenant_id: string }>()
+      : { results: [] as { tenant_id: string }[] };
+    const hitIds = new Set((iccidHits.results ?? []).map((row) => row.tenant_id));
+    tenants = tenants.filter((tenant) => {
+      if (tenant.name.toLowerCase().includes(q)) return true;
+      if (tenant.ccCustomer?.toLowerCase().includes(q)) return true;
+      if ((membersByTenant.get(tenant.id) ?? []).some((email) => email.includes(q))) return true;
+      if (hitIds.has(tenant.id)) return true;
+      return false;
+    });
+  }
+
+  return {
+    tenants,
+    totals: {
+      orgs: tenants.length,
+      sims: tenants.reduce((sum, row) => sum + row.simCount, 0),
+      active: tenants.reduce((sum, row) => sum + row.activeSimCount, 0),
+      customers: tenants.reduce((sum, row) => sum + row.customerCount, 0),
+    },
+  };
+}
+
+export async function getPlatformEstateTenant(
+  actor: { isSuperAdmin: boolean; role: string; homeTenantId?: string },
+  tenantId: string,
+): Promise<PlatformEstateTenant | null> {
+  if (!actor.isSuperAdmin || actor.role !== "super_admin") return null;
+  if (actor.homeTenantId && tenantId === actor.homeTenantId) return null;
+
+  const db = getDB();
+  const tenant = await db
+    .prepare("SELECT id, name, created_at FROM tenants WHERE id = ?")
+    .bind(tenantId)
+    .first<{ id: string; name: string; created_at: string }>();
+  if (!tenant) return null;
+
+  const [memberRows, customerRows, simRows] = await Promise.all([
+    db
+      .prepare("SELECT email, role FROM tenant_members WHERE tenant_id = ? ORDER BY email")
+      .bind(tenantId)
+      .all<{ email: string; role: string }>(),
+    db
+      .prepare("SELECT id, name, created_at FROM customers WHERE tenant_id = ? ORDER BY name")
+      .bind(tenantId)
+      .all<{ id: string; name: string; created_at: string }>(),
+    db
+      .prepare(
+        `SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.wholesale_plan,
+                c.name as customer_name, p.name as plan_name, pl.name as pool_name, pp.name as platform_plan_name,
+                cc.status as cc_status
+         FROM sims s
+         LEFT JOIN customers c ON c.id = s.customer_id
+         LEFT JOIN plans p ON p.id = s.plan_id
+         LEFT JOIN pools pl ON pl.id = s.pool_id
+         LEFT JOIN platform_plans pp ON pp.id = s.platform_plan_id
+         LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
+         WHERE s.tenant_id = ?
+         ORDER BY s.iccid ASC
+         LIMIT 5000`,
+      )
+      .bind(tenantId)
+      .all<{
+        id: string;
+        iccid: string;
+        form_factor: string;
+        state: string;
+        customer_id: string | null;
+        wholesale_plan: string | null;
+        customer_name: string | null;
+        plan_name: string | null;
+        pool_name: string | null;
+        platform_plan_name: string | null;
+        cc_status: string | null;
+      }>(),
+  ]);
+
+  const soldByCustomer = new Map<
+    string,
+    { simCount: number; activeCount: number; plans: Set<string>; wholesale: Set<string> }
+  >();
+  const sims: PlatformEstateSim[] = [];
+  for (const row of simRows.results ?? []) {
+    sims.push({
+      id: row.id,
+      iccid: row.iccid,
+      formFactor: row.form_factor,
+      state: row.state,
+      customerName: row.customer_name,
+      planName: row.plan_name,
+      poolName: row.pool_name,
+      wholesalePlan: row.wholesale_plan,
+      platformPlanName: row.platform_plan_name,
+      ccStatus: row.cc_status,
+    });
+    if (row.customer_id) {
+      const sold = soldByCustomer.get(row.customer_id) ?? {
+        simCount: 0,
+        activeCount: 0,
+        plans: new Set<string>(),
+        wholesale: new Set<string>(),
+      };
+      sold.simCount += 1;
+      if (row.state === "Active") sold.activeCount += 1;
+      if (row.plan_name) sold.plans.add(row.plan_name);
+      if (row.platform_plan_name) sold.wholesale.add(row.platform_plan_name);
+      soldByCustomer.set(row.customer_id, sold);
+    }
+  }
+
+  const customers: PlatformEstateCustomer[] = (customerRows.results ?? []).map((row) => {
+    const sold = soldByCustomer.get(row.id);
+    return {
+      id: row.id,
+      name: row.name,
+      createdAt: row.created_at,
+      simCount: sold?.simCount ?? 0,
+      activeCount: sold?.activeCount ?? 0,
+      plansSold: sold ? [...sold.plans] : [],
+      wholesalePlans: sold ? [...sold.wholesale] : [],
+    };
+  });
+
+  const unassigned = sims.filter((sim) => !sim.customerName);
+  const unassignedPlans = new Map<string, number>();
+  for (const sim of unassigned) {
+    const key = sim.platformPlanName ?? sim.wholesalePlan ?? "Unmapped";
+    unassignedPlans.set(key, (unassignedPlans.get(key) ?? 0) + 1);
+  }
+
+  return {
+    id: tenant.id,
+    name: tenant.name,
+    createdAt: tenant.created_at,
+    members: (memberRows.results ?? []).map((row) => ({ email: row.email, role: row.role })),
+    customers,
+    sims,
+    warehouse: {
+      count: unassigned.length,
+      plans: [...unassignedPlans.entries()].map(([plan, count]) => ({ plan, count })),
+    },
+    simCount: sims.length,
+    activeCount: sims.filter((sim) => sim.state === "Active").length,
+    customerCount: customers.length,
+  };
 }
 
 export async function listPlatformEstate(

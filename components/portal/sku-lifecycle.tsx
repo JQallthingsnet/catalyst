@@ -94,7 +94,7 @@ export function SkuLifecycle({
         title={`Deactivate ${name}?`}
         body={
           <p>
-            Sell stock and Order SIMs will no longer offer this SKU until you reactivate. Existing warehouse SIMs and
+            Sell stock and Order SIMs will no longer offer this SKU until you reactivate. Existing SIMs and
             orders stay in place.
           </p>
         }

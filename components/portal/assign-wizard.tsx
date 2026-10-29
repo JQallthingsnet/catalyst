@@ -117,7 +117,7 @@ export function AssignWizard({
           {customers.length === 0 ? (
             <div className="space-y-4">
               <p className="text-sm leading-6 text-quiet">
-                Create an end customer first, then assign warehouse SIMs to them. Shipping stays outside Catalyst.
+                Create an end customer first, then assign SIMs in this organisation to them. Shipping stays outside Catalyst.
               </p>
               <Link
                 href="/dashboard/customers"
