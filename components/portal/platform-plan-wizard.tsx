@@ -50,7 +50,7 @@ export function PlatformPlanWizard({
 
   return (
     <WizardFrame
-      title="Create plan"
+      title="Create Reseller Plan"
       steps={["Reseller Plan", "Supplier mapping", "Bind resellers", "Confirm"]}
       step={step}
       summary={
@@ -166,7 +166,7 @@ export function PlatformPlanWizard({
           if (step < 3) setStep(step + 1);
           else void submit();
         }}
-        nextLabel={step < 3 ? "Continue" : "Create plan"}
+        nextLabel={step < 3 ? "Continue" : "Create Reseller Plan"}
         busy={busy}
         disabled={
           !name.trim() ||

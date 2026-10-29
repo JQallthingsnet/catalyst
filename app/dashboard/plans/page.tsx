@@ -27,7 +27,7 @@ export default async function PlansPage() {
             </p>
           </div>
           <Link href="/dashboard/plans/new" className={btnPrimary}>
-            Create plan
+            Create Reseller Plan
           </Link>
         </div>
         <PlatformPlansTable

@@ -39,7 +39,7 @@ export function ContractsAdminView({
             Catalogue
           </Link>
           <Link href="/dashboard/plans/new?from=contract" className={btnPrimary}>
-            Create Rate Plan
+            Create Reseller Plan
           </Link>
         </div>
       </div>
@@ -145,7 +145,7 @@ function ContractResellerCard({
               Manage catalogue
             </Link>
             <Link href="/dashboard/plans/new?from=contract" className="text-accent hover:underline">
-              Create Rate Plan
+              Create Reseller Plan
             </Link>
           </div>
         ) : null}
