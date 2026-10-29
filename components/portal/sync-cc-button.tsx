@@ -82,7 +82,8 @@ export function SyncCcButton({
       if (
         started?.lastPageComplete &&
         started.jasperTotal != null &&
-        started.devicesInCopy >= Math.floor(started.jasperTotal * 0.95)
+        started.jasperTotal > 0 &&
+        started.devicesInCopy >= started.jasperTotal
       ) {
         setOk(
           `Device list already complete — ${started.devicesInCopy.toLocaleString("en-AU")} in copy` +

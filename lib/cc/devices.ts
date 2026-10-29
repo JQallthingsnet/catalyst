@@ -597,6 +597,14 @@ function catchUpPercent(devicesInCopy: number, jasperTotal: number | null): numb
   return Math.min(100, Math.round((devicesInCopy / jasperTotal) * 100));
 }
 
+/** True when D1 is missing any ICCID vs Jasper’s last Search total (no % tolerance). */
+export function isCcDeviceListShort(
+  devicesInCopy: number,
+  jasperTotal: number | null | undefined,
+): boolean {
+  return jasperTotal != null && jasperTotal > 0 && devicesInCopy < jasperTotal;
+}
+
 export async function getCcCatchUpProgress(): Promise<CcCatchUpProgress> {
   const [state, devicesInCopy] = await Promise.all([getCcSyncState(), countCcDevices()]);
   const jasperTotal = state.lastTotal != null && state.lastTotal > 0 ? state.lastTotal : null;
@@ -615,7 +623,8 @@ export async function getCcCatchUpProgress(): Promise<CcCatchUpProgress> {
 }
 
 /**
- * Open or resume a Jasper Search catch-up window when the D1 list is incomplete or short.
+ * Open or resume a Jasper Search catch-up window when the D1 list is incomplete or short
+ * (any missing ICCID vs Jasper last total — not a 5% tolerance).
  * Auto poll uses this (turnAutoOff=false). Manual Sync device list pauses Auto poll (turnAutoOff=true).
  */
 async function ensureCcListCatchUpWindow(input?: { turnAutoOff?: boolean }): Promise<void> {
@@ -624,10 +633,7 @@ async function ensureCcListCatchUpWindow(input?: { turnAutoOff?: boolean }): Pro
   const state = await getCcSyncState();
   const devicesInCopy = await countCcDevices();
   const shortOfSearch =
-    state.lastPageComplete &&
-    state.lastTotal != null &&
-    state.lastTotal > 0 &&
-    devicesInCopy < Math.floor(state.lastTotal * 0.95);
+    state.lastPageComplete && isCcDeviceListShort(devicesInCopy, state.lastTotal);
   const needsWideWindow =
     shortOfSearch || (state.lastPageComplete && (state.lastTotal == null || state.lastTotal <= 0));
 
@@ -684,7 +690,7 @@ export async function runCcCatchUpBatch(): Promise<CcCatchUpBatchResult> {
   const alreadyCaughtUp =
     before.lastPageComplete &&
     before.jasperTotal != null &&
-    before.devicesInCopy >= Math.floor(before.jasperTotal * 0.95);
+    !isCcDeviceListShort(before.devicesInCopy, before.jasperTotal);
   if (alreadyCaughtUp) {
     if (!before.autoPoll) await setCcAutoPoll(true);
     const progress = await getCcCatchUpProgress();
