@@ -13,6 +13,7 @@ function formatDayHeader(day: string): string {
 
 export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDailyMatrix }) {
   const [selected, setSelected] = useState<{ iccid: string; day: string } | null>(null);
+  const showOrg = matrix.includeOrganisation;
 
   if (matrix.days.length === 0) {
     return (
@@ -26,7 +27,9 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
   if (matrix.rows.length === 0) {
     return (
       <p className="rounded-card border border-line bg-panel px-4 py-6 text-sm text-quiet">
-        No ICCIDs with daily Reseller Plan records for this organisation in the selected dates.
+        {showOrg
+          ? "No ICCIDs with daily Reseller Plan records in the selected dates."
+          : "No ICCIDs with daily Reseller Plan records for this organisation in the selected dates."}
       </p>
     );
   }
@@ -41,21 +44,45 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-card border border-line bg-panel">
-        <table className="w-full min-w-max text-left text-sm">
+        <table className="w-max min-w-full text-left text-sm">
           <thead className="border-b border-line text-quiet">
             <tr>
-              <th className="sticky left-0 z-10 bg-panel px-3 py-2 font-medium">ICCID</th>
+              {showOrg ? (
+                <th className="sticky left-0 z-10 bg-panel px-3 py-2 font-medium">Organisation</th>
+              ) : null}
+              <th
+                className={`sticky z-10 bg-panel px-3 py-2 font-medium ${showOrg ? "left-40" : "left-0"}`}
+              >
+                ICCID
+              </th>
               {matrix.days.map((day) => (
-                <th key={day} className="px-2 py-2 text-center font-medium tabular-nums" title={day}>
-                  {formatDayHeader(day)}
+                <th
+                  key={day}
+                  className="h-28 w-9 px-0 align-bottom font-medium"
+                  title={day}
+                >
+                  <div className="flex h-full items-end justify-center pb-2">
+                    <span className="inline-block origin-center -rotate-90 whitespace-nowrap text-xs tabular-nums tracking-tight">
+                      {formatDayHeader(day)}
+                    </span>
+                  </div>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {matrix.rows.map((row) => (
-              <tr key={row.iccid} className="border-t border-line">
-                <td className="sticky left-0 z-10 whitespace-nowrap bg-panel px-3 py-2 font-mono text-xs">
+              <tr key={`${row.tenantId ?? ""}:${row.iccid}`} className="border-t border-line">
+                {showOrg ? (
+                  <td className="sticky left-0 z-10 max-w-40 truncate bg-panel px-3 py-2 text-xs text-quiet">
+                    {row.organisationName ?? "—"}
+                  </td>
+                ) : null}
+                <td
+                  className={`sticky z-10 whitespace-nowrap bg-panel px-3 py-2 font-mono text-xs ${
+                    showOrg ? "left-40" : "left-0"
+                  }`}
+                >
                   {formatIccid(row.iccid)}
                 </td>
                 {row.cells.map((cell) => {
@@ -64,7 +91,7 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
                   const hasData = cell.planCount > 0;
                   const changed = cell.planCount > 1;
                   return (
-                    <td key={cell.day} className="px-1 py-1 text-center">
+                    <td key={cell.day} className="w-9 px-0 py-1 text-center">
                       {hasData ? (
                         <button
                           type="button"
@@ -73,7 +100,7 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
                               isSelected ? null : { iccid: row.iccid, day: cell.day },
                             )
                           }
-                          className={`inline-flex min-w-8 items-center justify-center rounded-md px-1.5 py-1 text-xs tabular-nums ${
+                          className={`inline-flex min-w-7 items-center justify-center rounded-md px-1 py-1 text-xs tabular-nums ${
                             isSelected
                               ? "bg-accent text-accent-ink"
                               : changed
@@ -136,8 +163,8 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
         </article>
       ) : (
         <p className="text-xs text-quiet">
-          Cells show plan count for that Sydney day (1 = single plan, 2+ = changed). Click a cell for Reseller
-          Plan details.
+          Every Sydney calendar day in the From/To range is a column. Cells show plan count (1 = single plan, 2+ =
+          changed). Click a cell for Reseller Plan details.
         </p>
       )}
     </div>

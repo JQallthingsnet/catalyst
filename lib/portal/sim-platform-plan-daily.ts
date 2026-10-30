@@ -16,12 +16,17 @@ export type SimPlatformPlanDailyCell = {
 
 export type SimPlatformPlanDailyMatrixRow = {
   iccid: string;
+  tenantId?: string;
+  /** Present when matrix spans more than one organisation (super admin). */
+  organisationName?: string | null;
   cells: SimPlatformPlanDailyCell[];
 };
 
 export type SimPlatformPlanDailyMatrix = {
   days: string[];
   rows: SimPlatformPlanDailyMatrixRow[];
+  /** True when rows may include multiple organisations. */
+  includeOrganisation: boolean;
 };
 
 function enumerateSydneyDays(dateFrom: string, dateTo: string): string[] {
@@ -42,51 +47,78 @@ function enumerateSydneyDays(dateFrom: string, dateTo: string): string[] {
   return days;
 }
 
-/** ICCID × day matrix for one organisation (plan count + plan details per cell). */
+/**
+ * ICCID × every Sydney calendar day in From/To (inclusive).
+ * Pass tenantId for one org; omit for super admin (all organisations).
+ */
 export async function listSimPlatformPlanDailyMatrix(input: {
-  tenantId: string;
+  tenantId?: string;
   dateFrom?: string;
   dateTo?: string;
   /** Max ICCID rows (newest activity first). */
   limitIccids?: number;
 }): Promise<SimPlatformPlanDailyMatrix> {
-  const tenantId = input.tenantId.trim();
-  if (!tenantId) return { days: [], rows: [] };
+  const tenantId = input.tenantId?.trim() || "";
+  const includeOrganisation = !tenantId;
 
   const dateTo = input.dateTo?.trim() || sydneyDayKey();
   const dateFrom = input.dateFrom?.trim() || sydneyDayKeyDaysAgo(13);
   const days = enumerateSydneyDays(dateFrom, dateTo);
-  if (days.length === 0) return { days: [], rows: [] };
+  if (days.length === 0) return { days: [], rows: [], includeOrganisation };
 
-  const limit = Math.min(Math.max(input.limitIccids ?? 200, 1), 500);
+  const limit = Math.min(
+    Math.max(input.limitIccids ?? (includeOrganisation ? 1000 : 200), 1),
+    includeOrganisation ? 2000 : 500,
+  );
   const db = getDB();
 
-  const iccidRows = await db
-    .prepare(
-      `SELECT iccid
-       FROM sim_platform_plan_daily
-       WHERE tenant_id = ? AND day >= ? AND day <= ?
-       GROUP BY iccid
-       ORDER BY MAX(day) DESC, iccid ASC
-       LIMIT ?`,
-    )
-    .bind(tenantId, dateFrom, dateTo, limit)
-    .all<{ iccid: string }>();
-  const iccids = (iccidRows.results ?? []).map((row) => row.iccid);
-  if (iccids.length === 0) return { days, rows: [] };
+  const iccidRows = tenantId
+    ? await db
+        .prepare(
+          `SELECT d.tenant_id, d.iccid, t.name AS organisation_name
+           FROM sim_platform_plan_daily d
+           JOIN tenants t ON t.id = d.tenant_id
+           WHERE d.tenant_id = ? AND d.day >= ? AND d.day <= ?
+           GROUP BY d.tenant_id, d.iccid
+           ORDER BY MAX(d.day) DESC, d.iccid ASC
+           LIMIT ?`,
+        )
+        .bind(tenantId, dateFrom, dateTo, limit)
+        .all<{ tenant_id: string; iccid: string; organisation_name: string }>()
+    : await db
+        .prepare(
+          `SELECT d.tenant_id, d.iccid, t.name AS organisation_name
+           FROM sim_platform_plan_daily d
+           JOIN tenants t ON t.id = d.tenant_id
+           WHERE d.day >= ? AND d.day <= ?
+           GROUP BY d.tenant_id, d.iccid
+           ORDER BY MAX(d.day) DESC, t.name COLLATE NOCASE, d.iccid ASC
+           LIMIT ?`,
+        )
+        .bind(dateFrom, dateTo, limit)
+        .all<{ tenant_id: string; iccid: string; organisation_name: string }>();
 
-  const placeholders = iccids.map(() => "?").join(", ");
+  const iccidMeta = (iccidRows.results ?? []).map((row) => ({
+    key: `${row.tenant_id}:${row.iccid}`,
+    tenantId: row.tenant_id,
+    iccid: row.iccid,
+    organisationName: row.organisation_name,
+  }));
+  if (iccidMeta.length === 0) return { days, rows: [], includeOrganisation };
+
+  const pairClauses = iccidMeta.map(() => "(tenant_id = ? AND iccid = ?)").join(" OR ");
+  const pairBinds = iccidMeta.flatMap((row) => [row.tenantId, row.iccid]);
   const detailRows = await db
     .prepare(
-      `SELECT iccid, day, platform_plan_id, plan_name, supplier_code
+      `SELECT tenant_id, iccid, day, platform_plan_id, plan_name, supplier_code
        FROM sim_platform_plan_daily
-       WHERE tenant_id = ?
-         AND day >= ? AND day <= ?
-         AND iccid IN (${placeholders})
+       WHERE day >= ? AND day <= ?
+         AND (${pairClauses})
        ORDER BY iccid ASC, day ASC, plan_name COLLATE NOCASE`,
     )
-    .bind(tenantId, dateFrom, dateTo, ...iccids)
+    .bind(dateFrom, dateTo, ...pairBinds)
     .all<{
+      tenant_id: string;
       iccid: string;
       day: string;
       platform_plan_id: string;
@@ -94,10 +126,10 @@ export async function listSimPlatformPlanDailyMatrix(input: {
       supplier_code: string | null;
     }>();
 
-  const byIccid = new Map<string, Map<string, SimPlatformPlanDailyPlan[]>>();
-  for (const iccid of iccids) byIccid.set(iccid, new Map());
+  const byKey = new Map<string, Map<string, SimPlatformPlanDailyPlan[]>>();
+  for (const meta of iccidMeta) byKey.set(meta.key, new Map());
   for (const row of detailRows.results ?? []) {
-    const dayMap = byIccid.get(row.iccid);
+    const dayMap = byKey.get(`${row.tenant_id}:${row.iccid}`);
     if (!dayMap) continue;
     const list = dayMap.get(row.day) ?? [];
     list.push({
@@ -108,10 +140,12 @@ export async function listSimPlatformPlanDailyMatrix(input: {
     dayMap.set(row.day, list);
   }
 
-  const rows: SimPlatformPlanDailyMatrixRow[] = iccids.map((iccid) => {
-    const dayMap = byIccid.get(iccid) ?? new Map();
+  const rows: SimPlatformPlanDailyMatrixRow[] = iccidMeta.map((meta) => {
+    const dayMap = byKey.get(meta.key) ?? new Map();
     return {
-      iccid,
+      iccid: meta.iccid,
+      tenantId: meta.tenantId,
+      organisationName: includeOrganisation ? meta.organisationName : null,
       cells: days.map((day) => {
         const plans = dayMap.get(day) ?? [];
         return { day, planCount: plans.length, plans };
@@ -119,7 +153,7 @@ export async function listSimPlatformPlanDailyMatrix(input: {
     };
   });
 
-  return { days, rows };
+  return { days, rows, includeOrganisation };
 }
 
 /** Record that this Reseller Plan applied to the ICCID on a Sydney calendar day. */

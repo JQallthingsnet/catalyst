@@ -151,18 +151,17 @@ export default async function RatePlanChangesPage({
   });
   const filtered = ratePlanChangeFilterActive(filter);
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
-  const matrixTenantId = onPlatform ? filter.organisationId || "" : ctx.tenantId;
+  // Reseller: own org. Super admin: all ICCIDs, or one org when Organisation filter is set.
+  const matrixTenantId = onPlatform ? filter.organisationId || undefined : ctx.tenantId;
   const [changes, listedCount, options, dailyMatrix] = await Promise.all([
     listRatePlanChanges(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     countRatePlanChanges(filter),
     listRatePlanChangeFilterOptions({ scopeTenantId: filter.scopeTenantId }),
-    matrixTenantId
-      ? listSimPlatformPlanDailyMatrix({
-          tenantId: matrixTenantId,
-          dateFrom: filter.dateFrom,
-          dateTo: filter.dateTo,
-        })
-      : Promise.resolve(null),
+    listSimPlatformPlanDailyMatrix({
+      tenantId: matrixTenantId,
+      dateFrom: filter.dateFrom,
+      dateTo: filter.dateTo,
+    }),
   ]);
   const pageCount = Math.max(1, Math.ceil(listedCount / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
@@ -324,18 +323,13 @@ export default async function RatePlanChangesPage({
         <div>
           <h2 className="text-lg font-semibold">Daily Reseller Plans</h2>
           <p className="mt-1 text-sm text-quiet">
-            Rows are ICCIDs; columns are Sydney dates. Cell value is how many Reseller Plans applied that day
-            (1 = unchanged, 2+ = changed). Click a cell for plan names. Uses From/To dates above
-            {onPlatform ? " and Organisation filter" : ""} (default last 14 days).
+            Rows are ICCIDs
+            {onPlatform ? " (all organisations, or filter Organisation above)" : ""}; every Sydney calendar day in
+            From/To is a column (default last 14 days). Cell value is how many Reseller Plans applied that day (1 =
+            unchanged, 2+ = changed). Click a cell for plan names.
           </p>
         </div>
-        {dailyMatrix ? (
-          <ResellerPlanDailyMatrix matrix={dailyMatrix} />
-        ) : (
-          <p className="rounded-card border border-line bg-panel px-4 py-6 text-sm text-quiet">
-            Choose an organisation filter to view the daily ICCID × date matrix.
-          </p>
-        )}
+        <ResellerPlanDailyMatrix matrix={dailyMatrix} />
       </section>
 
       <h2 className="mt-10 text-lg font-semibold">Change log</h2>
