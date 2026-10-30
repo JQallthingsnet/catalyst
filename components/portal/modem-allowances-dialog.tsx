@@ -129,7 +129,8 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
           <div>
             <h2 className="text-lg font-semibold">Reseller Plan allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB per Reseller Plan. Reseller Usage and Pools use CTD ÷ this allowance (set by ATN only).
+              Manual MB per Reseller Plan (Contract plans plus any mirrored from Jasper modem_ID on SIMs).
+              Reseller Usage and Pools use CTD ÷ this allowance (set by ATN only).
             </p>
           </div>
           <button

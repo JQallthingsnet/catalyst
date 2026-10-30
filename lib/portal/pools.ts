@@ -72,8 +72,10 @@ export type PoolEntityLatest = {
 };
 
 /**
- * Reseller pool rows: group CC SIMs by Catalyst Reseller Plan (`platform_plan_id` → plan name).
- * Allowance keys stay on plan name (`modem_allowances.modem_id`).
+ * Reseller Plan allowance editor keys:
+ * - every plan on a reseller Contract (tenant_plan_assignments)
+ * - plus every plan currently on SIMs / CC (incl. mirrored modem_ID plans not on contract)
+ * Allowance values live in `modem_allowances.modem_id` (= plan name).
  */
 export async function listModemAllowances(input?: {
   q?: string;
@@ -87,25 +89,56 @@ export async function listModemAllowances(input?: {
 
   const rows = await getDB()
     .prepare(
-      `SELECT pp.name AS modem_id,
-              MAX(d.customer) AS customer,
-              COUNT(*) AS sim_count,
-              IFNULL(SUM(d.ctd_usage_mb), 0) AS ctd_usage_mb,
+      `WITH plan_keys AS (
+         SELECT DISTINCT p.id AS platform_plan_id, TRIM(p.name) AS modem_id
+         FROM platform_plans p
+         JOIN tenant_plan_assignments a ON a.platform_plan_id = p.id
+         WHERE IFNULL(p.active, 1) = 1 AND TRIM(IFNULL(p.name, '')) != ''
+         UNION
+         SELECT DISTINCT p.id AS platform_plan_id, TRIM(p.name) AS modem_id
+         FROM cc_devices d
+         JOIN platform_plans p ON p.id = d.platform_plan_id
+         WHERE d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != ''
+           AND TRIM(IFNULL(p.name, '')) != ''
+           AND (? = '' OR IFNULL(d.customer, '') = ?)
+       )
+       SELECT k.modem_id,
+              (SELECT MAX(d.customer)
+                 FROM cc_devices d
+                WHERE d.platform_plan_id = k.platform_plan_id
+                  AND (? = '' OR IFNULL(d.customer, '') = ?)
+              ) AS customer,
+              (SELECT COUNT(*)
+                 FROM cc_devices d
+                WHERE d.platform_plan_id = k.platform_plan_id
+                  AND (? = '' OR IFNULL(d.customer, '') = ?)
+              ) AS sim_count,
+              (SELECT IFNULL(SUM(d.ctd_usage_mb), 0)
+                 FROM cc_devices d
+                WHERE d.platform_plan_id = k.platform_plan_id
+                  AND (? = '' OR IFNULL(d.customer, '') = ?)
+              ) AS ctd_usage_mb,
               a.allowance_mb AS allowance_mb,
               a.updated_at AS updated_at,
               a.updated_by AS updated_by
-       FROM cc_devices d
-       JOIN platform_plans pp ON pp.id = d.platform_plan_id
-       LEFT JOIN modem_allowances a ON a.modem_id = pp.name
-       WHERE d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != ''
-         AND TRIM(IFNULL(pp.name, '')) != ''
-         AND (? = '' OR IFNULL(d.customer, '') = ?)
-         AND (? = '' OR pp.name LIKE ? OR IFNULL(d.customer, '') LIKE ?)
-       GROUP BY d.platform_plan_id
-       ORDER BY modem_id COLLATE NOCASE
+       FROM plan_keys k
+       LEFT JOIN modem_allowances a ON a.modem_id = k.modem_id
+       WHERE (? = '' OR k.modem_id LIKE ?)
+       ORDER BY k.modem_id COLLATE NOCASE
        LIMIT 2000`,
     )
-    .bind(exact, exact, q, `%${q}%`, `%${q}%`)
+    .bind(
+      exact,
+      exact,
+      exact,
+      exact,
+      exact,
+      exact,
+      exact,
+      exact,
+      q,
+      `%${q}%`,
+    )
     .all<{
       modem_id: string;
       customer: string | null;
