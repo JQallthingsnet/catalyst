@@ -475,8 +475,8 @@ async function mirrorModemIdToPlatformPlanId(
 }
 
 /**
- * Initial Reseller Plan only (first insert / empty platform_plan_id).
- * Never used to overwrite after sell stock — later changes are Catalyst Change plan only.
+ * Initial Reseller Plan (first insert / empty plan / late modem remirror before Change plan).
+ * After a Catalyst Change plan row exists, Jasper modem_ID must not overwrite.
  * 1. modem_ID set → mirror as Reseller Plan as-is (even if not on this contract)
  * 2. modem_ID empty → exactly one Supplier-code match among contracted plans
  * 3. modem_ID empty → contract default Reseller Plan

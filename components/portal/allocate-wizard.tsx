@@ -176,10 +176,10 @@ export function AllocateWizard({
             </p>
           ) : (
             <p className="text-sm text-quiet">
-              Import every SIM with this Jasper <span className="text-ink">Customer</span>. If{" "}
-              <span className="text-ink">modem_ID</span> is set, Reseller Plan is mirrored as-is (even if not on
-              contract — Change plan later). If empty, match by Supplier code (exactly one), else the contract default
-              below. Binding uses{" "}
+              Import every SIM with this Jasper <span className="text-ink">Customer</span>. Prefer{" "}
+              <span className="text-ink">modem_ID</span> as Reseller Plan (mirrored as-is). If modem_ID is still empty
+              at bind time, use Supplier code / contract default below — Sync details later remirror once when
+              modem_ID arrives (until you Change plan). Binding uses{" "}
               <span className="text-ink">{reseller?.adminEmail ?? "the reseller admin email"}</span>.
             </p>
           )}

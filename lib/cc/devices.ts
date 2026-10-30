@@ -444,6 +444,18 @@ async function bindingForCcCustomer(ccCustomer: string): Promise<CcCustomerBindi
   return ccBindingCache.get(key) ?? null;
 }
 
+/**
+ * True when Catalyst Change plan has run for this ICCID.
+ * Until then, a late-arriving Jasper modem_ID may still remirror over a sell-stock default.
+ */
+async function simHasCatalystPlanChange(iccid: string): Promise<boolean> {
+  const row = await getDB()
+    .prepare("SELECT 1 AS ok FROM sim_rate_plan_changes WHERE iccid = ? LIMIT 1")
+    .bind(iccid)
+    .first<{ ok: number }>();
+  return Boolean(row);
+}
+
 /** After Jasper upsert/enrich: if Customer is bound, ensure this ICCID is in that reseller’s Catalyst inventory. */
 async function ensureBoundWarehouseSim(input: {
   iccid: string;
@@ -494,17 +506,40 @@ async function ensureBoundWarehouseSim(input: {
       msisdn: input.msisdn,
       usageMb: input.usageMb,
     }).run();
-    if (!existing.platform_plan_id?.trim() && resolved) {
-      await db
-        .prepare(
-          `UPDATE sims SET platform_plan_id = ?
-           WHERE iccid = ? AND tenant_id = ?
-             AND (platform_plan_id IS NULL OR TRIM(platform_plan_id) = '')`,
-        )
-        .bind(resolved, input.iccid, binding.tenantId)
-        .run();
+
+    let planForCc = existing.platform_plan_id?.trim() || null;
+    if (resolved) {
+      const current = existing.platform_plan_id?.trim() || "";
+      if (!current) {
+        await db
+          .prepare(
+            `UPDATE sims SET platform_plan_id = ?
+             WHERE iccid = ? AND tenant_id = ?
+               AND (platform_plan_id IS NULL OR TRIM(platform_plan_id) = '')`,
+          )
+          .bind(resolved, input.iccid, binding.tenantId)
+          .run();
+        planForCc = resolved;
+      } else if (!modemEmpty && current !== resolved) {
+        // Sell stock often runs before details enrich fills modem_ID, so the contract
+        // default sticks. When modem_ID later appears and Catalyst Change plan has never
+        // run, remirror once so Reseller Plan matches Jasper modem_ID.
+        const currentName = await db
+          .prepare("SELECT name FROM platform_plans WHERE id = ?")
+          .bind(current)
+          .first<{ name: string }>();
+        const modemMatches =
+          (currentName?.name ?? "").trim().toLowerCase() === modemId!.trim().toLowerCase();
+        if (!modemMatches && !(await simHasCatalystPlanChange(input.iccid))) {
+          await db
+            .prepare(`UPDATE sims SET platform_plan_id = ? WHERE iccid = ? AND tenant_id = ?`)
+            .bind(resolved, input.iccid, binding.tenantId)
+            .run();
+          await setCcDevicePlatformPlanId(input.iccid, resolved);
+          planForCc = resolved;
+        }
+      }
     }
-    const planForCc = existing.platform_plan_id?.trim() || resolved;
     if (planForCc) {
       await setCcDevicePlatformPlanId(input.iccid, planForCc, { onlyIfEmpty: true });
     }
@@ -1669,6 +1704,7 @@ async function persistDeviceEnrichment(
     customer: customerRow?.customer,
     status: status || customerRow?.status || "INVENTORY",
     ratePlan,
+    modemId: textOrNull(details?.modemID),
     imsi,
     msisdn,
     usageMb,
@@ -1818,6 +1854,7 @@ async function persistDeviceDetailsOnly(iccid: string, details: JasperDevice | n
     customer: customerRow?.customer,
     status: status || customerRow?.status || "INVENTORY",
     ratePlan,
+    modemId: textOrNull(details?.modemID),
     imsi,
     msisdn,
   });
