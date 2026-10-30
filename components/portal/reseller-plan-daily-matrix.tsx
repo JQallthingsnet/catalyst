@@ -11,9 +11,16 @@ function formatDayHeader(day: string): string {
   return `${m[3]}/${m[2]}`;
 }
 
+/** Fixed sticky widths so Organisation does not cover day 1 (01/MM). */
+const ORG_STICKY = "left-0 w-36 min-w-36 max-w-36";
+const ICCID_STICKY_WITH_ORG = "left-36 w-48 min-w-48 max-w-48";
+const ICCID_STICKY_ONLY = "left-0 w-48 min-w-48 max-w-48";
+
 export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDailyMatrix }) {
   const [selected, setSelected] = useState<{ iccid: string; day: string } | null>(null);
   const showOrg = matrix.includeOrganisation;
+  const firstDay = matrix.days[0];
+  const lastDay = matrix.days[matrix.days.length - 1];
 
   if (matrix.days.length === 0) {
     return (
@@ -43,25 +50,37 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
 
   return (
     <div className="space-y-3">
+      <p className="text-xs text-quiet">
+        Columns {formatDayHeader(firstDay)}
+        {firstDay !== lastDay ? ` → ${formatDayHeader(lastDay)}` : ""}
+        {" · "}
+        {matrix.days.length} Sydney day{matrix.days.length === 1 ? "" : "s"}
+        {showOrg ? " · all organisations" : ""}
+      </p>
       <div className="overflow-x-auto rounded-card border border-line bg-panel">
-        <table className="w-max min-w-full text-left text-sm">
-          <thead className="border-b border-line text-quiet">
+        <table className="border-separate border-spacing-0 text-left text-sm">
+          <thead className="text-quiet">
             <tr>
               {showOrg ? (
-                <th className="sticky left-0 z-10 bg-panel px-3 py-2 font-medium">Organisation</th>
+                <th
+                  className={`sticky z-20 border-b border-line bg-panel px-2 py-2 text-left font-medium ${ORG_STICKY}`}
+                >
+                  Organisation
+                </th>
               ) : null}
               <th
-                className={`sticky z-10 bg-panel px-3 py-2 font-medium ${showOrg ? "left-40" : "left-0"}`}
+                className={`sticky z-20 border-b border-r border-line bg-panel px-2 py-2 text-left font-medium ${
+                  showOrg ? ICCID_STICKY_WITH_ORG : ICCID_STICKY_ONLY
+                }`}
               >
                 ICCID
               </th>
               {matrix.days.map((day) => (
                 <th
                   key={day}
-                  className="h-28 w-9 max-w-9 overflow-hidden px-0 align-bottom font-medium"
+                  className="relative z-0 h-28 w-10 min-w-10 max-w-10 border-b border-line px-0 align-bottom font-medium"
                   title={day}
                 >
-                  {/* writing-mode keeps the label inside the column ( -rotate-90 spilled under sticky ICCID ). */}
                   <div className="flex h-full w-full items-end justify-center pb-1">
                     <span
                       className="text-xs tabular-nums tracking-tight"
@@ -76,15 +95,18 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
           </thead>
           <tbody>
             {matrix.rows.map((row) => (
-              <tr key={`${row.tenantId ?? ""}:${row.iccid}`} className="border-t border-line">
+              <tr key={`${row.tenantId ?? ""}:${row.iccid}`}>
                 {showOrg ? (
-                  <td className="sticky left-0 z-10 max-w-40 truncate bg-panel px-3 py-2 text-xs text-quiet">
+                  <td
+                    className={`sticky z-20 truncate border-b border-line bg-panel px-2 py-2 text-xs text-quiet ${ORG_STICKY}`}
+                    title={row.organisationName ?? undefined}
+                  >
                     {row.organisationName ?? "—"}
                   </td>
                 ) : null}
                 <td
-                  className={`sticky z-10 whitespace-nowrap bg-panel px-3 py-2 font-mono text-xs ${
-                    showOrg ? "left-40" : "left-0"
+                  className={`sticky z-20 border-b border-r border-line bg-panel px-2 py-2 font-mono text-xs ${
+                    showOrg ? ICCID_STICKY_WITH_ORG : ICCID_STICKY_ONLY
                   }`}
                 >
                   {formatIccid(row.iccid)}
@@ -95,7 +117,10 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
                   const hasData = cell.planCount > 0;
                   const changed = cell.planCount > 1;
                   return (
-                    <td key={cell.day} className="w-9 px-0 py-1 text-center">
+                    <td
+                      key={cell.day}
+                      className="relative z-0 w-10 min-w-10 max-w-10 border-b border-line px-0 py-1 text-center"
+                    >
                       {hasData ? (
                         <button
                           type="button"
