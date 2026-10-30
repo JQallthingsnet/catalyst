@@ -58,11 +58,15 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
               {matrix.days.map((day) => (
                 <th
                   key={day}
-                  className="h-28 w-9 px-0 align-bottom font-medium"
+                  className="h-28 w-9 max-w-9 overflow-hidden px-0 align-bottom font-medium"
                   title={day}
                 >
-                  <div className="flex h-full items-end justify-center pb-2">
-                    <span className="inline-block origin-center -rotate-90 whitespace-nowrap text-xs tabular-nums tracking-tight">
+                  {/* writing-mode keeps the label inside the column ( -rotate-90 spilled under sticky ICCID ). */}
+                  <div className="flex h-full w-full items-end justify-center pb-1">
+                    <span
+                      className="text-xs tabular-nums tracking-tight"
+                      style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+                    >
                       {formatDayHeader(day)}
                     </span>
                   </div>
