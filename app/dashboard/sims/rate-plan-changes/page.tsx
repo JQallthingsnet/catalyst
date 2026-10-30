@@ -14,7 +14,7 @@ import {
 } from "@/lib/portal/rate-plan-change";
 import { listSimPlatformPlanDailyMatrix } from "@/lib/portal/sim-platform-plan-daily";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
-import { formatAuDateTime } from "@/lib/portal/time";
+import { formatAuDateTime, sydneyDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
 
 const PAGE_SIZE = 50;
 
@@ -153,14 +153,17 @@ export default async function RatePlanChangesPage({
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
   // Reseller: own org. Super admin: all ICCIDs, or one org when Organisation filter is set.
   const matrixTenantId = onPlatform ? filter.organisationId || undefined : ctx.tenantId;
+  // Daily matrix defaults to Sydney month-to-date when From/To are blank.
+  const matrixDateFrom = filter.dateFrom || sydneyMonthStartDayKey();
+  const matrixDateTo = filter.dateTo || sydneyDayKey();
   const [changes, listedCount, options, dailyMatrix] = await Promise.all([
     listRatePlanChanges(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     countRatePlanChanges(filter),
     listRatePlanChangeFilterOptions({ scopeTenantId: filter.scopeTenantId }),
     listSimPlatformPlanDailyMatrix({
       tenantId: matrixTenantId,
-      dateFrom: filter.dateFrom,
-      dateTo: filter.dateTo,
+      dateFrom: matrixDateFrom,
+      dateTo: matrixDateTo,
     }),
   ]);
   const pageCount = Math.max(1, Math.ceil(listedCount / PAGE_SIZE));
@@ -170,8 +173,8 @@ export default async function RatePlanChangesPage({
   const exportQuery = changesFilterParams(filter, onPlatform).toString();
   const dailyExport = new URLSearchParams();
   if (onPlatform && filter.organisationId) dailyExport.set("org", filter.organisationId);
-  if (filter.dateFrom) dailyExport.set("dateFrom", filter.dateFrom);
-  if (filter.dateTo) dailyExport.set("dateTo", filter.dateTo);
+  dailyExport.set("dateFrom", matrixDateFrom);
+  dailyExport.set("dateTo", matrixDateTo);
 
   return (
     <div>
@@ -215,7 +218,7 @@ export default async function RatePlanChangesPage({
             <input
               type="date"
               name="dateFrom"
-              defaultValue={filter.dateFrom ?? ""}
+              defaultValue={matrixDateFrom}
               className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
             />
           </label>
@@ -224,12 +227,15 @@ export default async function RatePlanChangesPage({
             <input
               type="date"
               name="dateTo"
-              defaultValue={filter.dateTo ?? ""}
+              defaultValue={matrixDateTo}
               className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
             />
           </label>
         </div>
-        <p className="text-xs text-quiet">When dates use Australia/Sydney calendar days. Leave empty to ignore.</p>
+        <p className="text-xs text-quiet">
+          Australia/Sydney calendar days. Daily matrix defaults to this month (1st → today); change log uses the same
+          range when you Apply.
+        </p>
 
         <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
           {onPlatform ? (
@@ -325,8 +331,8 @@ export default async function RatePlanChangesPage({
           <p className="mt-1 text-sm text-quiet">
             Rows are ICCIDs
             {onPlatform ? " (all organisations, or filter Organisation above)" : ""}; every Sydney calendar day in
-            From/To is a column (default last 14 days). Cell value is how many Reseller Plans applied that day (1 =
-            unchanged, 2+ = changed). Click a cell for plan names.
+            From/To is a column (default this calendar month). Cell value is how many Reseller Plans applied that day
+            (1 = unchanged, 2+ = changed). Click a cell for plan names.
           </p>
         </div>
         <ResellerPlanDailyMatrix matrix={dailyMatrix} />

@@ -40,6 +40,12 @@ export function sydneyDayKey(at: Date = new Date()): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/** First day of the current Sydney calendar month as YYYY-MM-DD. */
+export function sydneyMonthStartDayKey(at: Date = new Date()): string {
+  const { year, month } = sydneyYmd(at);
+  return `${year}-${String(month).padStart(2, "0")}-01`;
+}
+
 /** Sydney calendar day `daysAgo` before `at` (0 = today). */
 export function sydneyDayKeyDaysAgo(daysAgo: number, at: Date = new Date()): string {
   const n = Math.max(0, Math.floor(daysAgo));

@@ -1,6 +1,6 @@
 import { getDB } from "@/lib/env";
 import { loadPlatformPlanRecord } from "@/lib/portal/platform-plans";
-import { sydneyDayKey, sydneyDayKeyDaysAgo } from "@/lib/portal/time";
+import { sydneyDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
 
 export type SimPlatformPlanDailyPlan = {
   platformPlanId: string;
@@ -62,7 +62,7 @@ export async function listSimPlatformPlanDailyMatrix(input: {
   const includeOrganisation = !tenantId;
 
   const dateTo = input.dateTo?.trim() || sydneyDayKey();
-  const dateFrom = input.dateFrom?.trim() || sydneyDayKeyDaysAgo(13);
+  const dateFrom = input.dateFrom?.trim() || sydneyMonthStartDayKey();
   const days = enumerateSydneyDays(dateFrom, dateTo);
   if (days.length === 0) return { days: [], rows: [], includeOrganisation };
 
