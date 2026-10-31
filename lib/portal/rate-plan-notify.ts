@@ -3,6 +3,7 @@ import {
   getAlertSetting,
   PLATFORM_ALERT_SCOPE,
 } from "@/lib/portal/alert-settings";
+import { getOrderNotifySetting } from "@/lib/portal/order-notify";
 import { loadTenant } from "@/lib/portal/tenant";
 
 function escapeHtml(value: string): string {
@@ -15,11 +16,13 @@ function escapeHtml(value: string): string {
 
 /**
  * Recipients from Alerts setup:
- * - Super admin (platform) Pool usage recipients
+ * - Super admin Order SIMs recipients (same Alerts page)
+ * - Super admin Pool usage recipients
  * - Reseller Pool + Usage recipients for the SIM's organisation
  */
 export async function recipientsFromAlertSetup(tenantId: string): Promise<string[]> {
-  const [platformPool, resellerPool, resellerUsage] = await Promise.all([
+  const [orderNotify, platformPool, resellerPool, resellerUsage] = await Promise.all([
+    getOrderNotifySetting(),
     getAlertSetting(PLATFORM_ALERT_SCOPE, "pool"),
     getAlertSetting(tenantId, "pool"),
     getAlertSetting(tenantId, "usage"),
@@ -27,6 +30,7 @@ export async function recipientsFromAlertSetup(tenantId: string): Promise<string
   const seen = new Set<string>();
   const out: string[] = [];
   for (const email of [
+    ...orderNotify.recipients,
     ...platformPool.recipients,
     ...resellerPool.recipients,
     ...resellerUsage.recipients,
