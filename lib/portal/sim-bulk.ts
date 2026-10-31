@@ -8,16 +8,23 @@ import { recipientsFromAlertSetup } from "@/lib/portal/rate-plan-notify";
 import { applyLifecycle, writeAudit } from "@/lib/portal/repo";
 import {
   BULK_SIM_CAP,
+  type BulkItemAction,
+  type BulkJobItemInput,
   type BulkJobKind,
   type BulkJobStatus,
 } from "@/lib/portal/sim-bulk-shared";
 import { loadTenant } from "@/lib/portal/tenant";
 
-export { BULK_SIM_CAP, type BulkJobKind, type BulkJobStatus } from "@/lib/portal/sim-bulk-shared";
+export {
+  BULK_SIM_CAP,
+  type BulkItemAction,
+  type BulkJobItemInput,
+  type BulkJobKind,
+  type BulkJobStatus,
+} from "@/lib/portal/sim-bulk-shared";
 
-/** Jasper PUT+GET per SIM — keep each Worker hop short. */
-const LIFECYCLE_CHUNK = 8;
-const RATE_PLAN_CHUNK = 40;
+/** Mixed jobs may include Jasper lifecycle — keep chunks small. */
+const PROCESS_CHUNK = 8;
 
 function escapeHtml(value: string): string {
   return value
@@ -27,90 +34,101 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function isItemAction(value: string): value is BulkItemAction {
+  return value === "Activate" || value === "Deactivate" || value === "rate_plan";
+}
+
 export async function createSimBulkJob(
   tenantId: string,
   actorEmail: string,
-  input: { kind: BulkJobKind; iccids: string[]; platformPlanId?: string },
+  input: { items: BulkJobItemInput[] },
 ): Promise<BulkJobStatus> {
-  const kind = input.kind;
-  if (kind !== "Activate" && kind !== "Deactivate" && kind !== "rate_plan") {
-    throw new Error("Choose Activate, Deactivate, or Reseller Plan.");
+  const byIccid = new Map<string, BulkJobItemInput>();
+  for (const raw of input.items) {
+    const iccid = raw.iccid.replace(/\s/g, "");
+    if (!iccid) continue;
+    if (!isItemAction(raw.action)) throw new Error(`Invalid action for ${iccid}.`);
+    byIccid.set(iccid, {
+      iccid,
+      action: raw.action,
+      platformPlanId: raw.platformPlanId?.trim() || undefined,
+    });
   }
-
-  const cleaned = [
-    ...new Set(input.iccids.map((value) => value.replace(/\s/g, "")).filter(Boolean)),
-  ];
-  if (cleaned.length === 0) throw new Error("Select at least one SIM.");
-  if (cleaned.length > BULK_SIM_CAP) {
-    throw new Error(`Max ${BULK_SIM_CAP} SIMs per update.`);
-  }
-
-  let platformPlanId: string | null = null;
-  if (kind === "rate_plan") {
-    platformPlanId = input.platformPlanId?.trim() || null;
-    if (!platformPlanId) throw new Error("Choose a Reseller Plan.");
-    if (!(await tenantHasPlatformPlan(tenantId, platformPlanId))) {
-      throw new Error("That rate plan is not on this reseller’s contract.");
-    }
-    const plan = await loadPlatformPlanRecord(platformPlanId);
-    if (!plan?.active) throw new Error("That rate plan is deactivated.");
-  }
+  const items = [...byIccid.values()];
+  if (items.length === 0) throw new Error("Select at least one SIM with an action.");
+  if (items.length > BULK_SIM_CAP) throw new Error(`Max ${BULK_SIM_CAP} SIMs per update.`);
 
   const db = getDB();
-  const placeholders = cleaned.map(() => "?").join(",");
+  const placeholders = items.map(() => "?").join(",");
   const owned = await db
     .prepare(
       `SELECT iccid, state FROM sims WHERE tenant_id = ? AND iccid IN (${placeholders})`,
     )
-    .bind(tenantId, ...cleaned)
+    .bind(tenantId, ...items.map((item) => item.iccid))
     .all<{ iccid: string; state: SimState }>();
-  const byIccid = new Map((owned.results ?? []).map((row) => [row.iccid, row.state]));
-  for (const iccid of cleaned) {
-    if (!byIccid.has(iccid)) throw new Error(`SIM ${iccid} is not in this organisation.`);
-  }
+  const stateByIccid = new Map((owned.results ?? []).map((row) => [row.iccid, row.state]));
 
-  if (kind === "Activate" || kind === "Deactivate") {
-    for (const iccid of cleaned) {
-      const state = byIccid.get(iccid)!;
-      if (!lifecycleTarget(kind, state)) {
-        throw new Error(`${kind} is not valid from ${state} (${iccid}).`);
+  const planCache = new Map<string, boolean>();
+  for (const item of items) {
+    if (!stateByIccid.has(item.iccid)) {
+      throw new Error(`SIM ${item.iccid} is not in this organisation.`);
+    }
+    const state = stateByIccid.get(item.iccid)!;
+    if (item.action === "Activate" || item.action === "Deactivate") {
+      if (!lifecycleTarget(item.action, state)) {
+        throw new Error(`${item.action} is not valid from ${state} (${item.iccid}).`);
       }
+    } else {
+      const planId = item.platformPlanId;
+      if (!planId) throw new Error(`Choose a Reseller Plan for ${item.iccid}.`);
+      let allowed = planCache.get(planId);
+      if (allowed == null) {
+        allowed = await tenantHasPlatformPlan(tenantId, planId);
+        planCache.set(planId, allowed);
+        if (allowed) {
+          const plan = await loadPlatformPlanRecord(planId);
+          if (!plan?.active) throw new Error(`Reseller Plan is deactivated (${planId}).`);
+        }
+      }
+      if (!allowed) throw new Error(`That rate plan is not on this reseller’s contract (${item.iccid}).`);
     }
   }
 
   const id = newId("sbj");
   const now = new Date().toISOString();
+  const kinds = new Set(items.map((item) => item.action));
+  const jobKind: BulkJobKind = kinds.size === 1 ? [...kinds][0]! : "mixed";
+
   await db
     .prepare(
       `INSERT INTO sim_bulk_jobs
         (id, tenant_id, kind, platform_plan_id, status, total, done, ok_count, failed_count,
          actor_email, created_at, updated_at, notified_at)
-       VALUES (?, ?, ?, ?, 'queued', ?, 0, 0, 0, ?, ?, ?, NULL)`,
+       VALUES (?, ?, ?, NULL, 'queued', ?, 0, 0, 0, ?, ?, ?, NULL)`,
     )
-    .bind(id, tenantId, kind, platformPlanId, cleaned.length, actorEmail, now, now)
+    .bind(id, tenantId, jobKind, items.length, actorEmail, now, now)
     .run();
 
-  const stmts = cleaned.map((iccid) => {
+  const stmts = items.map((item) => {
     const itemId = newId("sbi");
     return db
       .prepare(
-        `INSERT INTO sim_bulk_job_items (id, job_id, iccid, status, error, updated_at)
-         VALUES (?, ?, ?, 'pending', NULL, ?)`,
+        `INSERT INTO sim_bulk_job_items
+          (id, job_id, iccid, action, platform_plan_id, status, error, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?)`,
       )
-      .bind(itemId, id, iccid, now);
+      .bind(itemId, id, item.iccid, item.action, item.platformPlanId ?? null, now);
   });
   await db.batch(stmts);
 
-  const label =
-    kind === "rate_plan" ? `Reseller Plan bulk (${cleaned.length})` : `${kind} bulk (${cleaned.length})`;
   await writeAudit(
     tenantId,
     actorEmail,
-    kind === "rate_plan" ? "rate_plan" : "lifecycle",
-    `Bulk job ${id}: ${label}`,
+    jobKind === "rate_plan" ? "rate_plan" : "lifecycle",
+    `Bulk job ${id}: ${items.length} SIM(s) · ${jobKind}`,
   );
 
-  return getSimBulkJob(tenantId, id) as Promise<BulkJobStatus>;
+  return (await getSimBulkJob(tenantId, id))!;
 }
 
 export async function getSimBulkJob(tenantId: string, jobId: string): Promise<BulkJobStatus | null> {
@@ -163,15 +181,14 @@ export async function processSimBulkJobChunk(
   if (!job) throw new Error("Bulk job not found.");
   if (job.status === "completed" || job.status === "failed") return job;
 
-  const chunkSize = job.kind === "rate_plan" ? RATE_PLAN_CHUNK : LIFECYCLE_CHUNK;
   const pending = await db
     .prepare(
-      `SELECT id, iccid FROM sim_bulk_job_items
+      `SELECT id, iccid, action, platform_plan_id FROM sim_bulk_job_items
        WHERE job_id = ? AND status = 'pending'
        ORDER BY iccid ASC LIMIT ?`,
     )
-    .bind(jobId, chunkSize)
-    .all<{ id: string; iccid: string }>();
+    .bind(jobId, PROCESS_CHUNK)
+    .all<{ id: string; iccid: string; action: string | null; platform_plan_id: string | null }>();
   const items = pending.results ?? [];
 
   const now = new Date().toISOString();
@@ -198,19 +215,24 @@ export async function processSimBulkJobChunk(
 
   for (const item of items) {
     const stamp = new Date().toISOString();
+    const action = item.action ?? job.kind;
     try {
-      if (job.kind === "rate_plan") {
+      if (action === "rate_plan") {
+        const planId = item.platform_plan_id ?? job.platformPlanId;
+        if (!planId) throw new Error("Reseller Plan missing.");
         await changeSimRatePlan(tenantId, actorEmail, {
           iccid: item.iccid,
-          platformPlanId: job.platformPlanId!,
+          platformPlanId: planId,
+          skipNotify: true,
+        });
+      } else if (action === "Activate" || action === "Deactivate") {
+        await applyLifecycle(tenantId, actorEmail, {
+          iccid: item.iccid,
+          action,
           skipNotify: true,
         });
       } else {
-        await applyLifecycle(tenantId, actorEmail, {
-          iccid: item.iccid,
-          action: job.kind,
-          skipNotify: true,
-        });
+        throw new Error(`Unknown action ${action}.`);
       }
       await db
         .prepare(
@@ -278,24 +300,30 @@ async function notifyBulkJobComplete(tenantId: string, jobId: string): Promise<v
 
   const tenant = await loadTenant(tenantId);
   const orgName = tenant?.name?.trim() || "Organisation";
-  let actionLabel: string = job.kind;
-  if (job.kind === "rate_plan" && job.platformPlanId) {
-    const plan = await loadPlatformPlanRecord(job.platformPlanId);
-    actionLabel = `Reseller Plan → ${plan?.name ?? job.platformPlanId}`;
-  }
+
+  const actionCounts = await db
+    .prepare(
+      `SELECT action, COUNT(*) as c FROM sim_bulk_job_items WHERE job_id = ? GROUP BY action`,
+    )
+    .bind(jobId)
+    .all<{ action: string | null; c: number }>();
+  const actionLabel =
+    (actionCounts.results ?? [])
+      .map((row) => `${row.action ?? "—"} × ${row.c}`)
+      .join(", ") || job.kind;
 
   const failures = await db
     .prepare(
-      `SELECT iccid, error FROM sim_bulk_job_items
+      `SELECT iccid, action, error FROM sim_bulk_job_items
        WHERE job_id = ? AND status = 'failed' ORDER BY iccid ASC LIMIT 20`,
     )
     .bind(jobId)
-    .all<{ iccid: string; error: string | null }>();
+    .all<{ iccid: string; action: string | null; error: string | null }>();
 
   const failRows = (failures.results ?? [])
     .map(
       (item) =>
-        `<tr><td style="padding:4px 8px;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(item.iccid)}</td><td style="padding:4px 8px;color:#b91c1c;font-size:12px;">${escapeHtml(item.error ?? "failed")}</td></tr>`,
+        `<tr><td style="padding:4px 8px;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(item.iccid)}</td><td style="padding:4px 8px;font-size:12px;">${escapeHtml(item.action ?? "")}</td><td style="padding:4px 8px;color:#b91c1c;font-size:12px;">${escapeHtml(item.error ?? "failed")}</td></tr>`,
     )
     .join("");
 
@@ -306,7 +334,7 @@ async function notifyBulkJobComplete(tenantId: string, jobId: string): Promise<v
     <h2 style="margin:8px 0 16px;color:#111827;">Bulk SIM update finished</h2>
     <table style="width:100%;border-collapse:collapse;font-size:14px;color:#111827;">
       <tr><td style="padding:6px 0;color:#6b7280;">Organisation</td><td style="padding:6px 0;">${escapeHtml(orgName)}</td></tr>
-      <tr><td style="padding:6px 0;color:#6b7280;">Action</td><td style="padding:6px 0;">${escapeHtml(actionLabel)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Actions</td><td style="padding:6px 0;">${escapeHtml(actionLabel)}</td></tr>
       <tr><td style="padding:6px 0;color:#6b7280;">Result</td><td style="padding:6px 0;">${job.okCount} ok · ${job.failedCount} failed · ${job.total} total</td></tr>
       <tr><td style="padding:6px 0;color:#6b7280;">By</td><td style="padding:6px 0;">${escapeHtml(job.actorEmail)}</td></tr>
     </table>

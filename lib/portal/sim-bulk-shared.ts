@@ -1,7 +1,10 @@
 /** Shared with client UI — keep free of server-only imports. */
 export const BULK_SIM_CAP = 100;
 
-export type BulkJobKind = "Activate" | "Deactivate" | "rate_plan";
+export type BulkItemAction = "Activate" | "Deactivate" | "rate_plan";
+
+/** @deprecated Job-level kind; prefer per-item BulkItemAction. Kept for status payloads. */
+export type BulkJobKind = BulkItemAction | "mixed";
 
 export type BulkJobStatus = {
   id: string;
@@ -15,4 +18,10 @@ export type BulkJobStatus = {
   actorEmail: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type BulkJobItemInput = {
+  iccid: string;
+  action: BulkItemAction;
+  platformPlanId?: string;
 };

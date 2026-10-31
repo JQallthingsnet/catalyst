@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS sim_bulk_job_items (
   id TEXT PRIMARY KEY,
   job_id TEXT NOT NULL,
   iccid TEXT NOT NULL,
+  action TEXT,
+  platform_plan_id TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT,
   updated_at TEXT NOT NULL
