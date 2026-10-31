@@ -13,9 +13,10 @@ import {
   jasperCallsRemaining,
   jasperConfigured,
   jasperHasBudget,
+  updateJasperDeviceStatus,
   type JasperDevice,
 } from "@/lib/cc/client";
-import { type SimState } from "@/lib/portal/catalogue";
+import { type JasperLifecycleStatus, type SimState } from "@/lib/portal/catalogue";
 import { newId } from "@/lib/portal/ids";
 import { DEFAULT_PLAN_SUPPLIER, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
 import {
@@ -228,8 +229,15 @@ function sessionPatchFromInfo(
 export function mapCcStatus(status: string): SimState | null {
   const value = status.trim().toUpperCase().replace(/[\s-]+/g, "_");
   if (value === "ACTIVATED" || value === "ACTIVE") return "Active";
-  if (value === "SUSPENDED") return "Suspended";
-  if (value === "DEACTIVATED" || value === "RETIRED" || value === "PURGED") return "Deactivated";
+  // No first-class Jasper Suspend — treat as off (same radio outcome as Deactivated).
+  if (
+    value === "SUSPENDED" ||
+    value === "DEACTIVATED" ||
+    value === "RETIRED" ||
+    value === "PURGED"
+  ) {
+    return "Deactivated";
+  }
   if (
     value === "INVENTORY" ||
     value === "TEST_READY" ||
@@ -240,6 +248,40 @@ export function mapCcStatus(status: string): SimState | null {
     return "Ready";
   }
   return null;
+}
+
+/**
+ * Push SIM status to Jasper, then GET details and overlay Catalyst (`cc_devices` + `sims`).
+ * Returns the portal state derived from what Jasper reports (source of truth).
+ */
+export async function pushAndSyncSimLifecycle(
+  iccid: string,
+  jasperStatus: JasperLifecycleStatus,
+): Promise<{ state: SimState; ccStatus: string }> {
+  const cleaned = iccid.replace(/\s/g, "");
+  if (!jasperConfigured()) {
+    throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
+  }
+  beginJasperBudget(4);
+  await updateJasperDeviceStatus(cleaned, jasperStatus);
+  const details = await fetchJasperDeviceDetails(cleaned);
+  if (!details?.status) {
+    throw new Error("Control Center accepted the change but returned no device status — Sync and retry.");
+  }
+  const now = isoNow();
+  await persistDevices([details], now);
+  await overlaySim(cleaned, {
+    status: details.status,
+    ratePlan: details.ratePlan ?? null,
+    polledAt: now,
+    imsi: textOrNull(details.imsi),
+    msisdn: textOrNull(details.msisdn),
+  });
+  const state = mapCcStatus(details.status);
+  if (!state) {
+    throw new Error(`Control Center status "${details.status}" is not mapped in Catalyst.`);
+  }
+  return { state, ccStatus: details.status };
 }
 
 export type CcCustomerDevice = {
