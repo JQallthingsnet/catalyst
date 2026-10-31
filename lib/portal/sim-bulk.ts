@@ -43,28 +43,35 @@ export async function createSimBulkJob(
   actorEmail: string,
   input: { items: BulkJobItemInput[] },
 ): Promise<BulkJobStatus> {
-  const byIccid = new Map<string, BulkJobItemInput>();
+  // One ICCID may appear twice (lifecycle + Reseller Plan) in the same bulk run.
+  const seen = new Set<string>();
+  const items: BulkJobItemInput[] = [];
   for (const raw of input.items) {
     const iccid = raw.iccid.replace(/\s/g, "");
     if (!iccid) continue;
     if (!isItemAction(raw.action)) throw new Error(`Invalid action for ${iccid}.`);
-    byIccid.set(iccid, {
+    const key = `${iccid}:${raw.action}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({
       iccid,
       action: raw.action,
       platformPlanId: raw.platformPlanId?.trim() || undefined,
     });
   }
-  const items = [...byIccid.values()];
   if (items.length === 0) throw new Error("Select at least one SIM with an action.");
-  if (items.length > BULK_SIM_CAP) throw new Error(`Max ${BULK_SIM_CAP} SIMs per update.`);
+  const uniqueIccids = [...new Set(items.map((item) => item.iccid))];
+  if (uniqueIccids.length > BULK_SIM_CAP) {
+    throw new Error(`Max ${BULK_SIM_CAP} SIMs per update.`);
+  }
 
   const db = getDB();
-  const placeholders = items.map(() => "?").join(",");
+  const placeholders = uniqueIccids.map(() => "?").join(",");
   const owned = await db
     .prepare(
       `SELECT iccid, state FROM sims WHERE tenant_id = ? AND iccid IN (${placeholders})`,
     )
-    .bind(tenantId, ...items.map((item) => item.iccid))
+    .bind(tenantId, ...uniqueIccids)
     .all<{ iccid: string; state: SimState }>();
   const stateByIccid = new Map((owned.results ?? []).map((row) => [row.iccid, row.state]));
 
@@ -125,7 +132,7 @@ export async function createSimBulkJob(
     tenantId,
     actorEmail,
     jobKind === "rate_plan" ? "rate_plan" : "lifecycle",
-    `Bulk job ${id}: ${items.length} SIM(s) · ${jobKind}`,
+    `Bulk job ${id}: ${uniqueIccids.length} SIM(s) · ${items.length} change(s) · ${jobKind}`,
   );
 
   return (await getSimBulkJob(tenantId, id))!;

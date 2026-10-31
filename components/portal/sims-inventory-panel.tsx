@@ -10,7 +10,6 @@ import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { lifecycleTarget, type SimState } from "@/lib/portal/catalogue";
 import {
   BULK_SIM_CAP,
-  type BulkItemAction,
   type BulkJobItemInput,
   type BulkJobStatus,
 } from "@/lib/portal/sim-bulk-shared";
@@ -39,9 +38,10 @@ type Fields = {
   ccStatus?: boolean;
 };
 
-type StagedAction = {
-  action: BulkItemAction;
-  platformPlanId?: string;
+/** Per-column choices while selected - lifecycle and plan are independent. */
+type StagedRow = {
+  lifecycle: "" | "Activate" | "Deactivate";
+  platformPlanId: string;
 };
 
 function asSimState(value: string): SimState | null {
@@ -51,21 +51,17 @@ function asSimState(value: string): SimState | null {
   return null;
 }
 
-function defaultActionForState(state: string, canChangePlan: boolean): StagedAction | null {
+function defaultLifecycle(state: string): StagedRow["lifecycle"] {
   const simState = asSimState(state);
-  if (!simState) return null;
-  if (lifecycleTarget("Deactivate", simState)) return { action: "Deactivate" };
-  if (lifecycleTarget("Activate", simState)) return { action: "Activate" };
-  if (canChangePlan) return { action: "rate_plan", platformPlanId: undefined };
-  return null;
+  if (!simState) return "";
+  if (lifecycleTarget("Deactivate", simState)) return "Deactivate";
+  if (lifecycleTarget("Activate", simState)) return "Activate";
+  return "";
 }
 
-function actionReady(staged: StagedAction | undefined, canChangePlan: boolean): boolean {
+function rowReady(staged: StagedRow | undefined): boolean {
   if (!staged) return false;
-  if (staged.action === "rate_plan") {
-    return canChangePlan && Boolean(staged.platformPlanId);
-  }
-  return staged.action === "Activate" || staged.action === "Deactivate";
+  return staged.lifecycle !== "" || staged.platformPlanId !== "";
 }
 
 export function SimsInventoryPanel({
@@ -86,7 +82,7 @@ export function SimsInventoryPanel({
   headerLinks: ReactNode;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
-  const [staged, setStaged] = useState<Record<string, StagedAction>>({});
+  const [staged, setStaged] = useState<Record<string, StagedRow>>({});
   const [bulkOpen, setBulkOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -96,21 +92,27 @@ export function SimsInventoryPanel({
   const selectionActive = selected.length > 0;
 
   const allReady = useMemo(
-    () => selected.length > 0 && selected.every((iccid) => actionReady(staged[iccid], canChangePlan)),
-    [selected, staged, canChangePlan],
+    () => selected.length > 0 && selected.every((iccid) => rowReady(staged[iccid])),
+    [selected, staged],
   );
 
   const summary = useMemo(() => {
     const counts = { Activate: 0, Deactivate: 0, rate_plan: 0 };
     for (const iccid of selected) {
-      const action = staged[iccid]?.action;
-      if (action) counts[action] += 1;
+      const row = staged[iccid];
+      if (!row) continue;
+      if (row.lifecycle === "Activate") counts.Activate += 1;
+      if (row.lifecycle === "Deactivate") counts.Deactivate += 1;
+      if (row.platformPlanId) counts.rate_plan += 1;
     }
     return counts;
   }, [selected, staged]);
 
-  function setRowAction(iccid: string, next: StagedAction) {
-    setStaged((current) => ({ ...current, [iccid]: next }));
+  function patchStaged(iccid: string, patch: Partial<StagedRow>) {
+    setStaged((current) => {
+      const prev = current[iccid] ?? { lifecycle: "", platformPlanId: "" };
+      return { ...current, [iccid]: { ...prev, ...patch } };
+    });
   }
 
   function toggle(iccid: string, state: string) {
@@ -124,46 +126,47 @@ export function SimsInventoryPanel({
         return current.filter((id) => id !== iccid);
       }
       if (current.length >= BULK_SIM_CAP) return current;
-      const def = defaultActionForState(state, canChangePlan);
-      if (def) {
-        setStaged((prev) => ({
-          ...prev,
-          [iccid]: {
-            ...def,
-            platformPlanId:
-              def.action === "rate_plan"
-                ? planOptions.find((p) => p.id !== sims.find((s) => s.iccid === iccid)?.platformPlanId)?.id ??
-                  planOptions[0]?.id
-                : undefined,
-          },
-        }));
-      }
+      setStaged((prev) => ({
+        ...prev,
+        [iccid]: { lifecycle: defaultLifecycle(state), platformPlanId: "" },
+      }));
       return [...current, iccid];
     });
   }
 
   function toggleAll() {
-    const capIds = sims.map((sim) => sim.iccid).slice(0, BULK_SIM_CAP);
+    const capSims = sims.slice(0, BULK_SIM_CAP);
+    const capIds = capSims.map((sim) => sim.iccid);
     const allCapSelected = capIds.length > 0 && capIds.every((id) => selected.includes(id));
     if (allCapSelected) {
       setSelected([]);
       setStaged({});
       return;
     }
-    const nextStaged: Record<string, StagedAction> = {};
-    for (const sim of sims.slice(0, BULK_SIM_CAP)) {
-      const def = defaultActionForState(sim.state, canChangePlan);
-      if (!def) continue;
+    const nextStaged: Record<string, StagedRow> = {};
+    for (const sim of capSims) {
       nextStaged[sim.iccid] = {
-        ...def,
-        platformPlanId:
-          def.action === "rate_plan"
-            ? planOptions.find((p) => p.id !== sim.platformPlanId)?.id ?? planOptions[0]?.id
-            : undefined,
+        lifecycle: defaultLifecycle(sim.state),
+        platformPlanId: "",
       };
     }
     setSelected(Object.keys(nextStaged));
     setStaged(nextStaged);
+  }
+
+  function buildItems(): BulkJobItemInput[] {
+    const items: BulkJobItemInput[] = [];
+    for (const iccid of selected) {
+      const row = staged[iccid];
+      if (!row) continue;
+      if (row.lifecycle === "Activate" || row.lifecycle === "Deactivate") {
+        items.push({ iccid, action: row.lifecycle });
+      }
+      if (row.platformPlanId) {
+        items.push({ iccid, action: "rate_plan", platformPlanId: row.platformPlanId });
+      }
+    }
+    return items;
   }
 
   function openBulk() {
@@ -187,14 +190,11 @@ export function SimsInventoryPanel({
 
   async function submitBulk() {
     if (!allReady) return;
-    const items: BulkJobItemInput[] = selected.map((iccid) => {
-      const row = staged[iccid]!;
-      return {
-        iccid,
-        action: row.action,
-        platformPlanId: row.action === "rate_plan" ? row.platformPlanId : undefined,
-      };
-    });
+    const items = buildItems();
+    if (items.length === 0) {
+      setError("Choose a lifecycle action and/or Reseller Plan on each selected SIM.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -223,6 +223,7 @@ export function SimsInventoryPanel({
     sims.length > 0 &&
     sims.slice(0, BULK_SIM_CAP).every((sim) => selected.includes(sim.iccid)) &&
     selected.length > 0;
+  const changeCount = summary.Activate + summary.Deactivate + summary.rate_plan;
 
   return (
     <div>
@@ -230,7 +231,7 @@ export function SimsInventoryPanel({
         <div>
           <h1 className="text-3xl font-semibold">SIMs</h1>
           <p className="mt-1 text-sm text-quiet">
-            Select SIMs (max {BULK_SIM_CAP}), choose an action per row, then Bulk update.
+            Select SIMs (max {BULK_SIM_CAP}). Set Lifecycle and/or Reseller Plan per row, then Bulk update.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -245,7 +246,7 @@ export function SimsInventoryPanel({
                   ? "Select SIMs first"
                   : allReady
                     ? undefined
-                    : "Set an action on every selected SIM"
+                    : "Set Lifecycle and/or Reseller Plan on every selected SIM"
               }
               className={selectionActive ? btnPrimary : btnSecondary}
             >
@@ -267,7 +268,7 @@ export function SimsInventoryPanel({
           {summary.Activate ? ` · Activate ${summary.Activate}` : ""}
           {summary.Deactivate ? ` · Deactivate ${summary.Deactivate}` : ""}
           {summary.rate_plan ? ` · Plan ${summary.rate_plan}` : ""}
-          {!allReady ? " · finish choosing actions on each selected row" : ""}.
+          {!allReady ? " · pick Lifecycle and/or Reseller Plan on each selected row" : ""}.
           <button
             type="button"
             className="ml-2 text-accent hover:underline"
@@ -307,7 +308,7 @@ export function SimsInventoryPanel({
               <th className="px-4 py-3">CTD MB</th>
               <th className="px-4 py-3">Pool</th>
               <th className="px-4 py-3">State</th>
-              <th className="px-4 py-3">Lifecycle / action</th>
+              <th className="px-4 py-3">Lifecycle</th>
               {canChangePlan ? <th className="px-4 py-3">Reseller Plan</th> : null}
             </tr>
           </thead>
@@ -317,6 +318,7 @@ export function SimsInventoryPanel({
               const rowLocked = atCap && !checked;
               const rowStaged = staged[sim.iccid];
               const simState = asSimState(sim.state);
+              const dash = "—";
               return (
                 <tr key={sim.id} className={`border-t border-line ${rowLocked ? "opacity-40" : ""}`}>
                   {canLifecycle ? (
@@ -330,80 +332,45 @@ export function SimsInventoryPanel({
                       />
                     </td>
                   ) : null}
-                  {fields.tenantName ? <td className="px-4 py-3">{sim.tenantName ?? "—"}</td> : null}
+                  {fields.tenantName ? <td className="px-4 py-3">{sim.tenantName ?? dash}</td> : null}
                   <td className="px-4 py-3 font-mono">{formatIccid(sim.iccid)}</td>
-                  <td className="px-4 py-3">{sim.customerName ?? "—"}</td>
-                  <td className="px-4 py-3">{sim.planName ?? "—"}</td>
-                  {fields.platformPlan ? <td className="px-4 py-3">{sim.platformPlanName ?? "—"}</td> : null}
-                  {fields.ccRatePlan ? <td className="px-4 py-3">{sim.wholesalePlan ?? "—"}</td> : null}
-                  {fields.ccStatus ? <td className="px-4 py-3">{sim.ccStatus ?? "—"}</td> : null}
-                  <td className="px-4 py-3 font-mono">{sim.imsi ?? "—"}</td>
-                  <td className="px-4 py-3 font-mono">{sim.msisdn ?? "—"}</td>
+                  <td className="px-4 py-3">{sim.customerName ?? dash}</td>
+                  <td className="px-4 py-3">{sim.planName ?? dash}</td>
+                  {fields.platformPlan ? <td className="px-4 py-3">{sim.platformPlanName ?? dash}</td> : null}
+                  {fields.ccRatePlan ? <td className="px-4 py-3">{sim.wholesalePlan ?? dash}</td> : null}
+                  {fields.ccStatus ? <td className="px-4 py-3">{sim.ccStatus ?? dash}</td> : null}
+                  <td className="px-4 py-3 font-mono">{sim.imsi ?? dash}</td>
+                  <td className="px-4 py-3 font-mono">{sim.msisdn ?? dash}</td>
                   <td className="px-4 py-3">
-                    {sim.currentVolumeMb != null ? `${sim.currentVolumeMb} MB` : "—"}
+                    {sim.currentVolumeMb != null ? `${sim.currentVolumeMb} MB` : dash}
                   </td>
-                  <td className="px-4 py-3">{sim.poolName ?? "—"}</td>
+                  <td className="px-4 py-3">{sim.poolName ?? dash}</td>
                   <td className="px-4 py-3">{sim.state}</td>
                   <td className="px-4 py-3">
                     {checked && canLifecycle ? (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <select
-                          value={rowStaged?.action ?? ""}
-                          onChange={(event) => {
-                            const action = event.target.value as BulkItemAction;
-                            if (action === "rate_plan") {
-                              setRowAction(sim.iccid, {
-                                action,
-                                platformPlanId:
-                                  planOptions.find((p) => p.id !== sim.platformPlanId)?.id ??
-                                  planOptions[0]?.id,
-                              });
-                            } else {
-                              setRowAction(sim.iccid, { action });
-                            }
-                          }}
-                          className="rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
+                      <select
+                        value={rowStaged?.lifecycle ?? ""}
+                        onChange={(event) =>
+                          patchStaged(sim.iccid, {
+                            lifecycle: event.target.value as StagedRow["lifecycle"],
+                          })
+                        }
+                        className="rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
+                      >
+                        <option value="">No change</option>
+                        <option
+                          value="Activate"
+                          disabled={!(simState && lifecycleTarget("Activate", simState))}
                         >
-                          <option value="" disabled>
-                            Choose…
-                          </option>
-                          <option
-                            value="Activate"
-                            disabled={!(simState && lifecycleTarget("Activate", simState))}
-                          >
-                            Activate
-                          </option>
-                          <option
-                            value="Deactivate"
-                            disabled={!(simState && lifecycleTarget("Deactivate", simState))}
-                          >
-                            Deactivate
-                          </option>
-                          {canChangePlan ? <option value="rate_plan">Change Reseller Plan</option> : null}
-                        </select>
-                        {rowStaged?.action === "rate_plan" ? (
-                          <select
-                            value={rowStaged.platformPlanId ?? ""}
-                            onChange={(event) =>
-                              setRowAction(sim.iccid, {
-                                action: "rate_plan",
-                                platformPlanId: event.target.value,
-                              })
-                            }
-                            className="max-w-36 rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
-                          >
-                            {planOptions.length === 0 ? (
-                              <option value="">No plans</option>
-                            ) : (
-                              planOptions.map((plan) => (
-                                <option key={plan.id} value={plan.id}>
-                                  {plan.label}
-                                </option>
-                              ))
-                            )}
-                          </select>
-                        ) : null}
-                      </div>
+                          Activate
+                        </option>
+                        <option
+                          value="Deactivate"
+                          disabled={!(simState && lifecycleTarget("Deactivate", simState))}
+                        >
+                          Deactivate
+                        </option>
+                      </select>
                     ) : canLifecycle ? (
                       <LifecycleButtons iccid={sim.iccid} state={sim.state} />
                     ) : (
@@ -413,7 +380,20 @@ export function SimsInventoryPanel({
                   {canChangePlan ? (
                     <td className="px-4 py-3">
                       {checked ? (
-                        <span className="text-[11px] text-quiet">Use action column</span>
+                        <select
+                          value={rowStaged?.platformPlanId ?? ""}
+                          onChange={(event) =>
+                            patchStaged(sim.iccid, { platformPlanId: event.target.value })
+                          }
+                          className="max-w-40 rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
+                        >
+                          <option value="">No change</option>
+                          {planOptions.map((plan) => (
+                            <option key={plan.id} value={plan.id}>
+                              {plan.label}
+                            </option>
+                          ))}
+                        </select>
                       ) : (
                         <ChangeRatePlanButton
                           iccid={sim.iccid}
@@ -440,8 +420,10 @@ export function SimsInventoryPanel({
               {!job ? (
                 <div className="space-y-2 text-sm">
                   <p>
-                    Push <span className="font-medium text-ink">{selected.length}</span> change
-                    {selected.length === 1 ? "" : "s"} (actions can differ per SIM):
+                    Push <span className="font-medium text-ink">{changeCount}</span> change
+                    {changeCount === 1 ? "" : "s"} across{" "}
+                    <span className="font-medium text-ink">{selected.length}</span> SIM
+                    {selected.length === 1 ? "" : "s"}:
                   </p>
                   <ul className="list-inside list-disc text-quiet">
                     {summary.Activate ? <li>Activate · {summary.Activate}</li> : null}
@@ -459,7 +441,7 @@ export function SimsInventoryPanel({
                   </div>
                   <p className="text-sm">
                     {job.status === "completed"
-                      ? `Finished — ${job.okCount} ok${job.failedCount ? `, ${job.failedCount} failed` : ""}.`
+                      ? `Finished - ${job.okCount} ok${job.failedCount ? `, ${job.failedCount} failed` : ""}.`
                       : `Working… ${job.done} of ${job.total}`}
                   </p>
                 </div>
@@ -467,7 +449,9 @@ export function SimsInventoryPanel({
             </div>
           }
           confirmLabel={
-            job?.status === "completed" ? "Done" : `Run ${selected.length} update${selected.length === 1 ? "" : "s"}`
+            job?.status === "completed"
+              ? "Done"
+              : `Run ${changeCount} update${changeCount === 1 ? "" : "s"}`
           }
           tone="accent"
           busy={busy}
