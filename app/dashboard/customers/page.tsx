@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { CustomerRowActions } from "@/components/portal/customer-row-actions";
 import { NameForm } from "@/components/portal/name-form";
 import { requirePortal } from "@/lib/portal/guard";
-import { listCustomers } from "@/lib/portal/repo";
+import { listCustomersWithSimCount } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
 
 export default async function CustomersPage() {
@@ -12,29 +13,52 @@ export default async function CustomersPage() {
     redirect("/dashboard/estate");
   }
 
-  const customers = await listCustomers(ctx.tenantId);
+  const customers = await listCustomersWithSimCount(ctx.tenantId);
+  const canManage = can(ctx.role, "customer.create");
 
   return (
     <div>
       <h1 className="text-3xl font-semibold">Customers</h1>
-      <p className="mt-1 text-sm text-quiet">End customers of this reseller. Isolated by tenant.</p>
-      {can(ctx.role, "customer.create") ? (
+      <p className="mt-1 text-sm text-quiet">
+        End customers of this reseller. Add, rename, or remove — SIMs stay in your inventory if you
+        remove a customer.
+      </p>
+      {canManage ? (
         <div className="mt-6 rounded-card border border-line bg-panel p-5">
           <NameForm kind="customer" placeholder="Customer name" button="Add customer" />
         </div>
       ) : null}
       <ul className="mt-4 space-y-2">
         {customers.length === 0 ? (
-          <li className="rounded-card border border-line bg-panel px-4 py-3 text-sm text-quiet">No customers yet.</li>
+          <li className="rounded-card border border-line bg-panel px-4 py-3 text-sm text-quiet">
+            No customers yet.
+          </li>
         ) : null}
         {customers.map((customer) => (
-          <li key={customer.id} className="flex items-center justify-between rounded-card border border-line bg-panel px-4 py-3">
-            <span>{customer.name}</span>
-            {can(ctx.role, "assign") ? (
-              <Link href="/dashboard/sims/assign" className="text-sm text-accent">
-                Assign SIMs
-              </Link>
-            ) : null}
+          <li
+            key={customer.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-panel px-4 py-3"
+          >
+            <div>
+              <p className="text-sm text-ink">{customer.name}</p>
+              <p className="mt-0.5 text-xs text-quiet">
+                {customer.simCount} SIM{customer.simCount === 1 ? "" : "s"} assigned
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {can(ctx.role, "assign") ? (
+                <Link href="/dashboard/sims/assign" className="text-sm text-accent">
+                  Assign SIMs
+                </Link>
+              ) : null}
+              {canManage ? (
+                <CustomerRowActions
+                  id={customer.id}
+                  name={customer.name}
+                  simCount={customer.simCount}
+                />
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>

@@ -318,6 +318,27 @@ export async function listCustomers(tenantId: string): Promise<Customer[]> {
   return (rows.results ?? []).map((row) => ({ id: row.id, name: row.name, createdAt: row.created_at }));
 }
 
+export type CustomerWithSimCount = Customer & { simCount: number };
+
+export async function listCustomersWithSimCount(tenantId: string): Promise<CustomerWithSimCount[]> {
+  const rows = await getDB()
+    .prepare(
+      `SELECT c.id, c.name, c.created_at,
+              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = c.tenant_id AND s.customer_id = c.id) AS sim_count
+       FROM customers c
+       WHERE c.tenant_id = ?
+       ORDER BY c.name`,
+    )
+    .bind(tenantId)
+    .all<{ id: string; name: string; created_at: string; sim_count: number }>();
+  return (rows.results ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    simCount: Number(row.sim_count) || 0,
+  }));
+}
+
 export async function listPlans(tenantId: string): Promise<Plan[]> {
   const rows = await getDB()
     .prepare(
@@ -637,6 +658,67 @@ export async function createCustomer(
     .run();
   await writeAudit(tenantId, actorEmail, "customer", `Customer ${name} created`);
   return { id, name, createdAt: now };
+}
+
+export async function renameCustomer(
+  tenantId: string,
+  actorEmail: string,
+  customerId: string,
+  name: string,
+): Promise<Customer> {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) throw new Error("Enter a customer name.");
+  const existing = await getDB()
+    .prepare("SELECT id, name, created_at FROM customers WHERE id = ? AND tenant_id = ?")
+    .bind(customerId, tenantId)
+    .first<{ id: string; name: string; created_at: string }>();
+  if (!existing) throw new Error("Customer not found in this organisation.");
+  if (existing.name === trimmed) return { id: existing.id, name: existing.name, createdAt: existing.created_at };
+
+  await getDB()
+    .prepare("UPDATE customers SET name = ? WHERE id = ? AND tenant_id = ?")
+    .bind(trimmed, customerId, tenantId)
+    .run();
+  await writeAudit(
+    tenantId,
+    actorEmail,
+    "customer",
+    `Customer renamed “${existing.name}” → “${trimmed}”`,
+  );
+  return { id: existing.id, name: trimmed, createdAt: existing.created_at };
+}
+
+/**
+ * Remove an end customer. SIMs stay in the org warehouse (customer_id cleared).
+ */
+export async function deleteCustomer(
+  tenantId: string,
+  actorEmail: string,
+  customerId: string,
+): Promise<{ name: string; unassignedSims: number }> {
+  const existing = await getDB()
+    .prepare("SELECT id, name FROM customers WHERE id = ? AND tenant_id = ?")
+    .bind(customerId, tenantId)
+    .first<{ id: string; name: string }>();
+  if (!existing) throw new Error("Customer not found in this organisation.");
+
+  const cleared = await getDB()
+    .prepare("UPDATE sims SET customer_id = NULL WHERE tenant_id = ? AND customer_id = ?")
+    .bind(tenantId, customerId)
+    .run();
+  const unassignedSims = Number(cleared.meta.changes) || 0;
+
+  await getDB()
+    .prepare("DELETE FROM customers WHERE id = ? AND tenant_id = ?")
+    .bind(customerId, tenantId)
+    .run();
+  await writeAudit(
+    tenantId,
+    actorEmail,
+    "customer",
+    `Customer “${existing.name}” removed${unassignedSims ? ` · ${unassignedSims} SIM(s) unassigned` : ""}`,
+  );
+  return { name: existing.name, unassignedSims };
 }
 
 export async function createPlan(
