@@ -1,11 +1,14 @@
 import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { runCcMutation } from "@/lib/cc/adapter";
+import { jasperConfigured } from "@/lib/cc/client";
 import {
   listCcDevicesForCustomer,
   materializeWarehouseForCcCustomer,
+  pushAndSyncSimLifecycle,
 } from "@/lib/cc/devices";
 import {
+  lifecycleJasperStatus,
   lifecycleTarget,
   nextOrderSimsStatus,
   orderAdvanceLabel,
@@ -239,8 +242,9 @@ export async function dashboardSummary(tenantId: string) {
   };
 }
 
-export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
+export async function listSims(tenantId: string, query = "", limit = 200): Promise<Sim[]> {
   const q = query.trim();
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit) || 200, 5_000));
   const sql = `
     SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
            s.platform_plan_id, s.imsi, s.msisdn, s.current_volume_mb,
@@ -257,10 +261,10 @@ export async function listSims(tenantId: string, query = ""): Promise<Sim[]> {
     WHERE s.tenant_id = ?
       AND (? = '' OR s.iccid LIKE ? OR IFNULL(c.name,'') LIKE ?)
     ORDER BY s.iccid ASC
-    LIMIT 200`;
+    LIMIT ?`;
   const like = `%${q.replace(/\s/g, "")}%`;
   const nameLike = `%${q}%`;
-  const rows = await getDB().prepare(sql).bind(tenantId, q, like, nameLike).all<{
+  const rows = await getDB().prepare(sql).bind(tenantId, q, like, nameLike, safeLimit).all<{
     id: string;
     iccid: string;
     form_factor: string;
@@ -1141,7 +1145,7 @@ export async function assignSims(
 export async function applyLifecycle(
   tenantId: string,
   actorEmail: string,
-  input: { iccid: string; action: string },
+  input: { iccid: string; action: string; skipNotify?: boolean },
 ): Promise<SimState> {
   const db = getDB();
   const iccid = input.iccid.replace(/\s/g, "");
@@ -1152,37 +1156,72 @@ export async function applyLifecycle(
   if (!sim) throw new Error("SIM not found in this tenant.");
   const next = lifecycleTarget(input.action, sim.state);
   if (!next) throw new Error(`${input.action} is not valid from ${sim.state}.`);
+  const jasperStatus = lifecycleJasperStatus(input.action);
+  if (!jasperStatus) throw new Error(`${input.action} is not supported.`);
+
+  if (!jasperConfigured()) {
+    throw new Error("Control Center is not configured — cannot change SIM status.");
+  }
+
+  // Resellers manage their own SIMs: push to Jasper, then read back (source of truth).
+  const synced = await pushAndSyncSimLifecycle(iccid, jasperStatus);
+  const effective = synced.state;
+  const ccStatus = synced.ccStatus;
+  if (effective !== next) {
+    throw new Error(
+      `Control Center status is ${ccStatus} (Catalyst ${effective}); expected ${next} after ${input.action}.`,
+    );
+  }
 
   const job = await runCcMutation({
     tenantId,
     kind: "lifecycle",
-    payload: { iccid, action: input.action, from: sim.state, to: next },
+    payload: {
+      iccid,
+      action: input.action,
+      from: sim.state,
+      to: effective,
+      jasperStatus,
+      ccStatus,
+      pushed: true,
+    },
     correlationId: `life-${iccid}-${input.action}-${sim.state}`,
   });
   if (job.status === "failed") throw new Error(job.error ?? "Control Center lifecycle failed.");
 
-  await db.prepare("UPDATE sims SET state = ? WHERE id = ? AND tenant_id = ?").bind(next, sim.id, tenantId).run();
-  await writeAudit(tenantId, actorEmail, "lifecycle", `${input.action} ${iccid} → ${next}`);
+  // overlaySim already updated state; keep tenant-scoped write explicit.
+  await db
+    .prepare("UPDATE sims SET state = ? WHERE id = ? AND tenant_id = ?")
+    .bind(effective, sim.id, tenantId)
+    .run();
+  await writeAudit(
+    tenantId,
+    actorEmail,
+    "lifecycle",
+    `${input.action} ${iccid} → ${effective} (Jasper ${ccStatus})`,
+  );
 
-  try {
-    const { notifySimLifecycleChange } = await import("@/lib/portal/rate-plan-notify");
-    const notify = await notifySimLifecycleChange({
-      tenantId,
-      iccid,
-      action: input.action,
-      fromState: sim.state,
-      toState: next,
-      actorEmail,
-      mode: "applied",
-    });
-    if (notify.errors.length) {
-      console.error("[lifecycle-alert-notify]", notify.errors.join("; "));
+  if (!input.skipNotify) {
+    try {
+      const { notifySimLifecycleChange } = await import("@/lib/portal/rate-plan-notify");
+      const notify = await notifySimLifecycleChange({
+        tenantId,
+        iccid,
+        action: input.action,
+        fromState: sim.state,
+        toState: effective,
+        actorEmail,
+        mode: "applied",
+      });
+      if (notify.errors.length) {
+        console.error("[lifecycle-alert-notify]", notify.errors.join("; "));
+      }
+    } catch (err) {
+      console.error("[lifecycle-alert-notify]", err instanceof Error ? err.message : err);
     }
-  } catch (err) {
-    console.error("[lifecycle-alert-notify]", err instanceof Error ? err.message : err);
   }
 
-  return next;
+  return effective;
 }
 
 export async function addPoolMembers(tenantId: string, actorEmail: string, poolId: string, iccids: string[]): Promise<number> {

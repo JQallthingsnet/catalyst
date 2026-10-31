@@ -99,7 +99,7 @@ export async function notifyResellerPlanChange(input: {
   return { sent, errors };
 }
 
-/** Soft-fail email after SIM lifecycle apply or reseller request (Activate / Suspend / …). */
+/** Soft-fail email after SIM lifecycle apply or reseller request (Activate / Deactivate). */
 export async function notifySimLifecycleChange(input: {
   tenantId: string;
   iccid: string;

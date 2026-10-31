@@ -12,9 +12,9 @@ export type CcJob = {
 };
 
 /**
- * Cisco IoT Control Center adapter.
- * v1 uses a sandbox stub: jobs are idempotent by correlation id and applied locally.
- * Do not call Catalyst Center or Webex Control Hub.
+ * Control Center job ledger (idempotent by correlation id).
+ * Lifecycle radio changes go through `pushAndSyncSimLifecycle` (Jasper PUT + GET);
+ * this table records the outcome for audit / retries.
  */
 export async function runCcMutation(input: {
   tenantId: string;

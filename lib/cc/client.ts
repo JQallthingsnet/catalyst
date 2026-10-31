@@ -199,12 +199,18 @@ function isJasperSoftRateLimit(status: number, body: JasperErrorBody | null, mes
   return /too many|rate limit|throttl/i.test(message);
 }
 
-async function jasperGet<T>(
+async function jasperRequest<T>(
+  method: "GET" | "PUT",
   path: string,
-  allow404 = false,
-  /** When false, soft RL (30000001) throws immediately — enrich soft-catches sessionInfo. */
-  softRetry = true,
+  options?: {
+    allow404?: boolean;
+    /** When false, soft RL (30000001) throws immediately — enrich soft-catches sessionInfo. */
+    softRetry?: boolean;
+    body?: Record<string, unknown>;
+  },
 ): Promise<T | null> {
+  const allow404 = options?.allow404 ?? false;
+  const softRetry = options?.softRetry ?? true;
   if (!jasperConfigured()) {
     throw new Error("Control Center secrets are not configured (JASPER_ACCOUNT_NAME, JASPER_API_KEY).");
   }
@@ -216,15 +222,19 @@ async function jasperGet<T>(
     let attempt = 0;
     while (true) {
       await throttle();
+      const headers: Record<string, string> = {
+        accept: "application/json",
+        Authorization: authorizationHeader(),
+      };
+      if (options?.body) headers["Content-Type"] = "application/json";
       const res = await fetch(`${apiBase()}${path}`, {
-        method: "GET",
-        headers: {
-          accept: "application/json",
-          Authorization: authorizationHeader(),
-        },
+        method,
+        headers,
+        body: options?.body ? JSON.stringify(options.body) : undefined,
       });
       if (allow404 && res.status === 404) return null;
-      if (!res.ok) {
+      // Edit Device Details: 200 immediate, 202 scheduled.
+      if (!res.ok && !(method === "PUT" && res.status === 202)) {
         const { message, body } = await readJasperError(res);
         if (isJasperSoftRateLimit(res.status, body, message)) {
           attempt += 1;
@@ -240,11 +250,36 @@ async function jasperGet<T>(
         }
         throw new Error(message);
       }
-      return (await res.json()) as T;
+      if (res.status === 204 || res.status === 202) return null;
+      const text = await res.text();
+      if (!text.trim()) return null;
+      return JSON.parse(text) as T;
     }
   } finally {
     inFlight = Math.max(0, inFlight - 1);
   }
+}
+
+async function jasperGet<T>(
+  path: string,
+  allow404 = false,
+  softRetry = true,
+): Promise<T | null> {
+  return jasperRequest<T>("GET", path, { allow404, softRetry });
+}
+
+/**
+ * Edit Device Details — change SIM status in Control Center.
+ * @see https://developer.cisco.com/docs/control-center/edit-device-details/
+ */
+export async function updateJasperDeviceStatus(
+  iccid: string,
+  status: "ACTIVATED" | "DEACTIVATED",
+): Promise<void> {
+  const cleaned = iccid.replace(/\s/g, "");
+  await jasperRequest("PUT", `/devices/${encodeURIComponent(cleaned)}`, {
+    body: { status },
+  });
 }
 
 export async function fetchJasperDevicesPage(input: {
