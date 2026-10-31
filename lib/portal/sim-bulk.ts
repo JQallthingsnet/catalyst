@@ -319,24 +319,62 @@ async function notifyBulkJobComplete(tenantId: string, jobId: string): Promise<v
       .map((row) => `${row.action ?? "—"} × ${row.c}`)
       .join(", ") || job.kind;
 
-  const failures = await db
+  const DETAIL_CAP = 50;
+  const details = await db
     .prepare(
-      `SELECT iccid, action, error FROM sim_bulk_job_items
-       WHERE job_id = ? AND status = 'failed' ORDER BY iccid ASC LIMIT 20`,
+      `SELECT iccid, action, platform_plan_id, status, error FROM sim_bulk_job_items
+       WHERE job_id = ?
+       ORDER BY
+         CASE status WHEN 'failed' THEN 0 WHEN 'ok' THEN 1 ELSE 2 END,
+         iccid ASC
+       LIMIT ?`,
     )
-    .bind(jobId)
-    .all<{ iccid: string; action: string | null; error: string | null }>();
+    .bind(jobId, DETAIL_CAP)
+    .all<{
+      iccid: string;
+      action: string | null;
+      platform_plan_id: string | null;
+      status: string;
+      error: string | null;
+    }>();
 
-  const failRows = (failures.results ?? [])
-    .map(
-      (item) =>
-        `<tr><td style="padding:4px 8px;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(item.iccid)}</td><td style="padding:4px 8px;font-size:12px;">${escapeHtml(item.action ?? "")}</td><td style="padding:4px 8px;color:#b91c1c;font-size:12px;">${escapeHtml(item.error ?? "failed")}</td></tr>`,
-    )
-    .join("");
+  const planNameCache = new Map<string, string>();
+  async function actionDetail(action: string | null, platformPlanId: string | null): Promise<string> {
+    if (action === "rate_plan" && platformPlanId) {
+      let name = planNameCache.get(platformPlanId);
+      if (!name) {
+        const plan = await loadPlatformPlanRecord(platformPlanId);
+        name = plan?.name?.trim() || platformPlanId;
+        planNameCache.set(platformPlanId, name);
+      }
+      return `Reseller Plan → ${name}`;
+    }
+    return action ?? "—";
+  }
+
+  const detailRows: string[] = [];
+  for (const item of details.results ?? []) {
+    const label = await actionDetail(item.action, item.platform_plan_id);
+    const statusColor = item.status === "failed" ? "#b91c1c" : item.status === "ok" ? "#047857" : "#6b7280";
+    const statusNote =
+      item.status === "failed"
+        ? escapeHtml(item.error ?? "failed")
+        : item.status === "ok"
+          ? "ok"
+          : escapeHtml(item.status);
+    detailRows.push(
+      `<tr>
+        <td style="padding:4px 8px;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(item.iccid)}</td>
+        <td style="padding:4px 8px;font-size:12px;">${escapeHtml(label)}</td>
+        <td style="padding:4px 8px;font-size:12px;color:${statusColor};">${statusNote}</td>
+      </tr>`,
+    );
+  }
+  const hiddenDetails = Math.max(0, job.total - (details.results?.length ?? 0));
 
   const subject = `Catalyst bulk update: ${orgName} · ${job.okCount} ok / ${job.failedCount} failed`;
   const html = `
-  <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;">
+  <div style="font-family:system-ui,-apple-system,sans-serif;max-width:640px;margin:0 auto;">
     <p style="margin:0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#0d9488;font-weight:700;">ATN Catalyst</p>
     <h2 style="margin:8px 0 16px;color:#111827;">Bulk SIM update finished</h2>
     <table style="width:100%;border-collapse:collapse;font-size:14px;color:#111827;">
@@ -346,9 +384,21 @@ async function notifyBulkJobComplete(tenantId: string, jobId: string): Promise<v
       <tr><td style="padding:6px 0;color:#6b7280;">By</td><td style="padding:6px 0;">${escapeHtml(job.actorEmail)}</td></tr>
     </table>
     ${
-      failRows
-        ? `<p style="margin:16px 0 8px;font-size:13px;color:#6b7280;">Sample failures</p>
-           <table style="width:100%;border-collapse:collapse;">${failRows}</table>`
+      detailRows.length
+        ? `<p style="margin:16px 0 8px;font-size:13px;color:#6b7280;">Changes by ICCID</p>
+           <table style="width:100%;border-collapse:collapse;">
+             <tr>
+               <th style="text-align:left;padding:4px 8px;font-size:11px;color:#6b7280;">ICCID</th>
+               <th style="text-align:left;padding:4px 8px;font-size:11px;color:#6b7280;">Action</th>
+               <th style="text-align:left;padding:4px 8px;font-size:11px;color:#6b7280;">Status</th>
+             </tr>
+             ${detailRows.join("")}
+           </table>
+           ${
+             hiddenDetails > 0
+               ? `<p style="margin:8px 0 0;font-size:12px;color:#6b7280;">+${hiddenDetails} more in Catalyst Logs / SIMs.</p>`
+               : ""
+           }`
         : ""
     }
     <p style="margin:20px 0 0;color:#6b7280;font-size:13px;">Open SIMs / Logs in Catalyst for the full record.</p>

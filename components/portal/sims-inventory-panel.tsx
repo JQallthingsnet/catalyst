@@ -79,6 +79,8 @@ export function SimsInventoryPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [job, setJob] = useState<BulkJobStatus | null>(null);
+  /** ICCID + action lines shown in the confirm dialog (kept through the run). */
+  const [confirmLines, setConfirmLines] = useState<{ iccid: string; label: string }[]>([]);
 
   const atCap = selected.length >= BULK_SIM_CAP;
   const selectionActive = selected.length > 0;
@@ -158,10 +160,24 @@ export function SimsInventoryPanel({
     return items;
   }
 
+  function buildConfirmLines(): { iccid: string; label: string }[] {
+    return buildItems().map((item) => {
+      if (item.action === "rate_plan") {
+        const planName =
+          planOptions.find((plan) => plan.id === item.platformPlanId)?.label ??
+          item.platformPlanId ??
+          "Reseller Plan";
+        return { iccid: item.iccid, label: `Reseller Plan → ${planName}` };
+      }
+      return { iccid: item.iccid, label: item.action };
+    });
+  }
+
   function openBulk() {
     if (!allReady) return;
     setError("");
     setJob(null);
+    setConfirmLines(buildConfirmLines());
     setBulkOpen(true);
   }
 
@@ -213,6 +229,9 @@ export function SimsInventoryPanel({
     sims.slice(0, BULK_SIM_CAP).every((sim) => selected.includes(sim.iccid)) &&
     selected.length > 0;
   const changeCount = summary.Activate + summary.Deactivate + summary.rate_plan;
+  const CONFIRM_LINE_CAP = 20;
+  const shownConfirmLines = confirmLines.slice(0, CONFIRM_LINE_CAP);
+  const hiddenConfirmLines = Math.max(0, confirmLines.length - shownConfirmLines.length);
 
   return (
     <div>
@@ -409,18 +428,22 @@ export function SimsInventoryPanel({
           body={
             <div className="space-y-4">
               {!job ? (
-                <div className="space-y-2 text-sm">
+                <div className="space-y-3 text-sm">
                   <p>
-                    Push <span className="font-medium text-ink">{changeCount}</span> change
-                    {changeCount === 1 ? "" : "s"} across{" "}
-                    <span className="font-medium text-ink">{selected.length}</span> SIM
-                    {selected.length === 1 ? "" : "s"}:
+                    Push <span className="font-medium text-ink">{confirmLines.length}</span> change
+                    {confirmLines.length === 1 ? "" : "s"}:
                   </p>
-                  <ul className="list-inside list-disc text-quiet">
-                    {summary.Activate ? <li>Activate · {summary.Activate}</li> : null}
-                    {summary.Deactivate ? <li>Deactivate · {summary.Deactivate}</li> : null}
-                    {summary.rate_plan ? <li>Reseller Plan · {summary.rate_plan}</li> : null}
+                  <ul className="max-h-48 space-y-1 overflow-auto text-[12px] text-quiet">
+                    {shownConfirmLines.map((line) => (
+                      <li key={`${line.iccid}:${line.label}`} className="font-mono">
+                        <span className="text-ink">{formatIccid(line.iccid)}</span>
+                        <span className="text-quiet"> · {line.label}</span>
+                      </li>
+                    ))}
                   </ul>
+                  {hiddenConfirmLines > 0 ? (
+                    <p className="text-xs text-quiet">+{hiddenConfirmLines} more</p>
+                  ) : null}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -432,9 +455,22 @@ export function SimsInventoryPanel({
                   </div>
                   <p className="text-sm">
                     {job.status === "completed"
-                      ? `Finished - ${job.okCount} ok${job.failedCount ? `, ${job.failedCount} failed` : ""}.`
+                      ? `Finished — ${job.okCount} ok${job.failedCount ? `, ${job.failedCount} failed` : ""}.`
                       : `Working… ${job.done} of ${job.total}`}
                   </p>
+                  {confirmLines.length > 0 ? (
+                    <ul className="max-h-36 space-y-1 overflow-auto text-[12px] text-quiet">
+                      {shownConfirmLines.map((line) => (
+                        <li key={`run-${line.iccid}:${line.label}`} className="font-mono">
+                          <span className="text-ink">{formatIccid(line.iccid)}</span>
+                          <span className="text-quiet"> · {line.label}</span>
+                        </li>
+                      ))}
+                      {hiddenConfirmLines > 0 ? (
+                        <li className="text-xs">+{hiddenConfirmLines} more</li>
+                      ) : null}
+                    </ul>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -442,7 +478,7 @@ export function SimsInventoryPanel({
           confirmLabel={
             job?.status === "completed"
               ? "Done"
-              : `Run ${changeCount} update${changeCount === 1 ? "" : "s"}`
+              : `Run ${confirmLines.length || changeCount} update${(confirmLines.length || changeCount) === 1 ? "" : "s"}`
           }
           tone="accent"
           busy={busy}
@@ -451,6 +487,7 @@ export function SimsInventoryPanel({
             if (busy) return;
             setBulkOpen(false);
             setJob(null);
+            setConfirmLines([]);
             setError("");
             if (job?.status === "completed") window.location.reload();
           }}
@@ -458,6 +495,7 @@ export function SimsInventoryPanel({
             if (job?.status === "completed") {
               setBulkOpen(false);
               setJob(null);
+              setConfirmLines([]);
               window.location.reload();
               return;
             }
