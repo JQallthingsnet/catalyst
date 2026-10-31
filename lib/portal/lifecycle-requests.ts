@@ -130,6 +130,25 @@ export async function requestLifecycle(
     pending,
   });
 
+  // Also email Alerts recipients (platform Pool + reseller Pool/Usage).
+  try {
+    const { notifySimLifecycleChange } = await import("@/lib/portal/rate-plan-notify");
+    const notify = await notifySimLifecycleChange({
+      tenantId,
+      iccid,
+      action,
+      fromState: sim.state,
+      toState,
+      actorEmail,
+      mode: "requested",
+    });
+    if (notify.errors.length) {
+      console.error("[lifecycle-alert-notify]", notify.errors.join("; "));
+    }
+  } catch (err) {
+    console.error("[lifecycle-alert-notify]", err instanceof Error ? err.message : err);
+  }
+
   if (emailed > 0) {
     const now = new Date().toISOString();
     await db

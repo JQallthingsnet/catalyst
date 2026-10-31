@@ -1163,6 +1163,25 @@ export async function applyLifecycle(
 
   await db.prepare("UPDATE sims SET state = ? WHERE id = ? AND tenant_id = ?").bind(next, sim.id, tenantId).run();
   await writeAudit(tenantId, actorEmail, "lifecycle", `${input.action} ${iccid} → ${next}`);
+
+  try {
+    const { notifySimLifecycleChange } = await import("@/lib/portal/rate-plan-notify");
+    const notify = await notifySimLifecycleChange({
+      tenantId,
+      iccid,
+      action: input.action,
+      fromState: sim.state,
+      toState: next,
+      actorEmail,
+      mode: "applied",
+    });
+    if (notify.errors.length) {
+      console.error("[lifecycle-alert-notify]", notify.errors.join("; "));
+    }
+  } catch (err) {
+    console.error("[lifecycle-alert-notify]", err instanceof Error ? err.message : err);
+  }
+
   return next;
 }
 
