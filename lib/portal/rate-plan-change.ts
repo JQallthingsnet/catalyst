@@ -185,6 +185,27 @@ export async function changeSimRatePlan(
     `${iccid}: ${fromModemId ?? "—"} → ${toModemId}${clearedRetailPlan ? " · retail plan cleared" : ""}${mismatchNote}`,
   );
 
+  // Soft-fail: email Alerts recipients (platform Pool + reseller Pool/Usage).
+  try {
+    const { notifyResellerPlanChange } = await import("@/lib/portal/rate-plan-notify");
+    const notify = await notifyResellerPlanChange({
+      tenantId,
+      iccid,
+      fromPlan: fromPlan?.name?.trim() || fromModemId,
+      toPlan: toModemId,
+      actorEmail,
+      clearedRetailPlan,
+      snapshotNote: tcodeMismatch
+        ? `Snapshot Reseller Plan still ${liveModemId} (billing uses Catalyst plan).`
+        : null,
+    });
+    if (notify.errors.length) {
+      console.error("[rate-plan-notify]", notify.errors.join("; "));
+    }
+  } catch (err) {
+    console.error("[rate-plan-notify]", err instanceof Error ? err.message : err);
+  }
+
   return {
     iccid,
     fromRatePlan: fromModemId,

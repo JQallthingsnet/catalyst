@@ -27,8 +27,8 @@ export default async function AlertsPage() {
           <h1 className="text-3xl font-semibold">Alerts</h1>
           <p className="mt-1 text-sm text-quiet">
             {onPlatform
-              ? "Configure pool digests and who is emailed when a reseller Orders SIMs."
-              : "Daily emails when your Pools (rate plan) or Usage (per SIM) hit your thresholds. Configure recipients and trigger % for each."}
+              ? "Configure pool digests, who is emailed when a reseller Orders SIMs, and who is emailed when a Reseller Plan changes."
+              : "Daily emails when your Pools or Usage hit your thresholds, and immediate email when a Reseller Plan changes on your SIMs. Configure recipients and trigger % for each."}
           </p>
         </div>
         {onPlatform ? <SendUsageDigestButton /> : null}
@@ -43,8 +43,8 @@ export default async function AlertsPage() {
           title="Pool usage"
           blurb={
             onPlatform
-              ? "Σ CTD MB ÷ Σ Reseller Plan allowance across SIMs on each Reseller Plan per customer."
-              : "Σ CTD MB ÷ Σ Reseller Plan allowance for your Control Center customer."
+              ? "Σ CTD MB ÷ Σ Reseller Plan allowance across SIMs on each Reseller Plan per customer. These recipients also get email when any Reseller Plan changes."
+              : "Σ CTD MB ÷ Σ Reseller Plan allowance for your Control Center customer. These recipients also get email when a Reseller Plan changes on your SIMs."
           }
           initial={settings.pool}
         />
@@ -52,14 +52,15 @@ export default async function AlertsPage() {
           <AlertSettingsForm
             kind="usage"
             title="SIM usage"
-            blurb="Per SIM, CTD MB ÷ Reseller Plan allowance for your Control Center customer."
+            blurb="Per SIM, CTD MB ÷ Reseller Plan allowance for your Control Center customer. These recipients also get email when a Reseller Plan changes on your SIMs."
             initial={settings.usage}
           />
         ) : null}
       </div>
 
       <p className="mt-6 text-xs text-quiet">
-        Digests send near Sydney midnight (once per calendar day).{" "}
+        Digests send near Sydney midnight (once per calendar day). Reseller Plan change emails send immediately to
+        saved recipients (no threshold required beyond having emails listed).{" "}
         {settings.pool.updatedAt
           ? `Pool settings last saved ${formatAuDateTime(settings.pool.updatedAt)}${
               settings.pool.updatedBy ? ` by ${settings.pool.updatedBy}` : ""
