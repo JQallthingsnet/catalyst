@@ -33,9 +33,10 @@ export default async function SimsPage({
       : Promise.resolve([]),
   ]);
   const fields = simFieldsForRole(ctx.role);
+  // Reseller admins see Reseller Plan name only — never Jasper Supplier code.
   const planOptions = contracted.map((plan) => ({
     id: plan.id,
-    label: `${plan.name} — ${plan.ccRatePlan}`,
+    label: plan.name,
   }));
   const canChangePlan = can(ctx.role, "rate_plan.change");
 

@@ -251,12 +251,14 @@ function csvEscape(value: string): string {
   return value;
 }
 
-/** CSV: day, ICCID, Reseller Plan, Supplier code (and optional organisation). */
+/** CSV: day, ICCID, Reseller Plan (and optional organisation / Supplier code for ATN). */
 export async function exportSimPlatformPlanDailyCsv(input: {
   tenantId?: string;
   dateFrom?: string;
   dateTo?: string;
   includeOrganisation?: boolean;
+  /** Jasper Supplier code column — super admin only. */
+  includeSupplierCode?: boolean;
 }): Promise<string> {
   const clauses: string[] = [];
   const binds: Array<string> = [];
@@ -293,14 +295,23 @@ export async function exportSimPlatformPlanDailyCsv(input: {
     }>();
 
   const includeOrg = Boolean(input.includeOrganisation);
-  const header = includeOrg
-    ? ["day", "organisation", "iccid", "reseller_plan", "supplier_code"]
-    : ["day", "iccid", "reseller_plan", "supplier_code"];
+  const includeSupplier = Boolean(input.includeSupplierCode);
+  const header = [
+    "day",
+    ...(includeOrg ? ["organisation"] : []),
+    "iccid",
+    "reseller_plan",
+    ...(includeSupplier ? ["supplier_code"] : []),
+  ];
   const lines = [header.join(",")];
   for (const row of rows.results ?? []) {
-    const cells = includeOrg
-      ? [row.day, row.organisation, row.iccid, row.plan_name, row.supplier_code ?? ""]
-      : [row.day, row.iccid, row.plan_name, row.supplier_code ?? ""];
+    const cells = [
+      row.day,
+      ...(includeOrg ? [row.organisation] : []),
+      row.iccid,
+      row.plan_name,
+      ...(includeSupplier ? [row.supplier_code ?? ""] : []),
+    ];
     lines.push(cells.map((cell) => csvEscape(String(cell))).join(","));
   }
   return `${lines.join("\n")}\n`;

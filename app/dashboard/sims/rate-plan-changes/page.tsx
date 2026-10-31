@@ -335,7 +335,7 @@ export default async function RatePlanChangesPage({
             (1 = unchanged, 2+ = changed). Click a cell for plan names.
           </p>
         </div>
-        <ResellerPlanDailyMatrix matrix={dailyMatrix} />
+        <ResellerPlanDailyMatrix matrix={dailyMatrix} showSupplierCode={onPlatform} />
       </section>
 
       <h2 className="mt-10 text-lg font-semibold">Change log</h2>

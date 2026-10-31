@@ -16,7 +16,14 @@ const ORG_STICKY = "left-0 w-36 min-w-36 max-w-36";
 const ICCID_STICKY_WITH_ORG = "left-36 w-48 min-w-48 max-w-48";
 const ICCID_STICKY_ONLY = "left-0 w-48 min-w-48 max-w-48";
 
-export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDailyMatrix }) {
+export function ResellerPlanDailyMatrix({
+  matrix,
+  showSupplierCode = false,
+}: {
+  matrix: SimPlatformPlanDailyMatrix;
+  /** Jasper Supplier code in cell detail — ATN / super admin only. */
+  showSupplierCode?: boolean;
+}) {
   const [selected, setSelected] = useState<{ iccid: string; day: string } | null>(null);
   const showOrg = matrix.includeOrganisation;
   const firstDay = matrix.days[0];
@@ -183,9 +190,11 @@ export function ResellerPlanDailyMatrix({ matrix }: { matrix: SimPlatformPlanDai
                 className="flex flex-wrap justify-between gap-2 rounded-xl border border-line px-3 py-2"
               >
                 <span className="font-medium">{plan.planName}</span>
-                <span className="text-quiet">
-                  Supplier code {plan.supplierCode?.trim() || "—"}
-                </span>
+                {showSupplierCode ? (
+                  <span className="text-quiet">
+                    Supplier code {plan.supplierCode?.trim() || "—"}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ul>

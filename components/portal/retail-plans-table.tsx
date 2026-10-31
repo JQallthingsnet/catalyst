@@ -15,9 +15,12 @@ export type RetailPlanRow = {
 export function RetailPlansTable({
   plans,
   showPlatformSource,
+  showSupplierCode = false,
 }: {
   plans: RetailPlanRow[];
   showPlatformSource: boolean;
+  /** Jasper Supplier code / wholesale plan — ATN only. */
+  showSupplierCode?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
@@ -33,11 +36,12 @@ export function RetailPlansTable({
     return plans.filter((plan) => {
       if (source && plan.platformPlanName !== source) return false;
       if (!deferredQuery) return true;
-      const haystack =
-        `${plan.name} ${plan.type} ${plan.wholesalePlan} ${plan.platformPlanName ?? ""}`.toLowerCase();
+      const haystack = showSupplierCode
+        ? `${plan.name} ${plan.type} ${plan.wholesalePlan} ${plan.platformPlanName ?? ""}`.toLowerCase()
+        : `${plan.name} ${plan.type} ${plan.platformPlanName ?? ""}`.toLowerCase();
       return haystack.includes(deferredQuery);
     });
-  }, [plans, deferredQuery, source]);
+  }, [plans, deferredQuery, source, showSupplierCode]);
 
   const filtersActive = Boolean(query.trim() || source);
 
@@ -50,7 +54,7 @@ export function RetailPlansTable({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Name, type, rate plan…"
+              placeholder={showSupplierCode ? "Name, type, rate plan…" : "Name, type, Reseller Plan…"}
               className="mt-1 h-10 w-full rounded-full border border-line bg-canvas px-4 text-sm text-ink"
             />
           </label>
@@ -102,7 +106,7 @@ export function RetailPlansTable({
               <th className="px-4 py-3 font-medium">Data / SIM</th>
               <th className="px-4 py-3 font-medium">Price / SIM</th>
               {showPlatformSource ? <th className="px-4 py-3 font-medium">Copied from</th> : null}
-              <th className="px-4 py-3 font-medium">Rate plan</th>
+              {showSupplierCode ? <th className="px-4 py-3 font-medium">Rate plan</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -117,7 +121,9 @@ export function RetailPlansTable({
                 {showPlatformSource ? (
                   <td className="px-4 py-3 text-quiet">{plan.platformPlanName ?? "—"}</td>
                 ) : null}
-                <td className="px-4 py-3 font-mono text-xs">{plan.wholesalePlan || "—"}</td>
+                {showSupplierCode ? (
+                  <td className="px-4 py-3 font-mono text-xs">{plan.wholesalePlan || "—"}</td>
+                ) : null}
               </tr>
             ))}
           </tbody>
