@@ -48,18 +48,30 @@ export function AlertSettingsForm({
       });
       const data = (await res.json()) as {
         error?: string;
-        setting?: AlertSetting & { thresholdPct: number };
+        setting?: AlertSetting;
       };
       if (!res.ok) throw new Error(data.error ?? "Save failed.");
       if (data.setting) {
-        setThresholdPct(String(data.setting.thresholdPct));
+        setThresholdPct(
+          data.setting.thresholdPct != null ? String(data.setting.thresholdPct) : "",
+        );
         setRecipients(data.setting.recipients.join("\n"));
       }
-      setMessage(
-        data.setting?.recipients.length
-          ? `Saved — ${data.setting.recipients.length} recipient${data.setting.recipients.length === 1 ? "" : "s"} at ≥${data.setting.thresholdPct}%.`
-          : "Saved — no recipients (this digest is disabled until you add emails).",
-      );
+      const n = data.setting?.recipients.length ?? 0;
+      const thr = data.setting?.thresholdPct;
+      if (n > 0 && thr != null) {
+        setMessage(
+          `Saved — ${n} recipient${n === 1 ? "" : "s"} · digests at ≥${thr}% · event emails on.`,
+        );
+      } else if (n > 0) {
+        setMessage(
+          `Saved — ${n} recipient${n === 1 ? "" : "s"} for Reseller Plan / lifecycle emails (add a threshold to enable digests).`,
+        );
+      } else if (thr != null) {
+        setMessage(`Saved — digest threshold ≥${thr}% (add recipients to send emails).`);
+      } else {
+        setMessage("Saved.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
     } finally {
@@ -91,8 +103,8 @@ export function AlertSettingsForm({
             className="mt-2 w-full max-w-xs rounded-xl border border-line bg-canvas px-3 py-2"
           />
           <span className="mt-1 block text-xs text-quiet">
-            Email when usage reaches this % of mapped allowance. {THRESHOLD_PLACEHOLDER}% is only a
-            suggestion — enter and save the value you want.
+            Optional for event emails. Required with recipients for daily digests. {THRESHOLD_PLACEHOLDER}% in the
+            field is only a placeholder — type the value to save it.
           </span>
         </label>
 
@@ -106,7 +118,8 @@ export function AlertSettingsForm({
             className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 font-mono text-sm"
           />
           <span className="mt-1 block text-xs text-quiet">
-            One email per line (commas also fine). Leave empty to turn this digest off.
+            One email per line (commas also fine). Recipients get Reseller Plan and lifecycle emails; digests also need
+            a threshold. Leave empty to turn emails off for this block.
           </span>
         </label>
 

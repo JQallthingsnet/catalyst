@@ -18,7 +18,7 @@ function escapeHtml(value: string): string {
  * - Super admin (platform) Pool usage recipients
  * - Reseller Pool + Usage recipients for the SIM's organisation
  */
-async function recipientsForResellerPlanChange(tenantId: string): Promise<string[]> {
+export async function recipientsFromAlertSetup(tenantId: string): Promise<string[]> {
   const [platformPool, resellerPool, resellerUsage] = await Promise.all([
     getAlertSetting(PLATFORM_ALERT_SCOPE, "pool"),
     getAlertSetting(tenantId, "pool"),
@@ -49,7 +49,7 @@ export async function notifyResellerPlanChange(input: {
   clearedRetailPlan?: boolean;
   snapshotNote?: string | null;
 }): Promise<{ sent: number; errors: string[] }> {
-  const recipients = await recipientsForResellerPlanChange(input.tenantId);
+  const recipients = await recipientsFromAlertSetup(input.tenantId);
   if (recipients.length === 0) return { sent: 0, errors: [] };
 
   const tenant = await loadTenant(input.tenantId);
@@ -79,6 +79,58 @@ export async function notifyResellerPlanChange(input: {
     }
     <p style="margin:20px 0 0;color:#6b7280;font-size:13px;">
       Billing follows the Catalyst Reseller Plan. Open Plan changes / Logs in Catalyst for the full record.
+    </p>
+  </div>`;
+
+  let sent = 0;
+  const errors: string[] = [];
+  for (const to of recipients) {
+    try {
+      await sendSystemEmail(to, subject, html);
+      sent += 1;
+    } catch (err) {
+      errors.push(`${to}: ${err instanceof Error ? err.message : "send failed"}`);
+    }
+  }
+  return { sent, errors };
+}
+
+/** Soft-fail email after SIM lifecycle apply or reseller request (Activate / Suspend / …). */
+export async function notifySimLifecycleChange(input: {
+  tenantId: string;
+  iccid: string;
+  action: string;
+  fromState: string;
+  toState: string;
+  actorEmail: string;
+  /** Reseller queued for ATN vs super admin applied. */
+  mode: "applied" | "requested";
+}): Promise<{ sent: number; errors: string[] }> {
+  const recipients = await recipientsFromAlertSetup(input.tenantId);
+  if (recipients.length === 0) return { sent: 0, errors: [] };
+
+  const tenant = await loadTenant(input.tenantId);
+  const orgName = tenant?.name?.trim() || "Organisation";
+  const headline =
+    input.mode === "requested" ? "SIM lifecycle requested" : "SIM lifecycle changed";
+  const subject = `Catalyst ${input.action}: ${orgName} · ${input.iccid}`;
+  const html = `
+  <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;">
+    <p style="margin:0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#0d9488;font-weight:700;">ATN Catalyst</p>
+    <h2 style="margin:8px 0 16px;color:#111827;">${escapeHtml(headline)}</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;color:#111827;">
+      <tr><td style="padding:6px 0;color:#6b7280;">Organisation</td><td style="padding:6px 0;">${escapeHtml(orgName)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">ICCID</td><td style="padding:6px 0;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(input.iccid)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Action</td><td style="padding:6px 0;">${escapeHtml(input.action)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">State</td><td style="padding:6px 0;">${escapeHtml(input.fromState)} → ${escapeHtml(input.toState)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">By</td><td style="padding:6px 0;">${escapeHtml(input.actorEmail)}</td></tr>
+    </table>
+    <p style="margin:20px 0 0;color:#6b7280;font-size:13px;">
+      ${
+        input.mode === "requested"
+          ? "Queued for ATN. Open Logs / lifecycle requests in Catalyst."
+          : "Open SIMs / Logs in Catalyst for the full record."
+      }
     </p>
   </div>`;
 

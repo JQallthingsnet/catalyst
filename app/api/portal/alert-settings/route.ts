@@ -39,7 +39,7 @@ export async function PUT(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as {
     kind?: string;
-    thresholdPct?: number;
+    thresholdPct?: number | null;
     recipients?: string | string[];
   };
   const kind = body.kind === "usage" ? "usage" : body.kind === "pool" ? "pool" : null;
@@ -54,13 +54,10 @@ export async function PUT(request: Request) {
   }
 
   try {
-    if (body.thresholdPct == null || body.thresholdPct === ("" as unknown)) {
-      return NextResponse.json({ error: "Enter a trigger threshold (%)." }, { status: 400 });
-    }
     const saved = await saveAlertSetting({
       scopeId: scopeFor(ctx),
       kind,
-      thresholdPct: body.thresholdPct,
+      thresholdPct: body.thresholdPct ?? null,
       recipients: body.recipients ?? [],
       updatedBy: ctx.email,
     });
