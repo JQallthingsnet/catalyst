@@ -1,7 +1,11 @@
 import { WorkerMailer } from "worker-mailer";
-import { getEnv, type AppEnv } from "@/lib/env";
+import { getEnv } from "@/lib/env";
 import type { PortalRole } from "@/lib/portal/role-model";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
+
+const SECRET_NAME = "gmail-smtp-keys";
+const DEFAULT_HOST = "smtp.gmail.com";
+const DEFAULT_PORT = "465";
 
 type SmtpConfig = {
   host: string;
@@ -9,7 +13,6 @@ type SmtpConfig = {
   user: string;
   pass: string;
   from: string;
-  source: "microsoft" | "gmail";
 };
 
 function readString(json: Record<string, unknown>, key: string): string | undefined {
@@ -19,69 +22,40 @@ function readString(json: Record<string, unknown>, key: string): string | undefi
   return undefined;
 }
 
-function parseJsonSecret(raw: unknown): Record<string, unknown> | null {
+function parseSmtpSecret(raw: unknown): SmtpConfig | null {
   if (!raw) return null;
+  let json: Record<string, unknown>;
   try {
-    let json: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (typeof json === "string") json = JSON.parse(json);
-    if (!json || typeof json !== "object") return null;
-    return json as Record<string, unknown>;
+    json = typeof raw === "string" ? (JSON.parse(raw) as Record<string, unknown>) : (raw as Record<string, unknown>);
+    if (typeof json === "string") {
+      json = JSON.parse(json) as Record<string, unknown>;
+    }
   } catch {
     return null;
   }
-}
 
-function parseMicrosoftSmtp(raw: unknown): SmtpConfig | null {
-  const json = parseJsonSecret(raw);
-  if (!json) return null;
-  const user = readString(json, "microsoft-smtp-email");
-  const pass = readString(json, "microsoft-smtp-password");
-  if (!user || !pass) return null;
-  return {
-    host: readString(json, "microsoft-smtp-host") ?? "smtp.office365.com",
-    port: Number(readString(json, "microsoft-smtp-port") ?? "587"),
-    user,
-    pass,
-    from: user,
-    source: "microsoft",
-  };
-}
-
-function parseGmailSmtp(raw: unknown): SmtpConfig | null {
-  const json = parseJsonSecret(raw);
-  if (!json) return null;
   const user = readString(json, "gmail-smtp-email");
   const pass = readString(json, "gmail-smtp-password");
   if (!user || !pass) return null;
+
   return {
-    host: readString(json, "gmail-smtp-host") ?? "smtp.gmail.com",
-    port: Number(readString(json, "gmail-smtp-port") ?? "465"),
+    host: readString(json, "gmail-smtp-host") ?? DEFAULT_HOST,
+    port: Number(readString(json, "gmail-smtp-port") ?? DEFAULT_PORT),
     user,
     pass,
     from: user,
-    source: "gmail",
   };
 }
 
-function secretRaw(env: AppEnv, name: keyof AppEnv): unknown {
-  return env[name];
-}
-
 export function getEmailConfig(): SmtpConfig | null {
-  const env = getEnv();
-  // Prefer Microsoft when configured (Working Secrets / production).
-  return (
-    parseMicrosoftSmtp(secretRaw(env, "microsoft_smtp_keys")) ??
-    parseMicrosoftSmtp(secretRaw(env, "microsoft-smtp-keys")) ??
-    parseGmailSmtp(secretRaw(env, "gmail-smtp-keys"))
-  );
+  return parseSmtpSecret(getEnv()[SECRET_NAME]);
 }
 
 export async function sendSystemEmail(to: string, subject: string, html: string): Promise<void> {
   const smtp = getEmailConfig();
   if (!smtp) {
     throw new Error(
-      "Email SMTP is not configured. Add microsoft_smtp_keys (or gmail-smtp-keys) with email and password.",
+      "gmail-smtp-keys is missing or does not contain gmail-smtp-email and gmail-smtp-password.",
     );
   }
 
@@ -108,7 +82,7 @@ export async function sendSystemEmail(to: string, subject: string, html: string)
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown SMTP error";
-    console.error("[email] SMTP send failed", smtp.source, detail);
+    console.error("[email] SMTP send failed", detail);
     throw new Error(`SMTP send failed: ${detail}`);
   }
 }

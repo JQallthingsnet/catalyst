@@ -11,9 +11,6 @@ export type AppEnv = {
   JASPER_API_BASE?: string;
   CC_AUTO_POLL?: string;
   "gmail-smtp-keys"?: string | Record<string, unknown>;
-  /** Microsoft 365 SMTP JSON (preferred when set). */
-  microsoft_smtp_keys?: string | Record<string, unknown>;
-  "microsoft-smtp-keys"?: string | Record<string, unknown>;
 };
 
 export function getEnv(): AppEnv {
