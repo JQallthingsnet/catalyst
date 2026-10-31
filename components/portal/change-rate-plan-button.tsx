@@ -9,10 +9,12 @@ export function ChangeRatePlanButton({
   iccid,
   currentPlatformPlanId,
   options,
+  disabled = false,
 }: {
   iccid: string;
   currentPlatformPlanId: string | null;
   options: RatePlanOption[];
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [platformPlanId, setPlatformPlanId] = useState("");
@@ -25,6 +27,7 @@ export function ChangeRatePlanButton({
   );
 
   function openDialog() {
+    if (disabled) return;
     setError("");
     setPlatformPlanId(choices[0]?.id ?? "");
     setOpen(true);
@@ -66,7 +69,9 @@ export function ChangeRatePlanButton({
       <button
         type="button"
         onClick={openDialog}
-        className="rounded-lg border border-line px-2 py-1 text-[11px] text-quiet hover:border-accent hover:text-ink"
+        disabled={disabled}
+        title={disabled ? "Clear bulk selection to change one SIM" : undefined}
+        className="rounded-lg border border-line px-2 py-1 text-[11px] text-quiet hover:border-accent hover:text-ink disabled:opacity-40"
       >
         Change plan
       </button>

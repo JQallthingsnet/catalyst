@@ -24,13 +24,23 @@ function asSimState(value: string): SimState | null {
   return null;
 }
 
-export function LifecycleButtons({ iccid, state }: { iccid: string; state: string }) {
+export function LifecycleButtons({
+  iccid,
+  state,
+  disabled = false,
+}: {
+  iccid: string;
+  state: string;
+  /** When bulk selection is active, grey out per-row actions. */
+  disabled?: boolean;
+}) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const simState = asSimState(state);
 
   function actionAllowed(action: string): boolean {
+    if (disabled) return false;
     if (!simState) return true;
     return lifecycleTarget(action, simState) != null;
   }
@@ -63,7 +73,7 @@ export function LifecycleButtons({ iccid, state }: { iccid: string; state: strin
   }
 
   function onActionClick(action: string) {
-    if (!actionAllowed(action)) return;
+    if (disabled || !actionAllowed(action)) return;
     setError("");
     setPending(action);
   }
@@ -78,8 +88,14 @@ export function LifecycleButtons({ iccid, state }: { iccid: string; state: strin
           <button
             key={action}
             type="button"
-            disabled={Boolean(busy) || !allowed}
-            title={allowed ? undefined : `${action} is not valid from ${state}`}
+            disabled={disabled || Boolean(busy) || !allowed}
+            title={
+              disabled
+                ? "Clear bulk selection to use per-SIM actions"
+                : allowed
+                  ? undefined
+                  : `${action} is not valid from ${state}`
+            }
             onClick={() => onActionClick(action)}
             className="rounded-lg border border-line px-2 py-1 text-[11px] text-quiet hover:border-accent hover:text-ink disabled:opacity-40"
           >
