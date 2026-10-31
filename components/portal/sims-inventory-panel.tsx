@@ -51,14 +51,6 @@ function asSimState(value: string): SimState | null {
   return null;
 }
 
-function defaultLifecycle(state: string): StagedRow["lifecycle"] {
-  const simState = asSimState(state);
-  if (!simState) return "";
-  if (lifecycleTarget("Deactivate", simState)) return "Deactivate";
-  if (lifecycleTarget("Activate", simState)) return "Activate";
-  return "";
-}
-
 function rowReady(staged: StagedRow | undefined): boolean {
   if (!staged) return false;
   return staged.lifecycle !== "" || staged.platformPlanId !== "";
@@ -115,7 +107,7 @@ export function SimsInventoryPanel({
     });
   }
 
-  function toggle(iccid: string, state: string) {
+  function toggle(iccid: string) {
     setSelected((current) => {
       if (current.includes(iccid)) {
         setStaged((prev) => {
@@ -128,7 +120,7 @@ export function SimsInventoryPanel({
       if (current.length >= BULK_SIM_CAP) return current;
       setStaged((prev) => ({
         ...prev,
-        [iccid]: { lifecycle: defaultLifecycle(state), platformPlanId: "" },
+        [iccid]: { lifecycle: "", platformPlanId: "" },
       }));
       return [...current, iccid];
     });
@@ -145,10 +137,7 @@ export function SimsInventoryPanel({
     }
     const nextStaged: Record<string, StagedRow> = {};
     for (const sim of capSims) {
-      nextStaged[sim.iccid] = {
-        lifecycle: defaultLifecycle(sim.state),
-        platformPlanId: "",
-      };
+      nextStaged[sim.iccid] = { lifecycle: "", platformPlanId: "" };
     }
     setSelected(Object.keys(nextStaged));
     setStaged(nextStaged);
@@ -327,7 +316,7 @@ export function SimsInventoryPanel({
                         type="checkbox"
                         checked={checked}
                         disabled={rowLocked}
-                        onChange={() => toggle(sim.iccid, sim.state)}
+                        onChange={() => toggle(sim.iccid)}
                         aria-label={`Select ${sim.iccid}`}
                       />
                     </td>
