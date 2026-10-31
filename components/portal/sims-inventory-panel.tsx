@@ -388,11 +388,13 @@ export function SimsInventoryPanel({
                           className="max-w-40 rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
                         >
                           <option value="">No change</option>
-                          {planOptions.map((plan) => (
-                            <option key={plan.id} value={plan.id}>
-                              {plan.label}
-                            </option>
-                          ))}
+                          {planOptions
+                            .filter((plan) => plan.id !== sim.platformPlanId)
+                            .map((plan) => (
+                              <option key={plan.id} value={plan.id}>
+                                {plan.label}
+                              </option>
+                            ))}
                         </select>
                       ) : (
                         <ChangeRatePlanButton
