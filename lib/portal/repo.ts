@@ -621,9 +621,12 @@ export async function createCustomer(
   tenantId: string,
   actorEmail: string,
   name: string,
-  homeTenantId?: string,
+  /** When set with isSuperAdmin, blocks creating customers on ATN Platform home. */
+  opts?: { homeTenantId?: string; isSuperAdmin?: boolean },
 ): Promise<Customer> {
-  if (homeTenantId && tenantId === homeTenantId) {
+  // Only block the platform home tenant. Real reseller_admin has tenantId === homeTenantId
+  // for their own org — that must stay allowed.
+  if (opts?.isSuperAdmin && opts.homeTenantId && tenantId === opts.homeTenantId) {
     throw new Error("Customers belong to reseller organisations, not ATN Platform.");
   }
   const id = newId("cus");
