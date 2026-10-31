@@ -46,11 +46,7 @@ export default async function SimsPage({
         <div>
           <h1 className="text-3xl font-semibold">SIMs</h1>
           <p className="mt-1 text-sm text-quiet">
-            {ctx.role === "reseller_operator"
-              ? "Assign a retail plan and end customer. Lifecycle requests are queued for ATN to process."
-              : ctx.role === "reseller_admin"
-                ? "Inventory. Request Activate / Suspend / Resume / Deactivate queues work for ATN (including reactivate from Deactivated). Track requests on Logs."
-                : "Inventory and lifecycle. Control Center remains the radio source."}
+            Inventory. Activate / Deactivate updates Jasper; Catalyst then refreshes from the live Control Center status.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -67,6 +63,11 @@ export default async function SimsPage({
           {can(ctx.role, "platform.estate") ? (
             <Link href="/dashboard/estate/cc" className={btnSecondary}>
               CC snapshot
+            </Link>
+          ) : null}
+          {can(ctx.role, "lifecycle") ? (
+            <Link href="/dashboard/sims/bulk" className={btnSecondary}>
+              Bulk update
             </Link>
           ) : null}
           {can(ctx.role, "assign") ? (
@@ -116,11 +117,7 @@ export default async function SimsPage({
                 <td className="px-4 py-3">{sim.state}</td>
                 <td className="px-4 py-3">
                   {can(ctx.role, "lifecycle") ? (
-                    <LifecycleButtons
-                      iccid={sim.iccid}
-                      state={sim.state}
-                      mode={ctx.role === "super_admin" ? "apply" : "request"}
-                    />
+                    <LifecycleButtons iccid={sim.iccid} state={sim.state} />
                   ) : (
                     sim.state
                   )}

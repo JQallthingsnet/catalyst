@@ -9,7 +9,7 @@ import { WizardActions, WizardFrame } from "@/components/portal/wizard";
 type Option = { id: string; name: string };
 type SimRow = { iccid: string; state: string; planName: string | null; customerName: string | null };
 
-const STATES: SimState[] = ["Ready", "Active", "Suspended", "Deactivated"];
+const STATES: SimState[] = ["Ready", "Active", "Deactivated"];
 
 export function AssignWizard({
   customers,
