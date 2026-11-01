@@ -70,6 +70,7 @@ export function SimsInventoryPanel({
   headerLinks,
   filterPlanId = null,
   filterPlanName = null,
+  filterForm = null,
 }: {
   sims: SimsInventoryRow[];
   fields: Fields;
@@ -81,6 +82,7 @@ export function SimsInventoryPanel({
   /** When set (from Retail plans → Remove), list is limited to this retail plan. */
   filterPlanId?: string | null;
   filterPlanName?: string | null;
+  filterForm?: ReactNode;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [staged, setStaged] = useState<Record<string, StagedRow>>({});
@@ -274,10 +276,7 @@ export function SimsInventoryPanel({
                 : sims.length > 0
                   ? " · pre-selected for bulk change"
                   : ""}
-              .{" "}
-              <Link href="/dashboard/sims" className="text-accent hover:underline">
-                Clear filter
-              </Link>
+              . Use Bulk update to reassign, or clear filters below.
             </p>
           ) : null}
         </div>
@@ -307,6 +306,8 @@ export function SimsInventoryPanel({
           ) : null}
         </div>
       </div>
+
+      {filterForm}
 
       {selectionActive ? (
         <p className="mt-3 text-xs text-quiet">

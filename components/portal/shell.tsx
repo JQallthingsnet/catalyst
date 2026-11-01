@@ -49,7 +49,7 @@ export function PortalShell({
                 placeholder={
                   ctx.role === "super_admin"
                     ? "Search organisation, customer, plan, ICCID…"
-                    : "Search ICCID / customer"
+                    : "Search ICCID, IMSI, MSISDN, customer…"
                 }
                 className="w-full rounded-card border border-line bg-panel px-4 py-2.5 text-sm text-ink outline-none placeholder:text-quiet focus:border-accent"
               />

@@ -17,6 +17,7 @@ import {
 } from "@/lib/portal/catalogue";
 import { getSimSku, listResellerSkus, listSimSkus, tenantHasSku } from "@/lib/portal/skus";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
+import type { SimsListFilter } from "@/lib/portal/sim-filter";
 import {
   bindTenantCcCustomer,
   findTenantByCcCustomer,
@@ -244,13 +245,33 @@ export async function dashboardSummary(tenantId: string) {
 
 export async function listSims(
   tenantId: string,
-  query = "",
+  filter: SimsListFilter | string = {},
   limit = 200,
-  opts?: { planId?: string },
 ): Promise<Sim[]> {
-  const q = query.trim();
-  const planId = opts?.planId?.trim() || "";
+  const normalized =
+    typeof filter === "string"
+      ? { q: filter.trim() || undefined }
+      : filter;
+  const q = normalized.q?.trim() || "";
+  const planId = normalized.planId?.trim() || "";
+  const customer = normalized.customer?.trim() || "";
+  const iccid = normalized.iccid?.trim() || "";
+  const imsi = normalized.imsi?.trim() || "";
+  const msisdn = normalized.msisdn?.trim() || "";
+  const state = normalized.state?.trim() || "";
+  const ctdOp = normalized.ctdOp ?? "";
+  const ctdMb = normalized.ctdMb;
+  const ctdEnabled = Boolean(ctdOp && ctdMb != null && Number.isFinite(ctdMb));
+  const ctdValue = ctdEnabled ? Number(ctdMb) : 0;
   const safeLimit = Math.max(1, Math.min(Math.floor(limit) || 200, 5_000));
+
+  const qDigitsLike = q ? `%${q.replace(/\s/g, "")}%` : "";
+  const qTextLike = q ? `%${q}%` : "";
+  const customerLike = customer ? `%${customer}%` : "";
+  const iccidLike = iccid ? `%${iccid.replace(/\s/g, "")}%` : "";
+  const imsiLike = imsi ? `%${imsi.replace(/\s/g, "")}%` : "";
+  const msisdnLike = msisdn ? `%${msisdn.replace(/\s/g, "")}%` : "";
+
   const sql = `
     SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
            s.platform_plan_id, s.imsi, s.msisdn, s.current_volume_mb,
@@ -266,36 +287,87 @@ export async function listSims(
     LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
     WHERE s.tenant_id = ?
       AND (? = '' OR s.plan_id = ?)
-      AND (? = '' OR s.iccid LIKE ? OR IFNULL(c.name,'') LIKE ?)
+      AND (
+        ? = ''
+        OR REPLACE(s.iccid, ' ', '') LIKE ?
+        OR IFNULL(c.name,'') LIKE ?
+        OR REPLACE(IFNULL(s.imsi,''), ' ', '') LIKE ?
+        OR REPLACE(IFNULL(s.msisdn,''), ' ', '') LIKE ?
+      )
+      AND (? = '' OR IFNULL(c.name,'') LIKE ?)
+      AND (? = '' OR REPLACE(s.iccid, ' ', '') LIKE ?)
+      AND (? = '' OR REPLACE(IFNULL(s.imsi,''), ' ', '') LIKE ?)
+      AND (? = '' OR REPLACE(IFNULL(s.msisdn,''), ' ', '') LIKE ?)
+      AND (? = '' OR s.state = ?)
+      AND (
+        ? = 0
+        OR (
+          (? = 'gt' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) > ?)
+          OR (? = 'gte' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) >= ?)
+          OR (? = 'eq' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) = ?)
+          OR (? = 'lte' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) <= ?)
+          OR (? = 'lt' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) < ?)
+        )
+      )
     ORDER BY s.iccid ASC
     LIMIT ?`;
-  const like = `%${q.replace(/\s/g, "")}%`;
-  const nameLike = `%${q}%`;
+
   const rows = await getDB()
     .prepare(sql)
-    .bind(tenantId, planId, planId, q, like, nameLike, safeLimit)
+    .bind(
+      tenantId,
+      planId,
+      planId,
+      q,
+      qDigitsLike,
+      qTextLike,
+      qDigitsLike,
+      qDigitsLike,
+      customer,
+      customerLike,
+      iccid,
+      iccidLike,
+      imsi,
+      imsiLike,
+      msisdn,
+      msisdnLike,
+      state,
+      state,
+      ctdEnabled ? 1 : 0,
+      ctdOp,
+      ctdValue,
+      ctdOp,
+      ctdValue,
+      ctdOp,
+      ctdValue,
+      ctdOp,
+      ctdValue,
+      ctdOp,
+      ctdValue,
+      safeLimit,
+    )
     .all<{
-    id: string;
-    iccid: string;
-    form_factor: string;
-    state: SimState;
-    customer_id: string | null;
-    plan_id: string | null;
-    pool_id: string | null;
-    wholesale_plan: string | null;
-    platform_plan_id: string | null;
-    platform_plan_name: string | null;
-    tenant_name: string | null;
-    imsi: string | null;
-    msisdn: string | null;
-    current_volume_mb: number | null;
-    customer_name: string | null;
-    plan_name: string | null;
-    pool_name: string | null;
-    cc_status: string | null;
-    cc_polled_at: string | null;
-    cc_ctd_usage_mb: number | null;
-  }>();
+      id: string;
+      iccid: string;
+      form_factor: string;
+      state: SimState;
+      customer_id: string | null;
+      plan_id: string | null;
+      pool_id: string | null;
+      wholesale_plan: string | null;
+      platform_plan_id: string | null;
+      platform_plan_name: string | null;
+      tenant_name: string | null;
+      imsi: string | null;
+      msisdn: string | null;
+      current_volume_mb: number | null;
+      customer_name: string | null;
+      plan_name: string | null;
+      pool_name: string | null;
+      cc_status: string | null;
+      cc_polled_at: string | null;
+      cc_ctd_usage_mb: number | null;
+    }>();
   return (rows.results ?? []).map((row) => ({
     id: row.id,
     iccid: row.iccid,
