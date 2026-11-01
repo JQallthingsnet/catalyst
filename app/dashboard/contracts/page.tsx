@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { ContractRules } from "@/components/portal/contract-rules";
-import { ContractsAdminView } from "./admin-view";
+import { ContractsAdminIndex } from "./admin-view";
 import { requirePortal, requirePrivilege } from "@/lib/portal/guard";
-import { listContractBook, listPlatformPlans, listResellerContract } from "@/lib/portal/platform-plans";
+import { listContractBook, listResellerContract } from "@/lib/portal/platform-plans";
 import { can } from "@/lib/portal/role-model";
-import { listResellerSkus, listSimSkus } from "@/lib/portal/skus";
+import { listResellerSkus } from "@/lib/portal/skus";
 import { redirect } from "next/navigation";
 
 export default async function ContractsPage() {
@@ -102,12 +102,6 @@ export default async function ContractsPage() {
   }
 
   await requirePrivilege("platform.plan");
-  const [book, allPlans, catalogue] = await Promise.all([
-    listContractBook(ctx.homeTenantId),
-    listPlatformPlans(),
-    listSimSkus({ activeOnly: true }),
-  ]);
-  return (
-    <ContractsAdminView book={book} plans={allPlans.filter((plan) => plan.active)} catalogue={catalogue} />
-  );
+  const book = await listContractBook(ctx.homeTenantId);
+  return <ContractsAdminIndex book={book} />;
 }
