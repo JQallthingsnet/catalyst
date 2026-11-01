@@ -260,6 +260,12 @@ export function ContractResellerDetail({
                   key={plan.platformPlanId}
                   className="flex flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-center sm:gap-3"
                 >
+                  <SetValueRankField
+                    tenantId={entry.tenantId}
+                    platformPlanId={plan.platformPlanId}
+                    valueRank={plan.valueRank}
+                    disabled={!entry.tenantActive}
+                  />
                   <div className="min-w-0 flex-1">
                     <Link href={`/dashboard/plans/${plan.platformPlanId}`} className="font-mono text-accent">
                       {plan.ratePlanNew}
@@ -272,12 +278,6 @@ export function ContractResellerDetail({
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
-                    <SetValueRankField
-                      tenantId={entry.tenantId}
-                      platformPlanId={plan.platformPlanId}
-                      valueRank={plan.valueRank}
-                      disabled={!entry.tenantActive}
-                    />
                     <SetDefaultPlanButton
                       tenantId={entry.tenantId}
                       platformPlanId={plan.platformPlanId}
