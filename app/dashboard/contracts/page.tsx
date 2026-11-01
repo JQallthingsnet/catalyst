@@ -36,6 +36,7 @@ export default async function ContractsPage() {
             <thead className="border-b border-line text-quiet">
               <tr>
                 <th className="px-4 py-3 font-medium">Reseller Plan</th>
+                <th className="px-4 py-3 font-medium">Value rank</th>
                 <th className="px-4 py-3 font-medium">Default for bulk</th>
                 <th className="px-4 py-3 font-medium">SIMs on line</th>
               </tr>
@@ -43,7 +44,7 @@ export default async function ContractsPage() {
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-8 text-quiet">
+                  <td colSpan={4} className="px-4 py-8 text-quiet">
                     No Reseller Plans on contract yet. Ask ATN to add plans for your organisation.
                   </td>
                 </tr>
@@ -51,6 +52,9 @@ export default async function ContractsPage() {
               {lines.map((line) => (
                 <tr key={line.platformPlanId} className="border-t border-line">
                   <td className="px-4 py-3 text-ink">{line.remarks}</td>
+                  <td className="px-4 py-3 tabular-nums" title="Higher rank is billed when two plans share a day">
+                    {line.valueRank}
+                  </td>
                   <td className="px-4 py-3">{line.isDefault ? <span className="text-ok">Default</span> : "—"}</td>
                   <td className="px-4 py-3">{line.simCount}</td>
                 </tr>

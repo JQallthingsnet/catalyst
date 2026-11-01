@@ -172,7 +172,9 @@ export function ResellerPlanDailyMatrix({
               </p>
               <p className="mt-1 text-xs text-quiet">
                 Plan count {detail.planCount}
-                {detail.planCount > 1 ? " (changed this day)" : " (no change this day)"}
+                {detail.planCount > 1
+                  ? " (changed this day — highest value rank is billed)"
+                  : " (no change this day)"}
               </p>
             </div>
             <button
@@ -187,14 +189,22 @@ export function ResellerPlanDailyMatrix({
             {detail.plans.map((plan) => (
               <li
                 key={plan.platformPlanId}
-                className="flex flex-wrap justify-between gap-2 rounded-xl border border-line px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2"
               >
                 <span className="font-medium">{plan.planName}</span>
-                {showSupplierCode ? (
-                  <span className="text-quiet">
-                    Supplier code {plan.supplierCode?.trim() || "—"}
-                  </span>
-                ) : null}
+                <span className="flex flex-wrap items-center gap-2 text-quiet">
+                  <span className="tabular-nums">rank {plan.valueRank}</span>
+                  {plan.billed ? (
+                    <span className="rounded-full border border-ok/40 px-2 py-0.5 text-[11px] text-ok">
+                      Billed
+                    </span>
+                  ) : detail.planCount > 1 ? (
+                    <span className="text-[11px] text-quiet">not billed</span>
+                  ) : null}
+                  {showSupplierCode ? (
+                    <span>Supplier code {plan.supplierCode?.trim() || "—"}</span>
+                  ) : null}
+                </span>
               </li>
             ))}
           </ul>
@@ -202,7 +212,8 @@ export function ResellerPlanDailyMatrix({
       ) : (
         <p className="text-xs text-quiet">
           Every Sydney calendar day in the From/To range is a column. Cells show plan count (1 = single plan, 2+ =
-          changed). Click a cell for Reseller Plan details.
+          changed). When two plans share a day, Contract value rank picks which is billed. Click a cell for
+          details.
         </p>
       )}
     </div>

@@ -4,6 +4,7 @@ import {
   assignPlatformPlanToTenant,
   createPlatformPlan,
   deletePlatformPlan,
+  setContractPlanValueRank,
   setDefaultContractPlan,
   setPlatformPlanActive,
   unassignPlatformPlanFromTenant,
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
       platformPlanId?: string;
       skuIds?: string[];
       action?: string;
+      valueRank?: number;
     };
     if (body.action === "unassign" && body.tenantId && body.platformPlanId) {
       await unassignPlatformPlanFromTenant(ctx.email, body.tenantId, body.platformPlanId);
@@ -32,6 +34,15 @@ export async function POST(request: Request) {
     }
     if (body.action === "setDefault" && body.tenantId && body.platformPlanId) {
       await setDefaultContractPlan(ctx.email, body.tenantId, body.platformPlanId);
+      return NextResponse.json({ success: true });
+    }
+    if (body.action === "setValueRank" && body.tenantId && body.platformPlanId) {
+      await setContractPlanValueRank(
+        ctx.email,
+        body.tenantId,
+        body.platformPlanId,
+        Number(body.valueRank),
+      );
       return NextResponse.json({ success: true });
     }
     if (body.tenantId && body.platformPlanId) {

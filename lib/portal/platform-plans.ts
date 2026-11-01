@@ -1,4 +1,5 @@
 import { getDB } from "@/lib/env";
+import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { newId } from "@/lib/portal/ids";
 import { DEFAULT_PLAN_SUPPLIER, isListedPlanSupplier, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
 import { assignSkuToTenant, listResellerSkus } from "@/lib/portal/skus";
@@ -441,6 +442,46 @@ export async function setDefaultContractPlan(
     .run();
 }
 
+/** Higher value_rank is billed when multiple Reseller Plans occur on the same Sydney day. */
+export async function setContractPlanValueRank(
+  actorEmail: string,
+  tenantId: string,
+  platformPlanId: string,
+  valueRank: number,
+): Promise<void> {
+  const allowed = await tenantHasPlatformPlan(tenantId, platformPlanId);
+  if (!allowed) throw new Error("That plan is not on contract for this reseller.");
+  const rank = Math.floor(Number(valueRank));
+  if (!Number.isFinite(rank) || rank < 0 || rank > 9999) {
+    throw new Error("Value rank must be a whole number from 0 to 9999.");
+  }
+  const hasColumn = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
+  if (!hasColumn) {
+    throw new Error("Value rank is not available yet — run schema migrate (0042).");
+  }
+  const db = getDB();
+  await db
+    .prepare(
+      `UPDATE tenant_plan_assignments SET value_rank = ? WHERE tenant_id = ? AND platform_plan_id = ?`,
+    )
+    .bind(rank, tenantId, platformPlanId)
+    .run();
+  const plan = await getPlatformPlan(platformPlanId);
+  await db
+    .prepare(
+      `INSERT INTO audit_events (id, tenant_id, actor_email, action, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      newId("aud"),
+      tenantId,
+      actorEmail,
+      "plan",
+      `Value rank ${rank}: ${plan?.name ?? platformPlanId}`,
+      new Date().toISOString(),
+    )
+    .run();
+}
+
 /**
  * Find or create a Reseller Plan whose name is exactly Jasper modem_ID.
  * Not bound to the reseller contract — SIMs may start uncontracted; Change plan moves them on-contract later.
@@ -560,6 +601,8 @@ export type ContractBookEntry = {
     commPlan: string;
     active: boolean;
     isDefault: boolean;
+    /** Higher wins billing when multiple Reseller Plans apply on the same Sydney day. */
+    valueRank: number;
     simCount: number;
   }[];
   /** Catalogue SKUs this reseller may Order SIMs for. */
@@ -586,20 +629,32 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
     .bind(homeTenantId)
     .all<{ id: string; name: string; active: number }>();
 
+  const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
   const rows = await db
     .prepare(
-      `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-              p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
-              p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
-       FROM tenant_plan_assignments a
-       JOIN platform_plans p ON p.id = a.platform_plan_id
-       ORDER BY p.cc_rate_plan COLLATE NOCASE`,
+      hasValueRank
+        ? `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
+                  IFNULL(a.value_rank, 0) AS value_rank,
+                  p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
+                  p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
+                  (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+           FROM tenant_plan_assignments a
+           JOIN platform_plans p ON p.id = a.platform_plan_id
+           ORDER BY IFNULL(a.value_rank, 0) DESC, p.cc_rate_plan COLLATE NOCASE`
+        : `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
+                  0 AS value_rank,
+                  p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
+                  p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
+                  (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+           FROM tenant_plan_assignments a
+           JOIN platform_plans p ON p.id = a.platform_plan_id
+           ORDER BY p.cc_rate_plan COLLATE NOCASE`,
     )
     .all<{
       tenant_id: string;
       platform_plan_id: string;
       is_default: number;
+      value_rank: number;
       remarks: string;
       supplier: string;
       cc_rate_plan: string;
@@ -619,6 +674,7 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
       commPlan: row.comm_plan,
       active: Boolean(row.plan_active),
       isDefault: Boolean(row.is_default),
+      valueRank: Number(row.value_rank) || 0,
       simCount: row.sim_count,
     });
     byTenant.set(row.tenant_id, list);
@@ -671,21 +727,34 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
 export async function listResellerContract(tenantId: string): Promise<ContractBookEntry["plans"]> {
   const db = getDB();
   try {
+    const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
     const rows = await db
       .prepare(
-        `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-                p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
-                p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-                (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
-         FROM tenant_plan_assignments a
-         JOIN platform_plans p ON p.id = a.platform_plan_id
-         WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
-         ORDER BY IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
+        hasValueRank
+          ? `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
+                    IFNULL(a.value_rank, 0) AS value_rank,
+                    p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
+                    p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+             FROM tenant_plan_assignments a
+             JOIN platform_plans p ON p.id = a.platform_plan_id
+             WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
+             ORDER BY IFNULL(a.value_rank, 0) DESC, IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`
+          : `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
+                    0 AS value_rank,
+                    p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
+                    p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
+                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+             FROM tenant_plan_assignments a
+             JOIN platform_plans p ON p.id = a.platform_plan_id
+             WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
+             ORDER BY IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
       )
       .bind(tenantId)
       .all<{
         platform_plan_id: string;
         is_default: number;
+        value_rank: number;
         remarks: string;
         supplier: string;
         cc_rate_plan: string;
@@ -701,6 +770,7 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
       commPlan: row.comm_plan,
       active: Boolean(row.plan_active),
       isDefault: Boolean(row.is_default),
+      valueRank: Number(row.value_rank) || 0,
       simCount: row.sim_count,
     }));
   } catch {
@@ -730,6 +800,7 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
       commPlan: row.comm_plan,
       active: true,
       isDefault: false,
+      valueRank: 0,
       simCount: row.sim_count,
     }));
   }

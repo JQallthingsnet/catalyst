@@ -3,6 +3,7 @@ import { BindPlanToResellerForm } from "@/components/portal/bind-plan-to-reselle
 import { ContractCataloguePicker } from "@/components/portal/contract-catalogue-picker";
 import { ContractRules } from "@/components/portal/contract-rules";
 import { SetDefaultPlanButton } from "@/components/portal/set-default-plan-button";
+import { SetValueRankField } from "@/components/portal/set-value-rank-field";
 import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
@@ -245,7 +246,10 @@ export function ContractResellerDetail({
 
         <section className="rounded-card border border-line bg-panel p-5">
           <h2 className="text-sm font-semibold text-ink">Reseller Plans</h2>
-          <p className="mt-1 text-xs text-quiet">Contracted Reseller Plans this organisation may sell on.</p>
+          <p className="mt-1 text-xs text-quiet">
+            Contracted Reseller Plans this organisation may sell on. Value rank decides billing when two
+            plans occur on the same Sydney day — higher number is billed.
+          </p>
 
           {entry.plans.length === 0 ? (
             <p className="mt-3 text-sm text-quiet">None bound yet.</p>
@@ -267,7 +271,13 @@ export function ContractResellerDetail({
                       {plan.isDefault ? " · default" : ""}
                     </p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-3">
+                    <SetValueRankField
+                      tenantId={entry.tenantId}
+                      platformPlanId={plan.platformPlanId}
+                      valueRank={plan.valueRank}
+                      disabled={!entry.tenantActive}
+                    />
                     <SetDefaultPlanButton
                       tenantId={entry.tenantId}
                       platformPlanId={plan.platformPlanId}

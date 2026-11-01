@@ -10,6 +10,7 @@ const SUPER_ADMIN_RULES = [
   "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
   "Reseller Plan changes are allowed any time within contracted plans (any SIM state).",
   "Each Sydney day keeps every Reseller Plan used on each ICCID (more than one row that day if the plan changed). Export daily plans CSV from Plan changes.",
+  "On Contract, set a value rank per Reseller Plan. If two plans occur on the same Sydney day, the higher rank is billed (ties: default plan, then name).",
   "Plan changes update the Reseller Plan. ATN bills from that Catalyst plan — not from Jasper. Whether to also change Jasper is ATN’s choice later.",
   "Snapshot differs / Push are super-admin only (CC vs Catalyst). They do not change reseller billing.",
   "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs.",
@@ -28,7 +29,7 @@ const RESELLER_ADMIN_RULES = [
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",
   "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
   "Change Reseller Plan any time within this contract (any SIM state).",
-  "Plan changes is your log of ICCID plan moves. Daily plans CSV lists every Reseller Plan used per ICCID per day. Billing follows the plan on the SIM in Catalyst.",
+  "Plan changes is your log of ICCID plan moves. Daily plans CSV lists every Reseller Plan used per ICCID per day. If two plans share a day, ATN’s value rank on your contract picks which is billed.",
 ];
 
 export function ContractRules({ variant }: { variant: "super_admin" | "reseller_admin" }) {
