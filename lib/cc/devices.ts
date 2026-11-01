@@ -16,7 +16,7 @@ import {
   updateJasperDeviceStatus,
   type JasperDevice,
 } from "@/lib/cc/client";
-import { type JasperLifecycleStatus, type SimState } from "@/lib/portal/catalogue";
+import { type JasperSettableStatus, type SimState } from "@/lib/portal/catalogue";
 import { newId } from "@/lib/portal/ids";
 import { DEFAULT_PLAN_SUPPLIER, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
 import {
@@ -256,7 +256,7 @@ export function mapCcStatus(status: string): SimState | null {
  */
 export async function pushAndSyncSimLifecycle(
   iccid: string,
-  jasperStatus: JasperLifecycleStatus,
+  jasperStatus: JasperSettableStatus,
 ): Promise<{ state: SimState; ccStatus: string }> {
   const cleaned = iccid.replace(/\s/g, "");
   if (!jasperConfigured()) {

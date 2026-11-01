@@ -1,6 +1,13 @@
 import { sendSystemEmail } from "@/lib/auth/email";
 import { getDB } from "@/lib/env";
-import { lifecycleTarget, type SimState } from "@/lib/portal/catalogue";
+import {
+  isJasperSettableStatus,
+  jasperLifecycleTargets,
+  jasperStatusFromSimState,
+  normalizeJasperStatus,
+  resolveLifecycleJasperStatus,
+  type SimState,
+} from "@/lib/portal/catalogue";
 import { newId } from "@/lib/portal/ids";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import { changeSimRatePlan } from "@/lib/portal/rate-plan-change";
@@ -35,12 +42,14 @@ function escapeHtml(value: string): string {
 }
 
 function isItemAction(value: string): value is BulkItemAction {
-  return (
-    value === "Activate" ||
-    value === "Deactivate" ||
-    value === "rate_plan" ||
-    value === "retail_plan"
-  );
+  if (value === "rate_plan" || value === "retail_plan") return true;
+  if (value === "Activate" || value === "Deactivate") return true;
+  const status = resolveLifecycleJasperStatus(value);
+  return status != null && isJasperSettableStatus(status);
+}
+
+function isLifecycleAction(action: string): boolean {
+  return action !== "rate_plan" && action !== "retail_plan" && isItemAction(action);
 }
 
 export async function createSimBulkJob(
@@ -74,10 +83,13 @@ export async function createSimBulkJob(
   const placeholders = uniqueIccids.map(() => "?").join(",");
   const owned = await db
     .prepare(
-      `SELECT iccid, state, customer_id FROM sims WHERE tenant_id = ? AND iccid IN (${placeholders})`,
+      `SELECT s.iccid, s.state, s.customer_id, cc.status AS cc_status
+       FROM sims s
+       LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
+       WHERE s.tenant_id = ? AND s.iccid IN (${placeholders})`,
     )
     .bind(tenantId, ...uniqueIccids)
-    .all<{ iccid: string; state: SimState; customer_id: string | null }>();
+    .all<{ iccid: string; state: SimState; customer_id: string | null; cc_status: string | null }>();
   const byIccid = new Map((owned.results ?? []).map((row) => [row.iccid, row]));
 
   const platformPlanCache = new Map<string, boolean>();
@@ -87,9 +99,20 @@ export async function createSimBulkJob(
     if (!sim) {
       throw new Error(`SIM ${item.iccid} is not in this organisation.`);
     }
-    if (item.action === "Activate" || item.action === "Deactivate") {
-      if (!lifecycleTarget(item.action, sim.state)) {
-        throw new Error(`${item.action} is not valid from ${sim.state} (${item.iccid}).`);
+    if (isLifecycleAction(item.action)) {
+      const jasperStatus = resolveLifecycleJasperStatus(item.action);
+      if (!jasperStatus) {
+        throw new Error(`${item.action} is not a valid Jasper status (${item.iccid}).`);
+      }
+      const current =
+        normalizeJasperStatus(sim.cc_status) ?? jasperStatusFromSimState(sim.state);
+      if (!current) {
+        throw new Error(`No Control Center status for ${item.iccid} — Sync CC and retry.`);
+      }
+      if (!jasperLifecycleTargets(current).includes(jasperStatus)) {
+        throw new Error(
+          `${jasperStatus} is not available from ${current} (${item.iccid}).`,
+        );
       }
       continue;
     }
@@ -274,10 +297,12 @@ export async function processSimBulkJobChunk(
           planId,
           skipNotify: true,
         });
-      } else if (action === "Activate" || action === "Deactivate") {
+      } else if (isLifecycleAction(action)) {
+        const status = resolveLifecycleJasperStatus(action);
+        if (!status) throw new Error(`Unknown action ${action}.`);
         await applyLifecycle(tenantId, actorEmail, {
           iccid: item.iccid,
-          action,
+          status,
           skipNotify: true,
         });
       } else {

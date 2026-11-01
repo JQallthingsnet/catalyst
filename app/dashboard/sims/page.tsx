@@ -175,10 +175,10 @@ export default async function SimsPage({
             <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
               <FilterSelect
                 name="state"
-                label="State"
+                label="SIM status"
                 value={filter.state ?? ""}
                 options={filterOptions.states}
-                allLabel="All states"
+                allLabel="All statuses"
               />
               <FilterSelect
                 name="plan"

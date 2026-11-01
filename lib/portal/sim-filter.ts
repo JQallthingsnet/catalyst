@@ -79,11 +79,14 @@ export function simsListFilterParams(filter: SimsListFilter): URLSearchParams {
   return sp;
 }
 
+/** @deprecated Cascading options use live Jasper / CC statuses via listSimsFilterOptions. */
 export const SIM_STATE_FILTER_OPTIONS = [
-  "Ready",
-  "Active",
-  "Suspended",
-  "Deactivated",
+  "INVENTORY",
+  "TEST_READY",
+  "ACTIVATION_READY",
+  "ACTIVATED",
+  "DEACTIVATED",
+  "RETIRED",
 ] as const;
 
 export const SIM_CTD_OP_OPTIONS: { value: SimsCtdOp; label: string }[] = [

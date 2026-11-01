@@ -270,11 +270,12 @@ async function jasperGet<T>(
 
 /**
  * Edit Device Details — change SIM status in Control Center.
+ * Pass an explicit Jasper status (not grouped Activate/Deactivate).
  * @see https://developer.cisco.com/docs/control-center/edit-device-details/
  */
 export async function updateJasperDeviceStatus(
   iccid: string,
-  status: "ACTIVATED" | "DEACTIVATED",
+  status: string,
 ): Promise<void> {
   const cleaned = iccid.replace(/\s/g, "");
   await jasperRequest("PUT", `/devices/${encodeURIComponent(cleaned)}`, {

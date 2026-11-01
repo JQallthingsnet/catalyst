@@ -15,7 +15,10 @@ export async function POST(request: Request) {
     const body = (await request.json()) as { items?: BulkJobItemInput[] };
     const items = body.items ?? [];
     const needsLifecycle = items.some(
-      (item) => item.action === "Activate" || item.action === "Deactivate",
+      (item) =>
+        item.action !== "rate_plan" &&
+        item.action !== "retail_plan" &&
+        Boolean(item.action),
     );
     const needsResellerPlan = items.some((item) => item.action === "rate_plan");
     const needsRetailPlan = items.some((item) => item.action === "retail_plan");

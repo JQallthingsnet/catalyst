@@ -122,7 +122,8 @@ export function simFieldsForRole(role: PortalRole) {
   return {
     tenantName: role === "super_admin",
     ccRatePlan: role === "super_admin",
-    ccStatus: role === "super_admin",
+    // SIM status column already shows live Jasper / CC status (ungrouped).
+    ccStatus: false,
     platformPlan: role === "super_admin" || role === "reseller_admin",
   };
 }

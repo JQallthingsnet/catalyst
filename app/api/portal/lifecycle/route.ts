@@ -8,11 +8,12 @@ export async function POST(request: Request) {
   const denied = denyUnless(ctx, "lifecycle");
   if (denied) return denied;
   try {
-    const body = (await request.json()) as { iccid?: string; action?: string };
+    const body = (await request.json()) as { iccid?: string; action?: string; status?: string };
     // Reseller admin/operator and super admin manage SIM status themselves — push to Jasper.
     const state = await applyLifecycle(ctx.tenantId, ctx.email, {
       iccid: body.iccid ?? "",
-      action: body.action ?? "",
+      action: body.action,
+      status: body.status,
     });
     return NextResponse.json({ success: true, mode: "applied", state, pushed: true });
   } catch (err) {

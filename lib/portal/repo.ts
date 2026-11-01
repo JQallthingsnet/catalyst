@@ -8,10 +8,12 @@ import {
   pushAndSyncSimLifecycle,
 } from "@/lib/cc/devices";
 import {
-  lifecycleJasperStatus,
-  lifecycleTarget,
+  jasperLifecycleTargets,
+  jasperStatusFromSimState,
   nextOrderSimsStatus,
+  normalizeJasperStatus,
   orderAdvanceLabel,
+  resolveLifecycleJasperStatus,
   type OrderStatus,
   type SimState,
 } from "@/lib/portal/catalogue";
@@ -303,8 +305,32 @@ function simsFilterSql(
     binds.push(`%${normalized.msisdn.trim().replace(/\s/g, "")}%`);
   }
   if (normalized.state?.trim()) {
-    clauses.push("s.state = ?");
-    binds.push(normalized.state.trim());
+    // Filter by live Jasper / CC status (ungrouped). Legacy Catalyst labels still match.
+    const state = normalized.state.trim();
+    const upper = state.toUpperCase().replace(/[\s-]+/g, "_");
+    if (
+      upper === "READY" ||
+      upper === "ACTIVE" ||
+      upper === "SUSPENDED" ||
+      upper === "DEACTIVATED"
+    ) {
+      // Older bookmark: Catalyst grouped state on sims.state
+      const label =
+        upper === "READY"
+          ? "Ready"
+          : upper === "ACTIVE"
+            ? "Active"
+            : upper === "SUSPENDED"
+              ? "Suspended"
+              : "Deactivated";
+      clauses.push("s.state = ?");
+      binds.push(label);
+    } else {
+      clauses.push(
+        `UPPER(REPLACE(REPLACE(IFNULL(cc.status,''), ' ', '_'), '-', '_')) = ?`,
+      );
+      binds.push(upper);
+    }
   }
   if (
     normalized.ctdOp &&
@@ -359,7 +385,8 @@ export async function listSimsFilterOptions(
   const { sql, binds } = simsFilterSql(tenantId, planScope);
   const [customers, states, planRows] = await Promise.all([
     distinct("c.name", omitSimsFilterField(filter, "customer")),
-    distinct("s.state", omitSimsFilterField(filter, "state")),
+    // Ungrouped Jasper statuses from the CC snapshot.
+    distinct("cc.status", omitSimsFilterField(filter, "state")),
     db
       .prepare(
         `SELECT DISTINCT s.plan_id AS id, p.name AS name
@@ -1622,31 +1649,52 @@ export async function changeSimRetailPlan(
 export async function applyLifecycle(
   tenantId: string,
   actorEmail: string,
-  input: { iccid: string; action: string; skipNotify?: boolean },
+  input: { iccid: string; action?: string; status?: string; skipNotify?: boolean },
 ): Promise<SimState> {
   const db = getDB();
   const iccid = input.iccid.replace(/\s/g, "");
   const sim = await db
-    .prepare("SELECT id, state FROM sims WHERE tenant_id = ? AND iccid = ?")
+    .prepare(
+      `SELECT s.id, s.state, cc.status AS cc_status
+       FROM sims s
+       LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
+       WHERE s.tenant_id = ? AND s.iccid = ?`,
+    )
     .bind(tenantId, iccid)
-    .first<{ id: string; state: SimState }>();
+    .first<{ id: string; state: SimState; cc_status: string | null }>();
   if (!sim) throw new Error("SIM not found in this tenant.");
-  const next = lifecycleTarget(input.action, sim.state);
-  if (!next) throw new Error(`${input.action} is not valid from ${sim.state}.`);
-  const jasperStatus = lifecycleJasperStatus(input.action);
-  if (!jasperStatus) throw new Error(`${input.action} is not supported.`);
+
+  const requested = (input.status ?? input.action ?? "").trim();
+  const jasperStatus = resolveLifecycleJasperStatus(requested);
+  if (!jasperStatus) throw new Error(`${requested || "Status"} is not a valid Jasper SIM status.`);
+
+  const currentCc =
+    normalizeJasperStatus(sim.cc_status) ?? jasperStatusFromSimState(sim.state);
+  if (!currentCc) {
+    throw new Error("No Control Center status for this SIM — Sync CC and retry.");
+  }
+  if (currentCc === jasperStatus) {
+    throw new Error(`SIM is already ${jasperStatus}.`);
+  }
+  const allowed = jasperLifecycleTargets(currentCc);
+  if (!allowed.includes(jasperStatus)) {
+    throw new Error(
+      `${jasperStatus} is not available from ${currentCc}. Available: ${allowed.join(", ") || "none"}.`,
+    );
+  }
 
   if (!jasperConfigured()) {
     throw new Error("Control Center is not configured — cannot change SIM status.");
   }
 
-  // Resellers manage their own SIMs: push to Jasper, then read back (source of truth).
+  // Push explicit Jasper status, then read back (source of truth).
   const synced = await pushAndSyncSimLifecycle(iccid, jasperStatus);
   const effective = synced.state;
   const ccStatus = synced.ccStatus;
-  if (effective !== next) {
+  const effectiveCc = normalizeJasperStatus(ccStatus);
+  if (effectiveCc !== jasperStatus) {
     throw new Error(
-      `Control Center status is ${ccStatus} (Catalyst ${effective}); expected ${next} after ${input.action}.`,
+      `Control Center status is ${ccStatus}; expected ${jasperStatus} after change.`,
     );
   }
 
@@ -1655,14 +1703,14 @@ export async function applyLifecycle(
     kind: "lifecycle",
     payload: {
       iccid,
-      action: input.action,
-      from: sim.state,
-      to: effective,
+      action: jasperStatus,
+      from: currentCc,
+      to: effectiveCc,
       jasperStatus,
       ccStatus,
       pushed: true,
     },
-    correlationId: `life-${iccid}-${input.action}-${sim.state}`,
+    correlationId: `life-${iccid}-${jasperStatus}-${currentCc}`,
   });
   if (job.status === "failed") throw new Error(job.error ?? "Control Center lifecycle failed.");
 
@@ -1675,7 +1723,7 @@ export async function applyLifecycle(
     tenantId,
     actorEmail,
     "lifecycle",
-    `${input.action} ${iccid} → ${effective} (Jasper ${ccStatus})`,
+    `${iccid}: ${currentCc} → ${effectiveCc}`,
   );
 
   if (!input.skipNotify) {
@@ -1684,9 +1732,9 @@ export async function applyLifecycle(
       const notify = await notifySimLifecycleChange({
         tenantId,
         iccid,
-        action: input.action,
-        fromState: sim.state,
-        toState: effective,
+        action: jasperStatus,
+        fromState: currentCc,
+        toState: effectiveCc ?? jasperStatus,
         actorEmail,
         mode: "applied",
       });

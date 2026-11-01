@@ -1,10 +1,19 @@
 /** Shared with client UI — keep free of server-only imports. */
 export const BULK_SIM_CAP = 100;
 
-export type BulkItemAction = "Activate" | "Deactivate" | "rate_plan" | "retail_plan";
+/**
+ * Per-item bulk action. Lifecycle uses an explicit Jasper status string
+ * (e.g. ACTIVATED, TEST_READY). Legacy Activate/Deactivate still accepted server-side.
+ */
+export type BulkItemAction =
+  | "Activate"
+  | "Deactivate"
+  | "rate_plan"
+  | "retail_plan"
+  | string;
 
 /** @deprecated Job-level kind; prefer per-item BulkItemAction. Kept for status payloads. */
-export type BulkJobKind = BulkItemAction | "mixed";
+export type BulkJobKind = string;
 
 export type BulkJobStatus = {
   id: string;

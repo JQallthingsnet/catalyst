@@ -10,7 +10,11 @@ import { ConfirmDialog } from "@/components/portal/confirm-dialog";
 import { LifecycleButtons } from "@/components/portal/lifecycle-buttons";
 import { formatIccid } from "@/lib/portal/ids";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
-import { lifecycleTarget, type SimState } from "@/lib/portal/catalogue";
+import {
+  jasperLifecycleTargets,
+  jasperStatusFromSimState,
+  normalizeJasperStatus,
+} from "@/lib/portal/catalogue";
 import {
   BULK_SIM_CAP,
   type BulkJobItemInput,
@@ -44,15 +48,17 @@ type Fields = {
 
 /** Per-column choices while selected - lifecycle and plan are independent. */
 type StagedRow = {
-  lifecycle: "" | "Activate" | "Deactivate";
+  /** Explicit Jasper status target, or empty for no change. */
+  lifecycle: string;
   retailPlanId: string;
 };
 
-function asSimState(value: string): SimState | null {
-  if (value === "Ready" || value === "Active" || value === "Suspended" || value === "Deactivated") {
-    return value;
-  }
-  return null;
+function currentJasperStatus(sim: SimsInventoryRow): string | null {
+  return normalizeJasperStatus(sim.ccStatus) ?? jasperStatusFromSimState(sim.state);
+}
+
+function displaySimStatus(sim: SimsInventoryRow): string {
+  return currentJasperStatus(sim) ?? sim.ccStatus ?? sim.state ?? "—";
 }
 
 function rowReady(staged: StagedRow | undefined): boolean {
@@ -117,15 +123,15 @@ export function SimsInventoryPanel({
   );
 
   const summary = useMemo(() => {
-    const counts = { Activate: 0, Deactivate: 0, retail_plan: 0 };
+    const byStatus: Record<string, number> = {};
+    let retail_plan = 0;
     for (const iccid of selected) {
       const row = staged[iccid];
       if (!row) continue;
-      if (row.lifecycle === "Activate") counts.Activate += 1;
-      if (row.lifecycle === "Deactivate") counts.Deactivate += 1;
-      if (row.retailPlanId) counts.retail_plan += 1;
+      if (row.lifecycle) byStatus[row.lifecycle] = (byStatus[row.lifecycle] ?? 0) + 1;
+      if (row.retailPlanId) retail_plan += 1;
     }
-    return counts;
+    return { byStatus, retail_plan };
   }, [selected, staged]);
 
   function patchStaged(iccid: string, patch: Partial<StagedRow>) {
@@ -176,7 +182,7 @@ export function SimsInventoryPanel({
     for (const iccid of selected) {
       const row = staged[iccid];
       if (!row) continue;
-      if (row.lifecycle === "Activate" || row.lifecycle === "Deactivate") {
+      if (row.lifecycle) {
         items.push({ iccid, action: row.lifecycle });
       }
       if (row.retailPlanId) {
@@ -223,7 +229,7 @@ export function SimsInventoryPanel({
     if (!allReady) return;
     const items = buildItems();
     if (items.length === 0) {
-      setError("Choose a lifecycle action and/or retail plan on each selected SIM.");
+      setError("Choose a Jasper status and/or retail plan on each selected SIM.");
       return;
     }
     setBusy(true);
@@ -254,7 +260,11 @@ export function SimsInventoryPanel({
     sims.length > 0 &&
     sims.slice(0, BULK_SIM_CAP).every((sim) => selected.includes(sim.iccid)) &&
     selected.length > 0;
-  const changeCount = summary.Activate + summary.Deactivate + summary.retail_plan;
+  const lifecycleChangeCount = Object.values(summary.byStatus).reduce((n, v) => n + v, 0);
+  const changeCount = lifecycleChangeCount + summary.retail_plan;
+  const statusSummary = Object.entries(summary.byStatus)
+    .map(([status, count]) => `${status} ${count}`)
+    .join(" · ");
   const CONFIRM_LINE_CAP = 20;
   const shownConfirmLines = confirmLines.slice(0, CONFIRM_LINE_CAP);
   const hiddenConfirmLines = Math.max(0, confirmLines.length - shownConfirmLines.length);
@@ -265,7 +275,8 @@ export function SimsInventoryPanel({
         <div>
           <h1 className="text-3xl font-semibold">SIMs</h1>
           <p className="mt-1 text-sm text-quiet">
-            Select SIMs (max {BULK_SIM_CAP}). Set Lifecycle and/or retail plan per row, then Bulk update.
+            Select SIMs (max {BULK_SIM_CAP}). Set Jasper status and/or retail plan per row, then Bulk
+            update. Available statuses depend on the live Control Center status.
           </p>
           {filterPlanId ? (
             <p className="mt-2 text-sm text-quiet">
@@ -292,7 +303,7 @@ export function SimsInventoryPanel({
                   ? "Select SIMs first"
                   : allReady
                     ? undefined
-                    : "Set Lifecycle and/or retail plan on every selected SIM"
+                    : "Set Jasper status and/or retail plan on every selected SIM"
               }
               className={selectionActive ? btnPrimary : btnSecondary}
             >
@@ -313,10 +324,9 @@ export function SimsInventoryPanel({
         <p className="mt-3 text-xs text-quiet">
           {selected.length} selected
           {atCap ? ` · cap ${BULK_SIM_CAP}` : ` · max ${BULK_SIM_CAP}`}
-          {summary.Activate ? ` · Activate ${summary.Activate}` : ""}
-          {summary.Deactivate ? ` · Deactivate ${summary.Deactivate}` : ""}
+          {statusSummary ? ` · ${statusSummary}` : ""}
           {summary.retail_plan ? ` · Plan ${summary.retail_plan}` : ""}
-          {!allReady ? " · pick Lifecycle and/or retail plan on each selected row" : ""}.
+          {!allReady ? " · pick Jasper status and/or retail plan on each selected row" : ""}.
           <button
             type="button"
             className="ml-2 text-accent hover:underline"
@@ -355,8 +365,8 @@ export function SimsInventoryPanel({
               <th className="px-4 py-3">MSISDN</th>
               <th className="px-4 py-3">CTD MB</th>
               <th className="px-4 py-3">Pool</th>
-              <th className="px-4 py-3">State</th>
-              <th className="px-4 py-3">Lifecycle</th>
+              <th className="px-4 py-3">SIM status</th>
+              <th className="px-4 py-3">Change status</th>
               {canChangePlan ? <th className="px-4 py-3">Retail plan</th> : null}
             </tr>
           </thead>
@@ -365,7 +375,8 @@ export function SimsInventoryPanel({
               const checked = selected.includes(sim.iccid);
               const rowLocked = atCap && !checked;
               const rowStaged = staged[sim.iccid];
-              const simState = asSimState(sim.state);
+              const jasperCurrent = currentJasperStatus(sim);
+              const statusTargets = jasperLifecycleTargets(jasperCurrent);
               const dash = "—";
               const hasCustomer = Boolean(sim.customerName);
               return (
@@ -394,36 +405,41 @@ export function SimsInventoryPanel({
                     {sim.currentVolumeMb != null ? `${sim.currentVolumeMb} MB` : dash}
                   </td>
                   <td className="px-4 py-3">{sim.poolName ?? dash}</td>
-                  <td className="px-4 py-3">{sim.state}</td>
+                  <td className="px-4 py-3">{displaySimStatus(sim)}</td>
                   <td className="px-4 py-3">
                     {checked && canLifecycle ? (
                       <select
                         value={rowStaged?.lifecycle ?? ""}
                         onChange={(event) =>
                           patchStaged(sim.iccid, {
-                            lifecycle: event.target.value as StagedRow["lifecycle"],
+                            lifecycle: event.target.value,
                           })
                         }
                         className="rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
+                        title={
+                          statusTargets.length
+                            ? undefined
+                            : jasperCurrent
+                              ? "No Jasper status changes available"
+                              : "Sync CC to load Jasper status"
+                        }
                       >
                         <option value="">No change</option>
-                        <option
-                          value="Activate"
-                          disabled={!(simState && lifecycleTarget("Activate", simState))}
-                        >
-                          Activate
-                        </option>
-                        <option
-                          value="Deactivate"
-                          disabled={!(simState && lifecycleTarget("Deactivate", simState))}
-                        >
-                          Deactivate
-                        </option>
+                        {statusTargets.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
                       </select>
                     ) : canLifecycle ? (
-                      <LifecycleButtons iccid={sim.iccid} state={sim.state} />
+                      <LifecycleButtons
+                        iccid={sim.iccid}
+                        state={sim.state}
+                        ccStatus={sim.ccStatus}
+                        disabled={selectionActive}
+                      />
                     ) : (
-                      sim.state
+                      displaySimStatus(sim)
                     )}
                   </td>
                   {canChangePlan ? (
