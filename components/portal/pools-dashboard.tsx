@@ -537,7 +537,7 @@ export function PoolsDashboard({
       seriesByName={seriesByName}
       latestByName={latestByName}
       busy={seriesBusy}
-      allowPick
+      allowPick={platformView}
       entityLabel={entityLabel}
       title={
         mode === "chart"
