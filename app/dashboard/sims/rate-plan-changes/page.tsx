@@ -159,7 +159,7 @@ export default async function RatePlanChangesPage({
   const [changes, listedCount, options, dailyMatrix] = await Promise.all([
     listRatePlanChanges(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     countRatePlanChanges(filter),
-    listRatePlanChangeFilterOptions({ scopeTenantId: filter.scopeTenantId }),
+    listRatePlanChangeFilterOptions(filter),
     listSimPlatformPlanDailyMatrix({
       tenantId: matrixTenantId,
       dateFrom: matrixDateFrom,
@@ -171,6 +171,7 @@ export default async function RatePlanChangesPage({
   const from = listedCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const to = Math.min(currentPage * PAGE_SIZE, listedCount);
   const exportQuery = changesFilterParams(filter, onPlatform).toString();
+  const filterKey = changesFilterParams(filter, onPlatform).toString();
   const dailyExport = new URLSearchParams();
   if (onPlatform && filter.organisationId) dailyExport.set("org", filter.organisationId);
   dailyExport.set("dateFrom", matrixDateFrom);
@@ -199,6 +200,7 @@ export default async function RatePlanChangesPage({
       </div>
 
       <form
+        key={filterKey || "plan-change-filters"}
         action="/dashboard/sims/rate-plan-changes"
         className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4"
       >

@@ -90,12 +90,20 @@ export default async function OrdersPage({
   const filtered = orderFilterActive(filter);
   const [orders, options] = await Promise.all([
     listOrders(filter),
-    listOrderFilterOptions({
-      scopeTenantId: filter.scopeTenantId,
-      excludeTenantId: filter.excludeTenantId,
-    }),
+    listOrderFilterOptions(filter),
   ]);
   const clearHref = "/dashboard/orders";
+  const filterKey = [
+    filter.query,
+    filter.organisationId,
+    filter.status,
+    filter.kind,
+    filter.skuName,
+    filter.dateFrom,
+    filter.dateTo,
+  ]
+    .filter(Boolean)
+    .join("|");
   const colCount = asPlatform ? 11 : 10;
 
   return (
@@ -121,6 +129,7 @@ export default async function OrdersPage({
       </div>
 
       <form
+        key={filterKey || "orders-filters"}
         action="/dashboard/orders"
         className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4"
       >

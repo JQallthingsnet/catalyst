@@ -452,17 +452,33 @@ export async function countRatePlanChanges(filter: RatePlanChangeFilter = {}): P
   return row?.c ?? 0;
 }
 
+function omitRatePlanChangeFilterField(
+  filter: RatePlanChangeFilter,
+  field: keyof RatePlanChangeFilter,
+): RatePlanChangeFilter {
+  const next: RatePlanChangeFilter = { ...filter };
+  if (field === "dateFrom" || field === "dateTo") {
+    delete next.dateFrom;
+    delete next.dateTo;
+  } else if (field === "scopeTenantId") {
+    // Hard reseller scope stays.
+  } else {
+    delete next[field];
+  }
+  return normalizeRatePlanChangeFilter(next);
+}
+
+/** Cascading plan-change filter options (same philosophy as CC snapshot). */
 export async function listRatePlanChangeFilterOptions(
-  filter: Pick<RatePlanChangeFilter, "scopeTenantId"> = {},
+  filter: RatePlanChangeFilter = {},
 ): Promise<RatePlanChangeFilterOptions> {
-  const scopeTenantId = clipFilter(filter.scopeTenantId, 64) || undefined;
-  const scopeClause = scopeTenantId ? " WHERE c.tenant_id = ?" : "";
-  const scopeBinds = scopeTenantId ? [scopeTenantId] : [];
+  const normalized = normalizeRatePlanChangeFilter(filter);
   const db = getDB();
 
-  async function distinct(columnSql: string): Promise<string[]> {
-    const whereExtra = scopeClause
-      ? `${scopeClause} AND ${columnSql} IS NOT NULL AND TRIM(CAST(${columnSql} AS TEXT)) != ''`
+  async function distinct(columnSql: string, scope: RatePlanChangeFilter): Promise<string[]> {
+    const { sql, binds } = ratePlanChangeWhere(scope);
+    const whereExtra = sql
+      ? `${sql} AND ${columnSql} IS NOT NULL AND TRIM(CAST(${columnSql} AS TEXT)) != ''`
       : ` WHERE ${columnSql} IS NOT NULL AND TRIM(CAST(${columnSql} AS TEXT)) != ''`;
     const rows = await db
       .prepare(
@@ -471,29 +487,31 @@ export async function listRatePlanChangeFilterOptions(
          ORDER BY value COLLATE NOCASE
          LIMIT 500`,
       )
-      .bind(...scopeBinds)
+      .bind(...binds)
       .all<{ value: string }>();
     return (rows.results ?? []).map((row) => String(row.value));
   }
 
-  const orgRows = scopeTenantId
+  const orgScope = omitRatePlanChangeFilterField(normalized, "organisationId");
+  const { sql: orgSql, binds: orgBinds } = ratePlanChangeWhere(orgScope);
+  const orgRows = normalized.scopeTenantId
     ? { results: [] as Array<{ id: string; name: string }> }
     : await db
         .prepare(
           `SELECT DISTINCT t.id AS id, t.name AS name
-           FROM sim_rate_plan_changes c
-           JOIN tenants t ON t.id = c.tenant_id
+           ${CHANGE_FROM}${orgSql}
            ORDER BY t.name COLLATE NOCASE
            LIMIT 500`,
         )
+        .bind(...orgBinds)
         .all<{ id: string; name: string }>();
 
   const [fromRatePlans, toRatePlans, simStates, currentStates, actorEmails] = await Promise.all([
-    distinct(FROM_MODEM_SQL),
-    distinct(TO_MODEM_SQL),
-    distinct("c.sim_state"),
-    distinct("s.state"),
-    distinct("c.actor_email"),
+    distinct(FROM_MODEM_SQL, omitRatePlanChangeFilterField(normalized, "fromRatePlan")),
+    distinct(TO_MODEM_SQL, omitRatePlanChangeFilterField(normalized, "toRatePlan")),
+    distinct("c.sim_state", omitRatePlanChangeFilterField(normalized, "simState")),
+    distinct("s.state", omitRatePlanChangeFilterField(normalized, "currentState")),
+    distinct("c.actor_email", omitRatePlanChangeFilterField(normalized, "actorEmail")),
   ]);
 
   return {

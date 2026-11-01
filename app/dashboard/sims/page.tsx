@@ -2,14 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SimsInventoryPanel } from "@/components/portal/sims-inventory-panel";
 import { requirePortal } from "@/lib/portal/guard";
-import { listCustomers, listPlans, listSims } from "@/lib/portal/repo";
+import { listPlans, listSims, listSimsFilterOptions } from "@/lib/portal/repo";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import { can, simFieldsForRole } from "@/lib/portal/role-model";
 import {
   normalizeSimsListFilter,
   SIM_CTD_OP_OPTIONS,
-  SIM_STATE_FILTER_OPTIONS,
   simsListFilterActive,
+  simsListFilterParams,
 } from "@/lib/portal/sim-filter";
 
 function FilterSelect({
@@ -44,41 +44,6 @@ function FilterSelect({
           );
         })}
       </select>
-    </label>
-  );
-}
-
-/** Text input with suggestion list — same pattern as CC snapshot. */
-function FilterSuggest({
-  name,
-  label,
-  value,
-  options,
-  placeholder,
-}: {
-  name: string;
-  label: string;
-  value: string;
-  options: string[];
-  placeholder: string;
-}) {
-  const listId = `${name}-suggest`;
-  return (
-    <label className="block text-xs font-medium text-quiet">
-      {label}
-      <input
-        name={name}
-        list={listId}
-        defaultValue={value}
-        placeholder={placeholder}
-        autoComplete="off"
-        className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
-      />
-      <datalist id={listId}>
-        {options.map((option) => (
-          <option key={option} value={option} />
-        ))}
-      </datalist>
     </label>
   );
 }
@@ -120,36 +85,25 @@ export default async function SimsPage({
 
   const filter = normalizeSimsListFilter(params);
   const filtered = simsListFilterActive(filter);
-  const filterKey = [
-    filter.q,
-    filter.planId,
-    filter.customer,
-    filter.iccid,
-    filter.imsi,
-    filter.msisdn,
-    filter.state,
-    filter.ctdOp,
-    filter.ctdMb,
-  ]
-    .filter(Boolean)
-    .join("|");
+  const filterKey = simsListFilterParams(filter).toString();
 
-  const [sims, retailPlans, customers] = await Promise.all([
+  const [sims, retailPlans, filterOptions] = await Promise.all([
     listSims(ctx.tenantId, filter, 5_000),
     can(ctx.role, "assign") ? listPlans(ctx.tenantId) : Promise.resolve([]),
-    listCustomers(ctx.tenantId),
+    listSimsFilterOptions(ctx.tenantId, filter),
   ]);
   const fields = simFieldsForRole(ctx.role);
+  // Change-plan targets: full catalogue. Filter dropdown: cascading subset.
   const planOptions = retailPlans.map((plan) => ({
     id: plan.id,
     label: plan.name,
   }));
   const filterPlanId = filter.planId ?? "";
   const filterPlanName =
+    filterOptions.plans.find((plan) => plan.id === filterPlanId)?.label ??
     retailPlans.find((plan) => plan.id === filterPlanId)?.name ??
     sims.find((sim) => sim.planId === filterPlanId)?.planName ??
     null;
-  // Reseller SIMs page changes the end-customer retail plan (not ATN Reseller Plan).
   const canChangePlan = can(ctx.role, "assign");
   const canLifecycle = can(ctx.role, "lifecycle");
   const canAssign = can(ctx.role, "assign");
@@ -223,22 +177,25 @@ export default async function SimsPage({
                 name="state"
                 label="State"
                 value={filter.state ?? ""}
-                options={[...SIM_STATE_FILTER_OPTIONS]}
+                options={filterOptions.states}
                 allLabel="All states"
               />
               <FilterSelect
                 name="plan"
                 label="Retail plan"
                 value={filter.planId ?? ""}
-                options={planOptions.map((plan) => ({ value: plan.id, label: plan.label }))}
+                options={filterOptions.plans.map((plan) => ({
+                  value: plan.id,
+                  label: plan.label,
+                }))}
                 allLabel="All retail plans"
               />
-              <FilterSuggest
+              <FilterSelect
                 name="customer"
                 label="Customer"
                 value={filter.customer ?? ""}
-                options={customers.map((item) => item.name)}
-                placeholder="Type to filter…"
+                options={filterOptions.customers}
+                allLabel="All customers"
               />
               <label className="block text-xs font-medium text-quiet">
                 CTD compare

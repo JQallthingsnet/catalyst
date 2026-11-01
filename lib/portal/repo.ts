@@ -243,109 +243,161 @@ export async function dashboardSummary(tenantId: string) {
   };
 }
 
-export async function listSims(
-  tenantId: string,
-  filter: SimsListFilter | string = {},
-  limit = 200,
-): Promise<Sim[]> {
-  const normalized =
-    typeof filter === "string"
-      ? { q: filter.trim() || undefined }
-      : filter;
-  const q = normalized.q?.trim() || "";
-  const planId = normalized.planId?.trim() || "";
-  const customer = normalized.customer?.trim() || "";
-  const iccid = normalized.iccid?.trim() || "";
-  const imsi = normalized.imsi?.trim() || "";
-  const msisdn = normalized.msisdn?.trim() || "";
-  const state = normalized.state?.trim() || "";
-  const ctdOp = normalized.ctdOp ?? "";
-  const ctdMb = normalized.ctdMb;
-  const ctdEnabled = Boolean(ctdOp && ctdMb != null && Number.isFinite(ctdMb));
-  const ctdValue = ctdEnabled ? Number(ctdMb) : 0;
-  const safeLimit = Math.max(1, Math.min(Math.floor(limit) || 200, 5_000));
-
-  const qDigitsLike = q ? `%${q.replace(/\s/g, "")}%` : "";
-  const qTextLike = q ? `%${q}%` : "";
-  const customerLike = customer ? `%${customer}%` : "";
-  const iccidLike = iccid ? `%${iccid.replace(/\s/g, "")}%` : "";
-  const imsiLike = imsi ? `%${imsi.replace(/\s/g, "")}%` : "";
-  const msisdnLike = msisdn ? `%${msisdn.replace(/\s/g, "")}%` : "";
-
-  const sql = `
-    SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
-           s.platform_plan_id, s.imsi, s.msisdn, s.current_volume_mb,
-           c.name as customer_name, p.name as plan_name, pl.name as pool_name,
-           pp.name as platform_plan_name, t.name as tenant_name,
-           cc.status as cc_status, cc.polled_at as cc_polled_at, cc.ctd_usage_mb as cc_ctd_usage_mb
-    FROM sims s
+const SIMS_FROM = `FROM sims s
     LEFT JOIN customers c ON c.id = s.customer_id
     LEFT JOIN plans p ON p.id = s.plan_id
     LEFT JOIN pools pl ON pl.id = s.pool_id
     LEFT JOIN platform_plans pp ON pp.id = s.platform_plan_id
     LEFT JOIN tenants t ON t.id = s.tenant_id
-    LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
-    WHERE s.tenant_id = ?
-      AND (? = '' OR s.plan_id = ?)
-      AND (
-        ? = ''
-        OR REPLACE(s.iccid, ' ', '') LIKE ?
-        OR IFNULL(c.name,'') LIKE ?
-        OR REPLACE(IFNULL(s.imsi,''), ' ', '') LIKE ?
-        OR REPLACE(IFNULL(s.msisdn,''), ' ', '') LIKE ?
-      )
-      AND (? = '' OR IFNULL(c.name,'') LIKE ?)
-      AND (? = '' OR REPLACE(s.iccid, ' ', '') LIKE ?)
-      AND (? = '' OR REPLACE(IFNULL(s.imsi,''), ' ', '') LIKE ?)
-      AND (? = '' OR REPLACE(IFNULL(s.msisdn,''), ' ', '') LIKE ?)
-      AND (? = '' OR s.state = ?)
-      AND (
-        ? = 0
-        OR (
-          (? = 'gt' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) > ?)
-          OR (? = 'gte' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) >= ?)
-          OR (? = 'eq' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) = ?)
-          OR (? = 'lte' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) <= ?)
-          OR (? = 'lt' AND COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0) < ?)
-        )
-      )
-    ORDER BY s.iccid ASC
-    LIMIT ?`;
+    LEFT JOIN cc_devices cc ON cc.iccid = s.iccid`;
 
+function omitSimsFilterField(filter: SimsListFilter, field: keyof SimsListFilter): SimsListFilter {
+  const next: SimsListFilter = { ...filter };
+  if (field === "ctdOp" || field === "ctdMb") {
+    delete next.ctdOp;
+    delete next.ctdMb;
+  } else {
+    delete next[field];
+  }
+  return next;
+}
+
+function simsFilterSql(
+  tenantId: string,
+  filter: SimsListFilter | string = {},
+): { sql: string; binds: (string | number)[] } {
+  const normalized =
+    typeof filter === "string" ? { q: filter.trim() || undefined } : filter;
+  const clauses: string[] = ["s.tenant_id = ?"];
+  const binds: (string | number)[] = [tenantId];
+
+  if (normalized.planId?.trim()) {
+    clauses.push("s.plan_id = ?");
+    binds.push(normalized.planId.trim());
+  }
+  if (normalized.q?.trim()) {
+    const q = normalized.q.trim();
+    const digits = `%${q.replace(/\s/g, "")}%`;
+    const text = `%${q}%`;
+    clauses.push(
+      `(REPLACE(s.iccid, ' ', '') LIKE ? OR IFNULL(c.name,'') LIKE ?
+        OR REPLACE(IFNULL(s.imsi,''), ' ', '') LIKE ?
+        OR REPLACE(IFNULL(s.msisdn,''), ' ', '') LIKE ?)`,
+    );
+    binds.push(digits, text, digits, digits);
+  }
+  if (normalized.customer?.trim()) {
+    clauses.push("IFNULL(c.name,'') = ?");
+    binds.push(normalized.customer.trim());
+  }
+  if (normalized.iccid?.trim()) {
+    clauses.push("REPLACE(s.iccid, ' ', '') LIKE ?");
+    binds.push(`%${normalized.iccid.trim().replace(/\s/g, "")}%`);
+  }
+  if (normalized.imsi?.trim()) {
+    clauses.push("REPLACE(IFNULL(s.imsi,''), ' ', '') LIKE ?");
+    binds.push(`%${normalized.imsi.trim().replace(/\s/g, "")}%`);
+  }
+  if (normalized.msisdn?.trim()) {
+    clauses.push("REPLACE(IFNULL(s.msisdn,''), ' ', '') LIKE ?");
+    binds.push(`%${normalized.msisdn.trim().replace(/\s/g, "")}%`);
+  }
+  if (normalized.state?.trim()) {
+    clauses.push("s.state = ?");
+    binds.push(normalized.state.trim());
+  }
+  if (
+    normalized.ctdOp &&
+    normalized.ctdMb != null &&
+    Number.isFinite(normalized.ctdMb)
+  ) {
+    const ctd = "COALESCE(cc.ctd_usage_mb, s.current_volume_mb, 0)";
+    const value = Number(normalized.ctdMb);
+    if (normalized.ctdOp === "gt") clauses.push(`${ctd} > ?`);
+    else if (normalized.ctdOp === "gte") clauses.push(`${ctd} >= ?`);
+    else if (normalized.ctdOp === "eq") clauses.push(`${ctd} = ?`);
+    else if (normalized.ctdOp === "lte") clauses.push(`${ctd} <= ?`);
+    else if (normalized.ctdOp === "lt") clauses.push(`${ctd} < ?`);
+    binds.push(value);
+  }
+
+  return { sql: ` WHERE ${clauses.join(" AND ")}`, binds };
+}
+
+export type SimsFilterOptions = {
+  customers: string[];
+  plans: { id: string; label: string }[];
+  states: string[];
+};
+
+/** Cascading dropdown options for SIMs filters (same philosophy as CC snapshot). */
+export async function listSimsFilterOptions(
+  tenantId: string,
+  filter: SimsListFilter = {},
+): Promise<SimsFilterOptions> {
+  const db = getDB();
+
+  async function distinct(
+    columnSql: string,
+    scope: SimsListFilter,
+  ): Promise<string[]> {
+    const { sql, binds } = simsFilterSql(tenantId, scope);
+    const rows = await db
+      .prepare(
+        `SELECT DISTINCT ${columnSql} AS value
+         ${SIMS_FROM}${sql}
+           AND ${columnSql} IS NOT NULL AND TRIM(CAST(${columnSql} AS TEXT)) != ''
+         ORDER BY value COLLATE NOCASE
+         LIMIT 500`,
+      )
+      .bind(...binds)
+      .all<{ value: string }>();
+    return (rows.results ?? []).map((row) => String(row.value));
+  }
+
+  const planScope = omitSimsFilterField(filter, "planId");
+  const { sql, binds } = simsFilterSql(tenantId, planScope);
+  const [customers, states, planRows] = await Promise.all([
+    distinct("c.name", omitSimsFilterField(filter, "customer")),
+    distinct("s.state", omitSimsFilterField(filter, "state")),
+    db
+      .prepare(
+        `SELECT DISTINCT s.plan_id AS id, p.name AS name
+         ${SIMS_FROM}${sql}
+           AND s.plan_id IS NOT NULL AND TRIM(IFNULL(p.name,'')) != ''
+         ORDER BY p.name COLLATE NOCASE
+         LIMIT 500`,
+      )
+      .bind(...binds)
+      .all<{ id: string; name: string }>(),
+  ]);
+
+  return {
+    customers,
+    plans: (planRows.results ?? []).map((row) => ({ id: row.id, label: row.name })),
+    states,
+  };
+}
+
+export async function listSims(
+  tenantId: string,
+  filter: SimsListFilter | string = {},
+  limit = 200,
+): Promise<Sim[]> {
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit) || 200, 5_000));
+  const { sql, binds } = simsFilterSql(tenantId, filter);
   const rows = await getDB()
-    .prepare(sql)
-    .bind(
-      tenantId,
-      planId,
-      planId,
-      q,
-      qDigitsLike,
-      qTextLike,
-      qDigitsLike,
-      qDigitsLike,
-      customer,
-      customerLike,
-      iccid,
-      iccidLike,
-      imsi,
-      imsiLike,
-      msisdn,
-      msisdnLike,
-      state,
-      state,
-      ctdEnabled ? 1 : 0,
-      ctdOp,
-      ctdValue,
-      ctdOp,
-      ctdValue,
-      ctdOp,
-      ctdValue,
-      ctdOp,
-      ctdValue,
-      ctdOp,
-      ctdValue,
-      safeLimit,
+    .prepare(
+      `SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
+              s.platform_plan_id, s.imsi, s.msisdn, s.current_volume_mb,
+              c.name as customer_name, p.name as plan_name, pl.name as pool_name,
+              pp.name as platform_plan_name, t.name as tenant_name,
+              cc.status as cc_status, cc.polled_at as cc_polled_at, cc.ctd_usage_mb as cc_ctd_usage_mb
+       ${SIMS_FROM}${sql}
+       ORDER BY s.iccid ASC
+       LIMIT ?`,
     )
+    .bind(...binds, safeLimit)
     .all<{
       id: string;
       iccid: string;
@@ -679,49 +731,72 @@ export async function listOrders(filter: OrderFilter): Promise<Order[]> {
   return (rows.results ?? []).map(mapOrderRow);
 }
 
-export async function listOrderFilterOptions(filter: {
-  scopeTenantId?: string;
-  excludeTenantId?: string;
-}): Promise<OrderFilterOptions> {
-  const clauses: string[] = [];
-  const binds: unknown[] = [];
-  if (filter.scopeTenantId) {
-    clauses.push("o.tenant_id = ?");
-    binds.push(filter.scopeTenantId);
-  } else if (filter.excludeTenantId) {
-    clauses.push("o.tenant_id != ?");
-    binds.push(filter.excludeTenantId);
+function omitOrderFilterField(filter: OrderFilter, field: keyof OrderFilter): OrderFilter {
+  const next: OrderFilter = { ...filter };
+  if (field === "dateFrom" || field === "dateTo") {
+    delete next.dateFrom;
+    delete next.dateTo;
+  } else if (field === "scopeTenantId" || field === "excludeTenantId") {
+    // Hard scope is never omitted from cascading.
+  } else {
+    delete next[field];
   }
-  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  return normalizeOrderFilter(next);
+}
+
+/** Cascading order filter options (same philosophy as CC snapshot). */
+export async function listOrderFilterOptions(filter: OrderFilter): Promise<OrderFilterOptions> {
+  const normalized = normalizeOrderFilter(filter);
   const db = getDB();
+
+  async function withScope(scope: OrderFilter) {
+    return orderFilterSql(scope);
+  }
+
+  const [orgScope, statusScope, kindScope, skuScope] = await Promise.all([
+    withScope(omitOrderFilterField(normalized, "organisationId")),
+    withScope(omitOrderFilterField(normalized, "status")),
+    withScope(omitOrderFilterField(normalized, "kind")),
+    withScope(omitOrderFilterField(normalized, "skuName")),
+  ]);
+
   const [orgs, statuses, kinds, skus] = await Promise.all([
     db
       .prepare(
         `SELECT DISTINCT o.tenant_id as id, t.name as name
          FROM orders o
          LEFT JOIN tenants t ON t.id = o.tenant_id
-         ${where}
+         ${orgScope.where}
          ORDER BY t.name ASC`,
       )
-      .bind(...binds)
+      .bind(...orgScope.binds)
       .all<{ id: string; name: string | null }>(),
     db
       .prepare(
-        `SELECT DISTINCT o.status as status FROM orders o ${where} ORDER BY o.status ASC`,
+        `SELECT DISTINCT o.status as status FROM orders o
+         LEFT JOIN tenants t ON t.id = o.tenant_id
+         ${statusScope.where}
+         ORDER BY o.status ASC`,
       )
-      .bind(...binds)
+      .bind(...statusScope.binds)
       .all<{ status: string }>(),
     db
       .prepare(
-        `SELECT DISTINCT o.kind as kind FROM orders o ${where} ORDER BY o.kind ASC`,
+        `SELECT DISTINCT o.kind as kind FROM orders o
+         LEFT JOIN tenants t ON t.id = o.tenant_id
+         ${kindScope.where}
+         ORDER BY o.kind ASC`,
       )
-      .bind(...binds)
+      .bind(...kindScope.binds)
       .all<{ kind: string | null }>(),
     db
       .prepare(
-        `SELECT DISTINCT o.sku_name as sku_name FROM orders o ${where} ORDER BY o.sku_name ASC`,
+        `SELECT DISTINCT o.sku_name as sku_name FROM orders o
+         LEFT JOIN tenants t ON t.id = o.tenant_id
+         ${skuScope.where}
+         ORDER BY o.sku_name ASC`,
       )
-      .bind(...binds)
+      .bind(...skuScope.binds)
       .all<{ sku_name: string }>(),
   ]);
   const kindSet = new Set<OrderKind>();

@@ -168,41 +168,66 @@ export async function listAuditLogs(
   return (rows.results ?? []).map(mapRow);
 }
 
-export async function listAuditLogFilterOptions(input: {
-  scopeTenantId?: string;
-}): Promise<AuditLogFilterOptions> {
-  const scope = clip(input.scopeTenantId, 64);
-  const scopeSql = scope ? "WHERE a.tenant_id = ?" : "";
-  const scopeBinds = scope ? [scope] : [];
+function omitAuditFilterField(filter: AuditLogFilter, field: keyof AuditLogFilter): AuditLogFilter {
+  const next: AuditLogFilter = { ...filter };
+  if (field === "dateFrom" || field === "dateTo") {
+    delete next.dateFrom;
+    delete next.dateTo;
+  } else if (field === "scopeTenantId") {
+    // Hard reseller scope stays.
+  } else {
+    delete next[field];
+  }
+  return normalizeAuditLogFilter(next);
+}
+
+/** Cascading log filter options (same philosophy as CC snapshot). */
+export async function listAuditLogFilterOptions(
+  filter: AuditLogFilter = {},
+): Promise<AuditLogFilterOptions> {
+  const normalized = normalizeAuditLogFilter(filter);
+  const db = getDB();
+  const FROM = `FROM audit_events a JOIN tenants t ON t.id = a.tenant_id`;
+
+  async function scoped(scope: AuditLogFilter) {
+    return auditWhere(scope);
+  }
+
+  const [orgScope, actionScope, actorScope] = await Promise.all([
+    scoped(omitAuditFilterField(normalized, "organisationId")),
+    scoped(omitAuditFilterField(normalized, "action")),
+    scoped(omitAuditFilterField(normalized, "actorEmail")),
+  ]);
 
   const [orgs, actions, actors] = await Promise.all([
-    scope
+    normalized.scopeTenantId
       ? Promise.resolve({ results: [] as { id: string; name: string }[] })
-      : getDB()
+      : db
           .prepare(
             `SELECT DISTINCT t.id, t.name
-             FROM audit_events a
-             JOIN tenants t ON t.id = a.tenant_id
+             ${FROM}
+             ${orgScope.sql}
              ORDER BY t.name COLLATE NOCASE`,
           )
+          .bind(...orgScope.binds)
           .all<{ id: string; name: string }>(),
-    getDB()
+    db
       .prepare(
         `SELECT DISTINCT a.action
-         FROM audit_events a
-         ${scopeSql}
+         ${FROM}
+         ${actionScope.sql}
          ORDER BY a.action COLLATE NOCASE`,
       )
-      .bind(...scopeBinds)
+      .bind(...actionScope.binds)
       .all<{ action: string }>(),
-    getDB()
+    db
       .prepare(
         `SELECT DISTINCT a.actor_email
-         FROM audit_events a
-         ${scopeSql}
+         ${FROM}
+         ${actorScope.sql}
          ORDER BY a.actor_email COLLATE NOCASE`,
       )
-      .bind(...scopeBinds)
+      .bind(...actorScope.binds)
       .all<{ actor_email: string }>(),
   ]);
 

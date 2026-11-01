@@ -109,13 +109,14 @@ export default async function LogsPage({
   const [rows, listedCount, options] = await Promise.all([
     listAuditLogs(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     countAuditLogs(filter),
-    listAuditLogFilterOptions({ scopeTenantId: filter.scopeTenantId }),
+    listAuditLogFilterOptions(filter),
   ]);
   const pageCount = Math.max(1, Math.ceil(listedCount / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const from = listedCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const to = Math.min(currentPage * PAGE_SIZE, listedCount);
   const exportQuery = logsFilterParams(filter, onPlatform).toString();
+  const filterKey = logsFilterParams(filter, onPlatform).toString();
 
   return (
     <div>
@@ -131,7 +132,11 @@ export default async function LogsPage({
         <LogsExportButton queryString={exportQuery} />
       </div>
 
-      <form action="/dashboard/logs" className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4">
+      <form
+        key={filterKey || "logs-filters"}
+        action="/dashboard/logs"
+        className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4"
+      >
         <label className="block text-xs font-medium text-quiet">
           Search
           <input
