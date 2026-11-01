@@ -22,13 +22,14 @@ export default async function PoolsPage({
   // One point per Sydney calendar day; first visit/cron after midnight creates today's row.
   await snapshotPoolCustomerDailyIfNeeded();
 
-  // Super admin: Jasper rate plan (Supplier code). Reseller: Catalyst platform_plan_id (Reseller Plan).
+  // Super admin: Jasper rate plan (Supplier code). Reseller: Catalyst Reseller Plan.
   const rows = platformView
     ? (await listPoolRatePlanLatest({ q: params.q ?? "" })).map(toPoolEntityFromRatePlan)
     : (
         await listPoolModemLatest({
           q: params.q ?? "",
           exactCustomer: scope.exactCustomer,
+          tenantId: ctx.tenantId,
         })
       ).map(toPoolEntityFromModem);
 

@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       .filter(Boolean);
     const fromDay = url.searchParams.get("from") ?? undefined;
     const toDay = url.searchParams.get("to") ?? undefined;
-    // Super admin: Jasper rate plan (Supplier code). Reseller: modem_ID (Reseller Plan).
+    // Super admin: Jasper rate plan (Supplier code). Reseller: Catalyst Reseller Plan.
     if (platformView) {
       const series = await listPoolRatePlanSeries({
         ratePlans: keys.length ? keys : undefined,
@@ -73,6 +73,7 @@ export async function GET(request: Request) {
     const series = await listPoolModemSeries({
       modemIds: keys.length ? keys : undefined,
       exactCustomer: scope.exactCustomer,
+      tenantId: ctx.tenantId,
       fromDay,
       toDay,
     });
@@ -96,6 +97,7 @@ export async function GET(request: Request) {
       await listPoolModemLatest({
         q,
         exactCustomer: scope.exactCustomer,
+        tenantId: ctx.tenantId,
       })
     ).map(toPoolEntityFromModem),
   });

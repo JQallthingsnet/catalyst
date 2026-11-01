@@ -74,8 +74,11 @@ export type PoolEntityLatest = {
 /**
  * Reseller Plan allowance editor keys:
  * - every plan on a reseller Contract (tenant_plan_assignments)
- * - plus every plan currently on SIMs / CC (incl. mirrored modem_ID plans not on contract)
- * Allowance values live in `modem_allowances.modem_id` (= plan name).
+ * - plus every Catalyst Reseller Plan currently on CC/SIM stock for the scope
+ * Allowance values live in `modem_allowances.modem_id` (= Reseller Plan name).
+ *
+ * First sync mirrors CC modem_ID → Catalyst Reseller Plan; pools/allowances then
+ * follow that Reseller Plan (not raw modem_ID after Catalyst changes it).
  */
 export async function listModemAllowances(input?: {
   q?: string;
@@ -97,25 +100,52 @@ export async function listModemAllowances(input?: {
          UNION
          SELECT DISTINCT p.id AS platform_plan_id, TRIM(p.name) AS modem_id
          FROM cc_devices d
-         JOIN platform_plans p ON p.id = d.platform_plan_id
-         WHERE d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != ''
-           AND TRIM(IFNULL(p.name, '')) != ''
+         JOIN platform_plans p ON p.id = COALESCE(
+           NULLIF(TRIM(d.platform_plan_id), ''),
+           (SELECT s.platform_plan_id FROM sims s
+             WHERE s.iccid = d.iccid
+               AND s.platform_plan_id IS NOT NULL
+               AND TRIM(s.platform_plan_id) != ''
+             LIMIT 1)
+         )
+         WHERE TRIM(IFNULL(p.name, '')) != ''
            AND (? = '' OR IFNULL(d.customer, '') = ?)
        )
        SELECT k.modem_id,
               (SELECT MAX(d.customer)
                  FROM cc_devices d
-                WHERE d.platform_plan_id = k.platform_plan_id
+                WHERE COALESCE(
+                        NULLIF(TRIM(d.platform_plan_id), ''),
+                        (SELECT s.platform_plan_id FROM sims s
+                          WHERE s.iccid = d.iccid
+                            AND s.platform_plan_id IS NOT NULL
+                            AND TRIM(s.platform_plan_id) != ''
+                          LIMIT 1)
+                      ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
               ) AS customer,
               (SELECT COUNT(*)
                  FROM cc_devices d
-                WHERE d.platform_plan_id = k.platform_plan_id
+                WHERE COALESCE(
+                        NULLIF(TRIM(d.platform_plan_id), ''),
+                        (SELECT s.platform_plan_id FROM sims s
+                          WHERE s.iccid = d.iccid
+                            AND s.platform_plan_id IS NOT NULL
+                            AND TRIM(s.platform_plan_id) != ''
+                          LIMIT 1)
+                      ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
               ) AS sim_count,
               (SELECT IFNULL(SUM(d.ctd_usage_mb), 0)
                  FROM cc_devices d
-                WHERE d.platform_plan_id = k.platform_plan_id
+                WHERE COALESCE(
+                        NULLIF(TRIM(d.platform_plan_id), ''),
+                        (SELECT s.platform_plan_id FROM sims s
+                          WHERE s.iccid = d.iccid
+                            AND s.platform_plan_id IS NOT NULL
+                            AND TRIM(s.platform_plan_id) != ''
+                          LIMIT 1)
+                      ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
               ) AS ctd_usage_mb,
               a.allowance_mb AS allowance_mb,
@@ -268,9 +298,12 @@ export async function clearRatePlanAllowance(ratePlan: string): Promise<void> {
 /**
  * Snapshot for the Sydney day (upsert).
  * - pool_rate_plan_daily: super-admin Pools (group by Supplier code / Jasper rate plan)
- * - pool_modem_daily: reseller Pools (group by Catalyst Reseller Plan name via platform_plan_id)
+ * - pool_modem_daily: reseller Pools (group by Catalyst Reseller Plan)
  * - pool_customer_daily: kept for history / rollups
  * Full run writes all. Scoped reseller snapshot updates customer + modem rows only.
+ *
+ * Reseller Plan originates as CC modem_ID on first sync, then lives on
+ * sims/cc_devices.platform_plan_id — pools always group by that Reseller Plan.
  */
 export async function snapshotPoolCustomerDaily(
   day = sydneyDayKey(),
@@ -282,17 +315,22 @@ export async function snapshotPoolCustomerDaily(
   const writeRatePlans = only == null;
 
   const db = getDB();
+  // Catalyst Reseller Plan name: prefer sims.platform_plan_id (SIMs page source of truth),
+  // else CC platform_plan_id. First sync mirrors modem_ID → Reseller Plan on sims.
   const deviceRows = await db
     .prepare(
       `SELECT d.customer AS customer,
               d.rate_plan AS rate_plan,
               IFNULL(d.ctd_usage_mb, 0) AS ctd_usage_mb,
-              NULLIF(TRIM(pp.name), '') AS plan_name
+              NULLIF(TRIM(COALESCE(spp.name, pp.name)), '') AS plan_name
        FROM cc_devices d
        LEFT JOIN platform_plans pp ON pp.id = d.platform_plan_id
+       LEFT JOIN sims s ON s.iccid = d.iccid
+       LEFT JOIN platform_plans spp ON spp.id = s.platform_plan_id
        WHERE (d.customer IS NOT NULL AND TRIM(d.customer) != '')
           OR (d.rate_plan IS NOT NULL AND TRIM(d.rate_plan) != '')
-          OR (d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != '')`,
+          OR (d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != '')
+          OR (s.platform_plan_id IS NOT NULL AND TRIM(s.platform_plan_id) != '')`,
     )
     .all<{
       customer: string | null;
@@ -476,10 +514,13 @@ async function backfillCcDevicePlatformPlansFromSims(): Promise<void> {
     .run();
 }
 
-/** Run at most once per Sydney day from cron (cheap existence check). */
+/**
+ * Upsert today’s pool aggregates (idempotent).
+ * Always refreshes so a Reseller Plan newly visible on SIMs appears in Pools the same Sydney day
+ * (previously skipped after the first daily write).
+ */
 export async function snapshotPoolCustomerDailyIfNeeded(): Promise<number | null> {
   const day = sydneyDayKey();
-  const db = getDB();
   try {
     await backfillCcDevicePlatformPlansFromSims();
   } catch {
@@ -491,21 +532,6 @@ export async function snapshotPoolCustomerDailyIfNeeded(): Promise<number | null
   } catch {
     // Table may not exist until migration 0039 is applied.
   }
-  const [cust, plan, modem] = await Promise.all([
-    db
-      .prepare("SELECT 1 AS ok FROM pool_customer_daily WHERE day = ? LIMIT 1")
-      .bind(day)
-      .first<{ ok: number }>(),
-    db
-      .prepare("SELECT 1 AS ok FROM pool_rate_plan_daily WHERE day = ? LIMIT 1")
-      .bind(day)
-      .first<{ ok: number }>(),
-    db
-      .prepare("SELECT 1 AS ok FROM pool_modem_daily WHERE day = ? LIMIT 1")
-      .bind(day)
-      .first<{ ok: number }>(),
-  ]);
-  if (cust && plan && modem) return null;
   return snapshotPoolCustomerDaily(day);
 }
 
@@ -879,20 +905,43 @@ export function toPoolEntityFromModem(row: PoolModemLatest): PoolEntityLatest {
 /** Live Σ Reseller Plan allowance (mapped MB × each SIM on that Catalyst plan). */
 export async function sumLivePoolAllowancesByModem(input?: {
   exactCustomer?: string;
+  /** Reseller org — group from sims.platform_plan_id (same as SIMs page). */
+  tenantId?: string;
 }): Promise<Map<string, number>> {
   if (input?.exactCustomer !== undefined && !input.exactCustomer.trim()) return new Map();
+  const tenantId = input?.tenantId?.trim() ?? "";
+  if (tenantId) {
+    const rows = await getDB()
+      .prepare(
+        `SELECT TRIM(pp.name) AS modem_id,
+                IFNULL(SUM(IFNULL(a.allowance_mb, 0)), 0) AS allowance_mb
+         FROM sims s
+         JOIN platform_plans pp ON pp.id = s.platform_plan_id
+         LEFT JOIN modem_allowances a ON a.modem_id = TRIM(pp.name)
+         WHERE s.tenant_id = ?
+           AND s.platform_plan_id IS NOT NULL AND TRIM(s.platform_plan_id) != ''
+           AND TRIM(IFNULL(pp.name, '')) != ''
+         GROUP BY TRIM(pp.name)`,
+      )
+      .bind(tenantId)
+      .all<{ modem_id: string; allowance_mb: number }>();
+    return new Map((rows.results ?? []).map((row) => [row.modem_id, row.allowance_mb ?? 0]));
+  }
+
   const exact = input?.exactCustomer?.trim() ?? "";
   const rows = await getDB()
     .prepare(
-      `SELECT pp.name AS modem_id,
+      `SELECT TRIM(COALESCE(pp.name, spp.name)) AS modem_id,
               IFNULL(SUM(IFNULL(a.allowance_mb, 0)), 0) AS allowance_mb
        FROM cc_devices d
-       JOIN platform_plans pp ON pp.id = d.platform_plan_id
-       LEFT JOIN modem_allowances a ON a.modem_id = pp.name
-       WHERE d.platform_plan_id IS NOT NULL AND TRIM(d.platform_plan_id) != ''
-         AND TRIM(IFNULL(pp.name, '')) != ''
+       LEFT JOIN platform_plans pp ON pp.id = d.platform_plan_id
+       LEFT JOIN sims s ON s.iccid = d.iccid
+       LEFT JOIN platform_plans spp ON spp.id = s.platform_plan_id
+       LEFT JOIN modem_allowances a
+         ON a.modem_id = TRIM(COALESCE(pp.name, spp.name))
+       WHERE TRIM(COALESCE(pp.name, spp.name, '')) != ''
          AND (? = '' OR IFNULL(d.customer, '') = ?)
-       GROUP BY d.platform_plan_id`,
+       GROUP BY TRIM(COALESCE(pp.name, spp.name))`,
     )
     .bind(exact, exact)
     .all<{ modem_id: string; allowance_mb: number }>();
@@ -903,70 +952,164 @@ export async function listPoolModemLatest(input?: {
   q?: string;
   /** Exact Jasper/CC customer (reseller scope). */
   exactCustomer?: string;
+  /** Reseller org — required so grouping matches SIMs (sims.platform_plan_id). */
+  tenantId?: string;
 }): Promise<PoolModemLatest[]> {
   // undefined = unrestricted; "" = reseller unbound → empty.
   if (input?.exactCustomer !== undefined && !input.exactCustomer.trim()) return [];
   const exact = input?.exactCustomer?.trim() ?? "";
   const q = input?.q?.trim() ?? "";
+  const day = sydneyDayKey();
 
-  const [rows, liveAllowances] = await Promise.all([
-    getDB()
-      .prepare(
-        `SELECT p.modem_id, p.customer, p.day, p.ctd_usage_mb, p.allowance_mb, p.sim_count, p.snapshotted_at
-         FROM pool_modem_daily p
-         INNER JOIN (
-           SELECT modem_id, MAX(day) AS day FROM pool_modem_daily GROUP BY modem_id
-         ) latest ON latest.modem_id = p.modem_id AND latest.day = p.day
-         WHERE (? = '' OR IFNULL(p.customer, '') = ?)
-           AND (? = '' OR p.modem_id LIKE ? OR IFNULL(p.customer, '') LIKE ?)
-         ORDER BY p.modem_id COLLATE NOCASE
-         LIMIT 2000`,
-      )
-      .bind(exact, exact, q, `%${q}%`, `%${q}%`)
-      .all<{
-        modem_id: string;
-        customer: string | null;
-        day: string;
-        ctd_usage_mb: number;
-        allowance_mb: number;
-        sim_count: number;
-        snapshotted_at: string;
-      }>(),
-    sumLivePoolAllowancesByModem({ exactCustomer: input?.exactCustomer }),
-  ]);
-
-  return (rows.results ?? []).map((row) => {
-    const allowanceMb = liveAllowances.get(row.modem_id) ?? row.allowance_mb ?? 0;
-    const ctdUsageMb = row.ctd_usage_mb ?? 0;
+  // Same source as SIMs Reseller Plan column: sims.platform_plan_id → platform_plans.name.
+  const live = await listLivePoolModemLatest({
+    q,
+    exactCustomer: input?.exactCustomer,
+    tenantId: input?.tenantId,
+  });
+  return live.map((row) => {
+    const allowanceMb = row.allowanceMb ?? 0;
+    const ctdUsageMb = row.ctdUsageMb ?? 0;
     return {
-      modemId: row.modem_id,
-      customer: row.customer,
-      day: row.day,
+      modemId: row.modemId,
+      customer: row.customer ?? (exact || null),
+      day,
       ctdUsageMb,
       allowanceMb,
-      simCount: row.sim_count,
-      snapshottedAt: row.snapshotted_at,
+      simCount: row.simCount,
+      snapshottedAt: row.updatedAt ?? new Date().toISOString(),
       pct: allowanceMb > 0 ? Math.round((ctdUsageMb / allowanceMb) * 100) : 0,
     };
   });
 }
 
+/**
+ * Live aggregates by Catalyst Reseller Plan.
+ * When tenantId is set, start from that org’s sims.platform_plan_id (what SIMs shows) —
+ * do not require cc_devices.customer match, which dropped plans like EN_50MB_Lift.
+ */
+async function listLivePoolModemLatest(input?: {
+  q?: string;
+  exactCustomer?: string;
+  tenantId?: string;
+}): Promise<ModemAllowanceRow[]> {
+  if (input?.exactCustomer !== undefined && !input.exactCustomer.trim()) return [];
+  const exact = input?.exactCustomer?.trim() ?? "";
+  const q = input?.q?.trim() ?? "";
+  const tenantId = input?.tenantId?.trim() ?? "";
+
+  if (tenantId) {
+    const rows = await getDB()
+      .prepare(
+        `SELECT TRIM(pp.name) AS modem_id,
+                MAX(IFNULL(NULLIF(TRIM(d.customer), ''), ?)) AS customer,
+                COUNT(*) AS sim_count,
+                IFNULL(SUM(IFNULL(d.ctd_usage_mb, 0)), 0) AS ctd_usage_mb,
+                a.allowance_mb AS allowance_mb,
+                a.updated_at AS updated_at,
+                a.updated_by AS updated_by
+         FROM sims s
+         JOIN platform_plans pp ON pp.id = s.platform_plan_id
+         LEFT JOIN cc_devices d ON d.iccid = s.iccid
+         LEFT JOIN modem_allowances a ON a.modem_id = TRIM(pp.name)
+         WHERE s.tenant_id = ?
+           AND s.platform_plan_id IS NOT NULL AND TRIM(s.platform_plan_id) != ''
+           AND TRIM(IFNULL(pp.name, '')) != ''
+           AND (? = '' OR TRIM(pp.name) LIKE ? OR IFNULL(d.customer, '') LIKE ?)
+         GROUP BY TRIM(pp.name)
+         ORDER BY modem_id COLLATE NOCASE
+         LIMIT 2000`,
+      )
+      .bind(exact, tenantId, q, `%${q}%`, `%${q}%`)
+      .all<{
+        modem_id: string;
+        customer: string | null;
+        sim_count: number;
+        ctd_usage_mb: number;
+        allowance_mb: number | null;
+        updated_at: string | null;
+        updated_by: string | null;
+      }>();
+
+    return (rows.results ?? []).map((row) => ({
+      modemId: row.modem_id,
+      allowanceMb: row.allowance_mb,
+      customer: row.customer,
+      simCount: row.sim_count,
+      ctdUsageMb: row.ctd_usage_mb,
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by,
+    }));
+  }
+
+  const rows = await getDB()
+    .prepare(
+      `SELECT TRIM(COALESCE(pp.name, spp.name)) AS modem_id,
+              MAX(d.customer) AS customer,
+              COUNT(*) AS sim_count,
+              IFNULL(SUM(IFNULL(d.ctd_usage_mb, 0)), 0) AS ctd_usage_mb,
+              a.allowance_mb AS allowance_mb,
+              a.updated_at AS updated_at,
+              a.updated_by AS updated_by
+       FROM cc_devices d
+       LEFT JOIN platform_plans pp ON pp.id = d.platform_plan_id
+       LEFT JOIN sims s ON s.iccid = d.iccid
+       LEFT JOIN platform_plans spp ON spp.id = s.platform_plan_id
+       LEFT JOIN modem_allowances a
+         ON a.modem_id = TRIM(COALESCE(pp.name, spp.name))
+       WHERE TRIM(COALESCE(pp.name, spp.name, '')) != ''
+         AND (? = '' OR IFNULL(d.customer, '') = ?)
+         AND (? = '' OR TRIM(COALESCE(pp.name, spp.name)) LIKE ? OR IFNULL(d.customer, '') LIKE ?)
+       GROUP BY TRIM(COALESCE(pp.name, spp.name))
+       ORDER BY modem_id COLLATE NOCASE
+       LIMIT 2000`,
+    )
+    .bind(exact, exact, q, `%${q}%`, `%${q}%`)
+    .all<{
+      modem_id: string;
+      customer: string | null;
+      sim_count: number;
+      ctd_usage_mb: number;
+      allowance_mb: number | null;
+      updated_at: string | null;
+      updated_by: string | null;
+    }>();
+
+  return (rows.results ?? []).map((row) => ({
+    modemId: row.modem_id,
+    allowanceMb: row.allowance_mb,
+    customer: row.customer,
+    simCount: row.sim_count,
+    ctdUsageMb: row.ctd_usage_mb,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
+  }));
+}
+
 export async function listPoolModemSeries(input: {
   modemIds?: string[];
   exactCustomer?: string;
+  tenantId?: string;
   fromDay?: string;
   toDay?: string;
   limit?: number;
 }): Promise<PoolModemDay[]> {
   if (input.exactCustomer !== undefined && !input.exactCustomer.trim()) return [];
   const exact = input.exactCustomer?.trim() ?? "";
-  const ids = (input.modemIds ?? []).map((id) => id.trim()).filter(Boolean);
+  let ids = (input.modemIds ?? []).map((id) => id.trim()).filter(Boolean);
   const fromDay = input.fromDay?.trim() || sydneyDayKeyDaysAgo(POOL_SERIES_DEFAULT_DAYS - 1);
   const toDay = input.toDay?.trim() || sydneyDayKey();
   const limit = Math.min(Math.max(input.limit ?? 2000, 1), 5000);
   const liveAllowances = await sumLivePoolAllowancesByModem({
     exactCustomer: input.exactCustomer,
+    tenantId: input.tenantId,
   });
+
+  // Scope by live Reseller Plans for this org — same keys as SIMs / listPoolModemLatest.
+  if ((exact || input.tenantId) && ids.length === 0) {
+    ids = [...liveAllowances.keys()];
+    if (ids.length === 0) return [];
+  }
 
   const mapRow = (row: {
     modem_id: string;
@@ -991,13 +1134,12 @@ export async function listPoolModemSeries(input: {
       .prepare(
         `SELECT modem_id, customer, day, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at
          FROM pool_modem_daily
-         WHERE (? = '' OR IFNULL(customer, '') = ?)
-           AND (? = '' OR day >= ?)
+         WHERE (? = '' OR day >= ?)
            AND (? = '' OR day <= ?)
          ORDER BY day ASC, modem_id COLLATE NOCASE
          LIMIT ?`,
       )
-      .bind(exact, exact, fromDay, fromDay, toDay, toDay, limit)
+      .bind(fromDay, fromDay, toDay, toDay, limit)
       .all<{
         modem_id: string;
         customer: string | null;
@@ -1016,13 +1158,12 @@ export async function listPoolModemSeries(input: {
       `SELECT modem_id, customer, day, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at
        FROM pool_modem_daily
        WHERE modem_id IN (${placeholders})
-         AND (? = '' OR IFNULL(customer, '') = ?)
          AND (? = '' OR day >= ?)
          AND (? = '' OR day <= ?)
        ORDER BY day ASC, modem_id COLLATE NOCASE
        LIMIT ?`,
     )
-    .bind(...ids, exact, exact, fromDay, fromDay, toDay, toDay, limit)
+    .bind(...ids, fromDay, fromDay, toDay, toDay, limit)
     .all<{
       modem_id: string;
       customer: string | null;

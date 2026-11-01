@@ -66,6 +66,7 @@ export default async function DashboardPage() {
       : (
           await listPoolModemLatest({
             exactCustomer: poolScope.exactCustomer,
+            tenantId: ctx.tenantId,
           })
         ).map(toPoolEntityFromModem);
   }
