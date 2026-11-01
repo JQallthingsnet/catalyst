@@ -173,8 +173,13 @@ export function ContractResellerDetail({
   plans: PlatformPlan[];
   catalogue: SimSku[];
 }) {
+  // Only plans not on this contract and not already bound to any other reseller.
   const unbound = plans
-    .filter((plan) => !entry.plans.some((bound) => bound.platformPlanId === plan.id))
+    .filter(
+      (plan) =>
+        !entry.plans.some((bound) => bound.platformPlanId === plan.id) &&
+        plan.assignedResellers === 0,
+    )
     .map((plan) => ({
       id: plan.id,
       ratePlanNew: plan.ccRatePlan,

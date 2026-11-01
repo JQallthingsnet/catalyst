@@ -37,8 +37,8 @@ export function BindPlanToResellerForm({
   if (plans.length === 0) {
     return (
       <p className="text-sm text-quiet">
-        All active rate plans are already bound. Use <span className="text-ink">Create Rate Plan</span> above to add
-        another.
+        No unbound Reseller Plans left to add (already on this or another organisation). Use{" "}
+        <span className="text-ink">Create Reseller Plan</span> above for a new one.
       </p>
     );
   }
@@ -46,7 +46,7 @@ export function BindPlanToResellerForm({
   if (needsCatalogue && unboundSkus.length === 0) {
     return (
       <p className="text-xs text-danger">
-        Create a catalogue SKU first — a rate plan must be bound with at least one catalogue product.{" "}
+        Create a catalogue SKU first — a Reseller Plan must be bound with at least one catalogue product.{" "}
         <a href="/dashboard/catalogue" className="text-accent">
           Catalogue
         </a>
@@ -56,7 +56,7 @@ export function BindPlanToResellerForm({
 
   async function submit() {
     if (!platformPlanId) {
-      setError("Choose a rate plan.");
+      setError("Choose a Reseller Plan.");
       return;
     }
     if (needsCatalogue && selectedSkuIds.length === 0) {
@@ -96,7 +96,7 @@ export function BindPlanToResellerForm({
         void submit();
       }}
     >
-      <p className="text-xs font-medium text-ink">Add rate plan</p>
+      <p className="text-xs font-medium text-ink">Add Reseller Plan</p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
         <select
           value={platformPlanId}
@@ -114,13 +114,13 @@ export function BindPlanToResellerForm({
           disabled={!canSubmit}
           className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-accent px-4 text-sm font-medium text-accent-ink disabled:opacity-40"
         >
-          {busy ? "Binding…" : needsCatalogue ? "Bind + catalogue" : "Add rate plan"}
+          {busy ? "Binding…" : needsCatalogue ? "Bind + catalogue" : "Add Reseller Plan"}
         </button>
       </div>
 
       {needsCatalogue ? (
         <CatalogueSkuMultiSelect
-          label="Tick catalogue SKUs to bind with this rate plan"
+          label="Tick catalogue SKUs to bind with this Reseller Plan"
           options={unboundSkus}
           selectedIds={selectedSkuIds}
           onChange={setSelectedSkuIds}
@@ -129,7 +129,9 @@ export function BindPlanToResellerForm({
           fullWidth
         />
       ) : (
-        <p className="text-xs text-quiet">Catalogue already on this contract — you can add the rate plan now.</p>
+        <p className="text-xs text-quiet">
+          Catalogue already on this contract — you can add the Reseller Plan now.
+        </p>
       )}
 
       {error ? <p className="text-xs text-danger">{error}</p> : null}
