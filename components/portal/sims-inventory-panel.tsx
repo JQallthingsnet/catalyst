@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChangeRetailPlanButton,
   type RetailPlanOption,
@@ -68,6 +68,8 @@ export function SimsInventoryPanel({
   canChangePlan,
   canAssign,
   headerLinks,
+  filterPlanId = null,
+  filterPlanName = null,
 }: {
   sims: SimsInventoryRow[];
   fields: Fields;
@@ -76,6 +78,9 @@ export function SimsInventoryPanel({
   canChangePlan: boolean;
   canAssign: boolean;
   headerLinks: ReactNode;
+  /** When set (from Retail plans → Remove), list is limited to this retail plan. */
+  filterPlanId?: string | null;
+  filterPlanName?: string | null;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [staged, setStaged] = useState<Record<string, StagedRow>>({});
@@ -85,6 +90,21 @@ export function SimsInventoryPanel({
   const [job, setJob] = useState<BulkJobStatus | null>(null);
   /** ICCID + action lines shown in the confirm dialog (kept through the run). */
   const [confirmLines, setConfirmLines] = useState<{ iccid: string; label: string }[]>([]);
+
+  // Arrive from Retail plans “Remove” with ?plan= — pre-select once for bulk reassign.
+  const preselectedForPlan = useRef<string | null>(null);
+  useEffect(() => {
+    if (!filterPlanId || !canLifecycle || sims.length === 0) return;
+    if (preselectedForPlan.current === filterPlanId) return;
+    preselectedForPlan.current = filterPlanId;
+    const next = sims.slice(0, BULK_SIM_CAP);
+    const nextStaged: Record<string, StagedRow> = {};
+    for (const sim of next) {
+      nextStaged[sim.iccid] = { lifecycle: "", retailPlanId: "" };
+    }
+    setSelected(Object.keys(nextStaged));
+    setStaged(nextStaged);
+  }, [filterPlanId, canLifecycle, sims]);
 
   const atCap = selected.length >= BULK_SIM_CAP;
   const selectionActive = selected.length > 0;
@@ -245,6 +265,21 @@ export function SimsInventoryPanel({
           <p className="mt-1 text-sm text-quiet">
             Select SIMs (max {BULK_SIM_CAP}). Set Lifecycle and/or retail plan per row, then Bulk update.
           </p>
+          {filterPlanId ? (
+            <p className="mt-2 text-sm text-quiet">
+              Filtered to retail plan{" "}
+              <span className="font-medium text-ink">{filterPlanName ?? filterPlanId}</span>
+              {sims.length > BULK_SIM_CAP
+                ? ` · first ${BULK_SIM_CAP} of ${sims.length} pre-selected for bulk change`
+                : sims.length > 0
+                  ? " · pre-selected for bulk change"
+                  : ""}
+              .{" "}
+              <Link href="/dashboard/sims" className="text-accent hover:underline">
+                Clear filter
+              </Link>
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {headerLinks}

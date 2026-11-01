@@ -242,8 +242,14 @@ export async function dashboardSummary(tenantId: string) {
   };
 }
 
-export async function listSims(tenantId: string, query = "", limit = 200): Promise<Sim[]> {
+export async function listSims(
+  tenantId: string,
+  query = "",
+  limit = 200,
+  opts?: { planId?: string },
+): Promise<Sim[]> {
   const q = query.trim();
+  const planId = opts?.planId?.trim() || "";
   const safeLimit = Math.max(1, Math.min(Math.floor(limit) || 200, 5_000));
   const sql = `
     SELECT s.id, s.iccid, s.form_factor, s.state, s.customer_id, s.plan_id, s.pool_id, s.wholesale_plan,
@@ -259,12 +265,16 @@ export async function listSims(tenantId: string, query = "", limit = 200): Promi
     LEFT JOIN tenants t ON t.id = s.tenant_id
     LEFT JOIN cc_devices cc ON cc.iccid = s.iccid
     WHERE s.tenant_id = ?
+      AND (? = '' OR s.plan_id = ?)
       AND (? = '' OR s.iccid LIKE ? OR IFNULL(c.name,'') LIKE ?)
     ORDER BY s.iccid ASC
     LIMIT ?`;
   const like = `%${q.replace(/\s/g, "")}%`;
   const nameLike = `%${q}%`;
-  const rows = await getDB().prepare(sql).bind(tenantId, q, like, nameLike, safeLimit).all<{
+  const rows = await getDB()
+    .prepare(sql)
+    .bind(tenantId, planId, planId, q, like, nameLike, safeLimit)
+    .all<{
     id: string;
     iccid: string;
     form_factor: string;
@@ -374,6 +384,49 @@ export async function listPlans(tenantId: string): Promise<Plan[]> {
     platformPlanId: row.platform_plan_id,
     platformPlanName: row.platform_plan_name,
     pricePerSim: row.price_per_sim,
+  }));
+}
+
+export type PlanWithSimCount = Plan & { simCount: number };
+
+export async function listPlansWithSimCount(tenantId: string): Promise<PlanWithSimCount[]> {
+  const rows = await getDB()
+    .prepare(
+      `SELECT p.id, p.name, p.type, p.inclusive_mb, p.overage, p.roaming, p.wholesale_plan, p.comm_plan,
+              p.platform_plan_id, p.price_per_sim, pp.name as platform_plan_name,
+              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = p.tenant_id AND s.plan_id = p.id) AS sim_count
+       FROM plans p
+       LEFT JOIN platform_plans pp ON pp.id = p.platform_plan_id
+       WHERE p.tenant_id = ? ORDER BY p.name`,
+    )
+    .bind(tenantId)
+    .all<{
+      id: string;
+      name: string;
+      type: string;
+      inclusive_mb: number;
+      overage: string;
+      roaming: string;
+      wholesale_plan: string;
+      comm_plan: string;
+      platform_plan_id: string | null;
+      platform_plan_name: string | null;
+      price_per_sim: number | null;
+      sim_count: number;
+    }>();
+  return (rows.results ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    inclusiveMb: row.inclusive_mb,
+    overage: row.overage,
+    roaming: row.roaming,
+    wholesalePlan: row.wholesale_plan,
+    commPlan: row.comm_plan,
+    platformPlanId: row.platform_plan_id,
+    platformPlanName: row.platform_plan_name,
+    pricePerSim: row.price_per_sim,
+    simCount: Number(row.sim_count) || 0,
   }));
 }
 
@@ -777,6 +830,114 @@ export async function createPlan(
     platformPlanName: parent.name,
     pricePerSim,
   };
+}
+
+/**
+ * Rename a retail plan. SIMs store plan_id only — name on SIMs / assign UI updates via join.
+ */
+export async function renamePlan(
+  tenantId: string,
+  actorEmail: string,
+  planId: string,
+  name: string,
+): Promise<Plan> {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) throw new Error("Enter a retail plan name.");
+  const existing = await getDB()
+    .prepare(
+      `SELECT p.id, p.name, p.type, p.inclusive_mb, p.overage, p.roaming, p.wholesale_plan, p.comm_plan,
+              p.platform_plan_id, p.price_per_sim, pp.name as platform_plan_name
+       FROM plans p
+       LEFT JOIN platform_plans pp ON pp.id = p.platform_plan_id
+       WHERE p.id = ? AND p.tenant_id = ?`,
+    )
+    .bind(planId, tenantId)
+    .first<{
+      id: string;
+      name: string;
+      type: string;
+      inclusive_mb: number;
+      overage: string;
+      roaming: string;
+      wholesale_plan: string;
+      comm_plan: string;
+      platform_plan_id: string | null;
+      price_per_sim: number | null;
+      platform_plan_name: string | null;
+    }>();
+  if (!existing) throw new Error("Retail plan not found in this organisation.");
+  if (existing.name === trimmed) {
+    return {
+      id: existing.id,
+      name: existing.name,
+      type: existing.type,
+      inclusiveMb: existing.inclusive_mb,
+      overage: existing.overage,
+      roaming: existing.roaming,
+      wholesalePlan: existing.wholesale_plan,
+      commPlan: existing.comm_plan,
+      platformPlanId: existing.platform_plan_id,
+      platformPlanName: existing.platform_plan_name,
+      pricePerSim: existing.price_per_sim,
+    };
+  }
+
+  await getDB()
+    .prepare("UPDATE plans SET name = ? WHERE id = ? AND tenant_id = ?")
+    .bind(trimmed, planId, tenantId)
+    .run();
+  await writeAudit(
+    tenantId,
+    actorEmail,
+    "plan",
+    `Retail plan renamed “${existing.name}” → “${trimmed}”`,
+  );
+  return {
+    id: existing.id,
+    name: trimmed,
+    type: existing.type,
+    inclusiveMb: existing.inclusive_mb,
+    overage: existing.overage,
+    roaming: existing.roaming,
+    wholesalePlan: existing.wholesale_plan,
+    commPlan: existing.comm_plan,
+    platformPlanId: existing.platform_plan_id,
+    platformPlanName: existing.platform_plan_name,
+    pricePerSim: existing.price_per_sim,
+  };
+}
+
+/** Remove a retail plan only when no SIMs still reference it. */
+export async function deletePlan(
+  tenantId: string,
+  actorEmail: string,
+  planId: string,
+): Promise<{ name: string }> {
+  const existing = await getDB()
+    .prepare("SELECT id, name FROM plans WHERE id = ? AND tenant_id = ?")
+    .bind(planId, tenantId)
+    .first<{ id: string; name: string }>();
+  if (!existing) throw new Error("Retail plan not found in this organisation.");
+
+  const assigned = await getDB()
+    .prepare(
+      "SELECT COUNT(*) AS c FROM sims WHERE tenant_id = ? AND plan_id = ?",
+    )
+    .bind(tenantId, planId)
+    .first<{ c: number }>();
+  const simCount = Number(assigned?.c) || 0;
+  if (simCount > 0) {
+    throw new Error(
+      `Cannot remove “${existing.name}” — ${simCount} SIM${simCount === 1 ? "" : "s"} still use this retail plan. Reassign those SIMs first.`,
+    );
+  }
+
+  await getDB()
+    .prepare("DELETE FROM plans WHERE id = ? AND tenant_id = ?")
+    .bind(planId, tenantId)
+    .run();
+  await writeAudit(tenantId, actorEmail, "plan", `Retail plan “${existing.name}” removed`);
+  return { name: existing.name };
 }
 
 export async function createPool(

@@ -95,7 +95,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/usage", label: "Usage" },
     { href: "/dashboard/alerts", label: "Alerts" },
     { href: "/dashboard/contracts", label: "Contract" },
-    { href: "/dashboard/plans", label: "Plans" },
+    { href: "/dashboard/plans", label: "Retail plans" },
     { href: "/dashboard/orders", label: "Orders" },
     { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
     { href: "/dashboard/logs", label: "Logs" },

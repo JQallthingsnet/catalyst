@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PlatformPlansTable } from "@/components/portal/platform-plans-table";
 import { RetailPlansTable } from "@/components/portal/retail-plans-table";
 import { requirePortal } from "@/lib/portal/guard";
-import { listPlans } from "@/lib/portal/repo";
+import { listPlansWithSimCount } from "@/lib/portal/repo";
 import { listAssignedPlatformPlans, listPlatformPlans } from "@/lib/portal/platform-plans";
 import { btnPrimary } from "@/lib/portal/button-styles";
 import { can } from "@/lib/portal/role-model";
@@ -49,17 +49,19 @@ export default async function PlansPage() {
 
   const [assigned, retail] = await Promise.all([
     listAssignedPlatformPlans(ctx.tenantId),
-    listPlans(ctx.tenantId),
+    listPlansWithSimCount(ctx.tenantId),
   ]);
+  const canManage = can(ctx.role, "plan.edit");
 
   return (
     <div>
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold">Plans</h1>
+          <h1 className="text-3xl font-semibold">Retail plans</h1>
           <p className="mt-1 text-sm text-quiet">
-            Create retail plans (name, data per SIM, price) from your contracted plans — these are what
-            operators assign to each ICCID. Your signed lines are on{" "}
+            Create, rename, or remove retail plans (name, data per SIM, price) from your contracted
+            plans — these are what operators assign to each ICCID. A plan in use on SIMs cannot be
+            removed. Your signed lines are on{" "}
             <Link href="/dashboard/contracts" className="text-accent">
               Contract
             </Link>
@@ -81,6 +83,7 @@ export default async function PlansPage() {
 
       <RetailPlansTable
         showPlatformSource={ctx.role === "reseller_admin"}
+        canManage={canManage}
         plans={retail.map((plan) => ({
           id: plan.id,
           name: plan.name,
@@ -89,6 +92,7 @@ export default async function PlansPage() {
           pricePerSim: plan.pricePerSim,
           platformPlanName: plan.platformPlanName,
           wholesalePlan: plan.wholesalePlan,
+          simCount: plan.simCount,
         }))}
       />
     </div>

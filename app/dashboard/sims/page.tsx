@@ -9,7 +9,7 @@ import { can, simFieldsForRole } from "@/lib/portal/role-model";
 export default async function SimsPage({
   searchParams,
 }: {
-  searchParams?: { q?: string } | Promise<{ q?: string }>;
+  searchParams?: { q?: string; plan?: string } | Promise<{ q?: string; plan?: string }>;
 }) {
   const ctx = await requirePortal();
   const params = await Promise.resolve(searchParams ?? {});
@@ -18,8 +18,9 @@ export default async function SimsPage({
     const q = params.q?.trim();
     redirect(q ? `/dashboard/estate?q=${encodeURIComponent(q)}` : "/dashboard/estate");
   }
+  const filterPlanId = params.plan?.trim() || "";
   const [sims, retailPlans] = await Promise.all([
-    listSims(ctx.tenantId, params.q ?? "", 5_000),
+    listSims(ctx.tenantId, params.q ?? "", 5_000, filterPlanId ? { planId: filterPlanId } : undefined),
     can(ctx.role, "assign") ? listPlans(ctx.tenantId) : Promise.resolve([]),
   ]);
   const fields = simFieldsForRole(ctx.role);
@@ -27,6 +28,10 @@ export default async function SimsPage({
     id: plan.id,
     label: plan.name,
   }));
+  const filterPlanName =
+    retailPlans.find((plan) => plan.id === filterPlanId)?.name ??
+    sims.find((sim) => sim.planId === filterPlanId)?.planName ??
+    null;
   // Reseller SIMs page changes the end-customer retail plan (not ATN Reseller Plan).
   const canChangePlan = can(ctx.role, "assign");
   const canLifecycle = can(ctx.role, "lifecycle");
@@ -77,6 +82,8 @@ export default async function SimsPage({
       canChangePlan={canChangePlan}
       canAssign={canAssign}
       headerLinks={headerLinks}
+      filterPlanId={filterPlanId || null}
+      filterPlanName={filterPlanName}
     />
   );
 }

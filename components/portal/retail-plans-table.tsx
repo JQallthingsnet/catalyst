@@ -1,5 +1,6 @@
 "use client";
 
+import { RetailPlanRowActions } from "@/components/portal/retail-plan-row-actions";
 import { useDeferredValue, useMemo, useState } from "react";
 
 export type RetailPlanRow = {
@@ -10,17 +11,20 @@ export type RetailPlanRow = {
   pricePerSim: number | null;
   platformPlanName: string | null;
   wholesalePlan: string;
+  simCount: number;
 };
 
 export function RetailPlansTable({
   plans,
   showPlatformSource,
   showSupplierCode = false,
+  canManage = false,
 }: {
   plans: RetailPlanRow[];
   showPlatformSource: boolean;
   /** Jasper Supplier code / wholesale plan — ATN only. */
   showSupplierCode?: boolean;
+  canManage?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
@@ -107,6 +111,8 @@ export function RetailPlansTable({
               <th className="px-4 py-3 font-medium">Price / SIM</th>
               {showPlatformSource ? <th className="px-4 py-3 font-medium">Copied from</th> : null}
               {showSupplierCode ? <th className="px-4 py-3 font-medium">Rate plan</th> : null}
+              <th className="px-4 py-3 font-medium">SIMs</th>
+              {canManage ? <th className="px-4 py-3 font-medium">Actions</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -123,6 +129,14 @@ export function RetailPlansTable({
                 ) : null}
                 {showSupplierCode ? (
                   <td className="px-4 py-3 font-mono text-xs">{plan.wholesalePlan || "—"}</td>
+                ) : null}
+                <td className="px-4 py-3 text-quiet">
+                  {plan.simCount.toLocaleString("en-AU")}
+                </td>
+                {canManage ? (
+                  <td className="px-4 py-3">
+                    <RetailPlanRowActions id={plan.id} name={plan.name} simCount={plan.simCount} />
+                  </td>
                 ) : null}
               </tr>
             ))}
