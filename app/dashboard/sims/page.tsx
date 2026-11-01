@@ -120,6 +120,19 @@ export default async function SimsPage({
 
   const filter = normalizeSimsListFilter(params);
   const filtered = simsListFilterActive(filter);
+  const filterKey = [
+    filter.q,
+    filter.planId,
+    filter.customer,
+    filter.iccid,
+    filter.imsi,
+    filter.msisdn,
+    filter.state,
+    filter.ctdOp,
+    filter.ctdMb,
+  ]
+    .filter(Boolean)
+    .join("|");
 
   const [sims, retailPlans, customers] = await Promise.all([
     listSims(ctx.tenantId, filter, 5_000),
@@ -191,6 +204,7 @@ export default async function SimsPage({
         filterPlanName={filterPlanName}
         filterForm={
           <form
+            key={filterKey || "sims-filters"}
             action="/dashboard/sims"
             className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4"
           >

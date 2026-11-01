@@ -85,41 +85,6 @@ function FilterSelect({
   );
 }
 
-/** Text input with suggestion list — type letters to narrow matches. */
-function FilterSuggest({
-  name,
-  label,
-  value,
-  options,
-  placeholder,
-}: {
-  name: string;
-  label: string;
-  value: string;
-  options: string[];
-  placeholder: string;
-}) {
-  const listId = `${name}-suggest`;
-  return (
-    <label className="block text-xs font-medium text-quiet">
-      {label}
-      <input
-        name={name}
-        list={listId}
-        defaultValue={value}
-        placeholder={placeholder}
-        autoComplete="off"
-        className="mt-1 h-10 w-full rounded-full border border-line bg-panel px-3 text-sm text-ink"
-      />
-      <datalist id={listId}>
-        {options.map((option) => (
-          <option key={option} value={option} />
-        ))}
-      </datalist>
-    </label>
-  );
-}
-
 export default async function CcSnapshotPage({
   searchParams,
 }: {
@@ -200,8 +165,9 @@ export default async function CcSnapshotPage({
     listCcDevices(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     filtered ? countCcDevices(filter) : Promise.resolve(null),
     ccInventorySummary(),
-    listCcFilterOptions(),
+    listCcFilterOptions(filter),
   ]);
+  const filterKey = snapshotFilterParams(filter).toString();
   const total = summary.total;
   const listedCount = listed ?? total;
   const pageCount = Math.max(1, Math.ceil(listedCount / PAGE_SIZE));
@@ -376,7 +342,11 @@ export default async function CcSnapshotPage({
         <p className="mt-4 rounded-xl bg-danger/10 px-3 py-2 text-sm text-danger">{sync.lastError}</p>
       ) : null}
 
-      <form action="/dashboard/estate/cc" className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4">
+      <form
+        key={filterKey || "cc-filters"}
+        action="/dashboard/estate/cc"
+        className="mt-6 w-full space-y-4 rounded-card border border-line bg-panel p-4"
+      >
         <label className="block text-xs font-medium text-quiet">
           Search
           <input
@@ -483,12 +453,12 @@ export default async function CcSnapshotPage({
             options={options.customers}
             allLabel="All CC customers"
           />
-          <FilterSuggest
+          <FilterSelect
             name="endCustomer"
             label="End customer"
             value={filter.endCustomer ?? ""}
             options={options.endCustomers}
-            placeholder="Type to filter…"
+            allLabel="All end customers"
           />
           <FilterSelect
             name="accountId"

@@ -1089,9 +1089,16 @@ function ccWhere(filter: string | CcDeviceFilter): { sql: string; binds: (string
     binds.push(normalized.customer);
   }
   if (normalized.endCustomer) {
-    // Partial match so typing letters narrows the list (suggestions + free text).
-    clauses.push("IFNULL(end_customer,'') LIKE ?");
-    binds.push(`%${normalized.endCustomer}%`);
+    // Match live Catalyst end-customer names (sims → customers), with column fallback.
+    clauses.push(
+      `(iccid IN (
+          SELECT s.iccid FROM sims s
+          INNER JOIN customers c ON c.id = s.customer_id
+          WHERE TRIM(c.name) = ?
+        )
+        OR TRIM(IFNULL(end_customer,'')) = ?)`,
+    );
+    binds.push(normalized.endCustomer, normalized.endCustomer);
   }
   if (normalized.accountId) {
     clauses.push("account_id = ?");
@@ -1240,14 +1247,81 @@ async function distinctCcValues(column: string): Promise<string[]> {
   return (rows.results ?? []).map((row) => row.value);
 }
 
-/** Avoid 9× full-table DISTINCT on every CC page load (D1 rows_read). */
+/** Avoid full-table DISTINCT on every unscoped CC page load (D1 rows_read). */
 let filterOptionsCache: { at: number; value: CcFilterOptions } | null = null;
 const FILTER_OPTIONS_TTL_MS = 30 * 60 * 1000;
 
-export async function listCcFilterOptions(): Promise<CcFilterOptions> {
-  if (filterOptionsCache && Date.now() - filterOptionsCache.at < FILTER_OPTIONS_TTL_MS) {
+function omitCcFilterField(filter: CcDeviceFilter, field: keyof CcDeviceFilter): CcDeviceFilter {
+  const next: CcDeviceFilter = { ...filter };
+  if (field === "inSession") next.inSession = "";
+  else if (field === "dateField") {
+    next.dateField = "";
+    next.dateFrom = "";
+    next.dateTo = "";
+  } else if (field === "dateFrom" || field === "dateTo") {
+    next.dateFrom = "";
+    next.dateTo = "";
+    next.dateField = "";
+  } else {
+    (next as Record<string, string | undefined>)[field] = "";
+  }
+  return normalizeCcFilter(next);
+}
+
+async function distinctCcValuesScoped(
+  column: string,
+  scope: CcDeviceFilter,
+): Promise<string[]> {
+  const { sql, binds } = ccWhere(scope);
+  const whereExtra = sql
+    ? `${sql} AND ${column} IS NOT NULL AND TRIM(${column}) != ''`
+    : ` WHERE ${column} IS NOT NULL AND TRIM(${column}) != ''`;
+  const rows = await getDB()
+    .prepare(
+      `SELECT DISTINCT ${column} AS value FROM cc_devices
+       ${whereExtra}
+       ORDER BY ${column} COLLATE NOCASE
+       LIMIT 500`,
+    )
+    .bind(...binds)
+    .all<{ value: string }>();
+  return (rows.results ?? []).map((row) => row.value);
+}
+
+/** End customers from Catalyst assigns, scoped like other CC filters. */
+async function distinctLiveEndCustomers(scope: CcDeviceFilter): Promise<string[]> {
+  const { sql, binds } = ccWhere(scope);
+  const rows = await getDB()
+    .prepare(
+      `SELECT DISTINCT c.name AS value
+       FROM sims s
+       INNER JOIN customers c ON c.id = s.customer_id
+       WHERE s.customer_id IS NOT NULL
+         AND TRIM(c.name) != ''
+         AND s.iccid IN (SELECT iccid FROM cc_devices${sql || ""})
+       ORDER BY c.name COLLATE NOCASE
+       LIMIT 500`,
+    )
+    .bind(...binds)
+    .all<{ value: string }>();
+  const fromSims = (rows.results ?? []).map((row) => row.value);
+  const fromColumn = await distinctCcValuesScoped("end_customer", scope);
+  return [...new Set([...fromSims, ...fromColumn])].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+}
+
+/**
+ * Filter dropdown options. When `scope` has active filters, each list is limited to
+ * values still available under the other filters (cascading).
+ */
+export async function listCcFilterOptions(scope: CcDeviceFilter = {}): Promise<CcFilterOptions> {
+  const normalized = normalizeCcFilter(scope);
+  const scoped = ccFilterActive(normalized);
+  if (!scoped && filterOptionsCache && Date.now() - filterOptionsCache.at < FILTER_OPTIONS_TTL_MS) {
     return filterOptionsCache.value;
   }
+
   const [
     suppliers,
     statuses,
@@ -1262,18 +1336,21 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
     sessionIps,
     sessionApns,
   ] = await Promise.all([
-    distinctCcValues("supplier"),
-    distinctCcValues("status"),
-    distinctCcValues("rate_plan"),
-    distinctCcValues("communication_plan"),
-    distinctCcValues("customer"),
-    distinctCcValues("end_customer"),
-    distinctCcValues("account_id"),
-    distinctCcValues("modem_id"),
-    distinctCcValues("global_sim_type"),
-    distinctCcValues("sim_profile_id"),
-    distinctCcValues("session_ip"),
-    distinctCcValues("session_apn"),
+    distinctCcValuesScoped("supplier", omitCcFilterField(normalized, "supplier")),
+    distinctCcValuesScoped("status", omitCcFilterField(normalized, "status")),
+    distinctCcValuesScoped("rate_plan", omitCcFilterField(normalized, "ratePlan")),
+    distinctCcValuesScoped(
+      "communication_plan",
+      omitCcFilterField(normalized, "communicationPlan"),
+    ),
+    distinctCcValuesScoped("customer", omitCcFilterField(normalized, "customer")),
+    distinctLiveEndCustomers(omitCcFilterField(normalized, "endCustomer")),
+    distinctCcValuesScoped("account_id", omitCcFilterField(normalized, "accountId")),
+    distinctCcValuesScoped("modem_id", omitCcFilterField(normalized, "modemId")),
+    distinctCcValuesScoped("global_sim_type", omitCcFilterField(normalized, "globalSimType")),
+    distinctCcValuesScoped("sim_profile_id", omitCcFilterField(normalized, "simProfileId")),
+    distinctCcValuesScoped("session_ip", omitCcFilterField(normalized, "sessionIp")),
+    distinctCcValuesScoped("session_apn", omitCcFilterField(normalized, "sessionApn")),
   ]);
   const listedSuppliers = suppliers.includes(DEFAULT_PLAN_SUPPLIER)
     ? suppliers
@@ -1292,7 +1369,7 @@ export async function listCcFilterOptions(): Promise<CcFilterOptions> {
     sessionIps,
     sessionApns,
   };
-  filterOptionsCache = { at: Date.now(), value };
+  if (!scoped) filterOptionsCache = { at: Date.now(), value };
   return value;
 }
 

@@ -1449,6 +1449,14 @@ export async function assignSims(
     if ((result.meta.changes ?? 0) === 0) throw new Error(`SIM ${iccid} is not in this tenant.`);
   }
 
+  // Keep CC snapshot End customer in sync with Catalyst assigns (filter/export).
+  try {
+    const { setCcEndCustomers } = await import("@/lib/cc/devices");
+    await setCcEndCustomers(iccids, customer.name);
+  } catch (err) {
+    console.error("[assign] end_customer sync", err instanceof Error ? err.message : err);
+  }
+
   await writeAudit(
     tenantId,
     actorEmail,
