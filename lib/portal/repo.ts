@@ -1227,6 +1227,82 @@ export async function assignSims(
   return { assigned: iccids.length };
 }
 
+/**
+ * Change the retail plan on an already-assigned SIM.
+ * If the retail plan maps to a different contracted Reseller Plan, retarget that too.
+ */
+export async function changeSimRetailPlan(
+  tenantId: string,
+  actorEmail: string,
+  input: { iccid: string; planId: string; skipNotify?: boolean },
+): Promise<{ planName: string; ratePlanChanged: boolean }> {
+  const iccid = input.iccid.replace(/\s/g, "");
+  const planId = input.planId.trim();
+  if (!iccid) throw new Error("ICCID is required.");
+  if (!planId) throw new Error("Choose a retail plan.");
+
+  const db = getDB();
+  const sim = await db
+    .prepare(
+      `SELECT id, customer_id, plan_id, platform_plan_id
+       FROM sims WHERE tenant_id = ? AND iccid = ?`,
+    )
+    .bind(tenantId, iccid)
+    .first<{
+      id: string;
+      customer_id: string | null;
+      plan_id: string | null;
+      platform_plan_id: string | null;
+    }>();
+  if (!sim) throw new Error(`SIM ${iccid} is not in this organisation.`);
+  if (!sim.customer_id) {
+    throw new Error("Assign this SIM to a customer before changing the retail plan.");
+  }
+
+  const plan = await db
+    .prepare(
+      `SELECT id, name, platform_plan_id FROM plans WHERE id = ? AND tenant_id = ?`,
+    )
+    .bind(planId, tenantId)
+    .first<{ id: string; name: string; platform_plan_id: string | null }>();
+  if (!plan) throw new Error("Retail plan not found in this organisation.");
+  if (!plan.platform_plan_id) {
+    throw new Error("Choose a retail plan copied from a contracted plan.");
+  }
+  if (sim.plan_id === plan.id) {
+    return { planName: plan.name, ratePlanChanged: false };
+  }
+
+  const contracted = await tenantHasPlatformPlan(tenantId, plan.platform_plan_id);
+  if (!contracted) {
+    throw new Error("That retail plan’s rate plan is not on this organisation’s contract.");
+  }
+
+  let ratePlanChanged = false;
+  if (sim.platform_plan_id !== plan.platform_plan_id) {
+    const { changeSimRatePlan } = await import("@/lib/portal/rate-plan-change");
+    await changeSimRatePlan(tenantId, actorEmail, {
+      iccid,
+      platformPlanId: plan.platform_plan_id,
+      skipNotify: input.skipNotify,
+    });
+    ratePlanChanged = true;
+  }
+
+  await db
+    .prepare(`UPDATE sims SET plan_id = ? WHERE id = ? AND tenant_id = ?`)
+    .bind(plan.id, sim.id, tenantId)
+    .run();
+
+  await writeAudit(
+    tenantId,
+    actorEmail,
+    "assign",
+    `${iccid}: retail plan → ${plan.name}${ratePlanChanged ? " · Reseller Plan retargeted" : ""}`,
+  );
+  return { planName: plan.name, ratePlanChanged };
+}
+
 export async function applyLifecycle(
   tenantId: string,
   actorEmail: string,

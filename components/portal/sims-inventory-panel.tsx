@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
-import { ChangeRatePlanButton, type RatePlanOption } from "@/components/portal/change-rate-plan-button";
+import {
+  ChangeRetailPlanButton,
+  type RetailPlanOption,
+} from "@/components/portal/change-retail-plan-button";
 import { ConfirmDialog } from "@/components/portal/confirm-dialog";
 import { LifecycleButtons } from "@/components/portal/lifecycle-buttons";
 import { formatIccid } from "@/lib/portal/ids";
@@ -19,6 +22,7 @@ export type SimsInventoryRow = {
   iccid: string;
   tenantName: string | null;
   customerName: string | null;
+  planId: string | null;
   planName: string | null;
   platformPlanId: string | null;
   platformPlanName: string | null;
@@ -41,7 +45,7 @@ type Fields = {
 /** Per-column choices while selected - lifecycle and plan are independent. */
 type StagedRow = {
   lifecycle: "" | "Activate" | "Deactivate";
-  platformPlanId: string;
+  retailPlanId: string;
 };
 
 function asSimState(value: string): SimState | null {
@@ -53,7 +57,7 @@ function asSimState(value: string): SimState | null {
 
 function rowReady(staged: StagedRow | undefined): boolean {
   if (!staged) return false;
-  return staged.lifecycle !== "" || staged.platformPlanId !== "";
+  return staged.lifecycle !== "" || staged.retailPlanId !== "";
 }
 
 export function SimsInventoryPanel({
@@ -67,7 +71,7 @@ export function SimsInventoryPanel({
 }: {
   sims: SimsInventoryRow[];
   fields: Fields;
-  planOptions: RatePlanOption[];
+  planOptions: RetailPlanOption[];
   canLifecycle: boolean;
   canChangePlan: boolean;
   canAssign: boolean;
@@ -91,20 +95,20 @@ export function SimsInventoryPanel({
   );
 
   const summary = useMemo(() => {
-    const counts = { Activate: 0, Deactivate: 0, rate_plan: 0 };
+    const counts = { Activate: 0, Deactivate: 0, retail_plan: 0 };
     for (const iccid of selected) {
       const row = staged[iccid];
       if (!row) continue;
       if (row.lifecycle === "Activate") counts.Activate += 1;
       if (row.lifecycle === "Deactivate") counts.Deactivate += 1;
-      if (row.platformPlanId) counts.rate_plan += 1;
+      if (row.retailPlanId) counts.retail_plan += 1;
     }
     return counts;
   }, [selected, staged]);
 
   function patchStaged(iccid: string, patch: Partial<StagedRow>) {
     setStaged((current) => {
-      const prev = current[iccid] ?? { lifecycle: "", platformPlanId: "" };
+      const prev = current[iccid] ?? { lifecycle: "", retailPlanId: "" };
       return { ...current, [iccid]: { ...prev, ...patch } };
     });
   }
@@ -122,7 +126,7 @@ export function SimsInventoryPanel({
       if (current.length >= BULK_SIM_CAP) return current;
       setStaged((prev) => ({
         ...prev,
-        [iccid]: { lifecycle: "", platformPlanId: "" },
+        [iccid]: { lifecycle: "", retailPlanId: "" },
       }));
       return [...current, iccid];
     });
@@ -139,7 +143,7 @@ export function SimsInventoryPanel({
     }
     const nextStaged: Record<string, StagedRow> = {};
     for (const sim of capSims) {
-      nextStaged[sim.iccid] = { lifecycle: "", platformPlanId: "" };
+      nextStaged[sim.iccid] = { lifecycle: "", retailPlanId: "" };
     }
     setSelected(Object.keys(nextStaged));
     setStaged(nextStaged);
@@ -153,8 +157,8 @@ export function SimsInventoryPanel({
       if (row.lifecycle === "Activate" || row.lifecycle === "Deactivate") {
         items.push({ iccid, action: row.lifecycle });
       }
-      if (row.platformPlanId) {
-        items.push({ iccid, action: "rate_plan", platformPlanId: row.platformPlanId });
+      if (row.retailPlanId) {
+        items.push({ iccid, action: "retail_plan", platformPlanId: row.retailPlanId });
       }
     }
     return items;
@@ -162,12 +166,12 @@ export function SimsInventoryPanel({
 
   function buildConfirmLines(): { iccid: string; label: string }[] {
     return buildItems().map((item) => {
-      if (item.action === "rate_plan") {
+      if (item.action === "retail_plan") {
         const planName =
           planOptions.find((plan) => plan.id === item.platformPlanId)?.label ??
           item.platformPlanId ??
-          "Reseller Plan";
-        return { iccid: item.iccid, label: `Reseller Plan → ${planName}` };
+          "Retail plan";
+        return { iccid: item.iccid, label: `Retail plan → ${planName}` };
       }
       return { iccid: item.iccid, label: item.action };
     });
@@ -197,7 +201,7 @@ export function SimsInventoryPanel({
     if (!allReady) return;
     const items = buildItems();
     if (items.length === 0) {
-      setError("Choose a lifecycle action and/or Reseller Plan on each selected SIM.");
+      setError("Choose a lifecycle action and/or retail plan on each selected SIM.");
       return;
     }
     setBusy(true);
@@ -228,7 +232,7 @@ export function SimsInventoryPanel({
     sims.length > 0 &&
     sims.slice(0, BULK_SIM_CAP).every((sim) => selected.includes(sim.iccid)) &&
     selected.length > 0;
-  const changeCount = summary.Activate + summary.Deactivate + summary.rate_plan;
+  const changeCount = summary.Activate + summary.Deactivate + summary.retail_plan;
   const CONFIRM_LINE_CAP = 20;
   const shownConfirmLines = confirmLines.slice(0, CONFIRM_LINE_CAP);
   const hiddenConfirmLines = Math.max(0, confirmLines.length - shownConfirmLines.length);
@@ -239,7 +243,7 @@ export function SimsInventoryPanel({
         <div>
           <h1 className="text-3xl font-semibold">SIMs</h1>
           <p className="mt-1 text-sm text-quiet">
-            Select SIMs (max {BULK_SIM_CAP}). Set Lifecycle and/or Reseller Plan per row, then Bulk update.
+            Select SIMs (max {BULK_SIM_CAP}). Set Lifecycle and/or retail plan per row, then Bulk update.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -254,7 +258,7 @@ export function SimsInventoryPanel({
                   ? "Select SIMs first"
                   : allReady
                     ? undefined
-                    : "Set Lifecycle and/or Reseller Plan on every selected SIM"
+                    : "Set Lifecycle and/or retail plan on every selected SIM"
               }
               className={selectionActive ? btnPrimary : btnSecondary}
             >
@@ -275,8 +279,8 @@ export function SimsInventoryPanel({
           {atCap ? ` · cap ${BULK_SIM_CAP}` : ` · max ${BULK_SIM_CAP}`}
           {summary.Activate ? ` · Activate ${summary.Activate}` : ""}
           {summary.Deactivate ? ` · Deactivate ${summary.Deactivate}` : ""}
-          {summary.rate_plan ? ` · Plan ${summary.rate_plan}` : ""}
-          {!allReady ? " · pick Lifecycle and/or Reseller Plan on each selected row" : ""}.
+          {summary.retail_plan ? ` · Plan ${summary.retail_plan}` : ""}
+          {!allReady ? " · pick Lifecycle and/or retail plan on each selected row" : ""}.
           <button
             type="button"
             className="ml-2 text-accent hover:underline"
@@ -317,7 +321,7 @@ export function SimsInventoryPanel({
               <th className="px-4 py-3">Pool</th>
               <th className="px-4 py-3">State</th>
               <th className="px-4 py-3">Lifecycle</th>
-              {canChangePlan ? <th className="px-4 py-3">Reseller Plan</th> : null}
+              {canChangePlan ? <th className="px-4 py-3">Retail plan</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -327,6 +331,7 @@ export function SimsInventoryPanel({
               const rowStaged = staged[sim.iccid];
               const simState = asSimState(sim.state);
               const dash = "—";
+              const hasCustomer = Boolean(sim.customerName);
               return (
                 <tr key={sim.id} className={`border-t border-line ${rowLocked ? "opacity-40" : ""}`}>
                   {canLifecycle ? (
@@ -388,27 +393,33 @@ export function SimsInventoryPanel({
                   {canChangePlan ? (
                     <td className="px-4 py-3">
                       {checked ? (
-                        <select
-                          value={rowStaged?.platformPlanId ?? ""}
-                          onChange={(event) =>
-                            patchStaged(sim.iccid, { platformPlanId: event.target.value })
-                          }
-                          className="max-w-40 rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
-                        >
-                          <option value="">No change</option>
-                          {planOptions
-                            .filter((plan) => plan.id !== sim.platformPlanId)
-                            .map((plan) => (
-                              <option key={plan.id} value={plan.id}>
-                                {plan.label}
-                              </option>
-                            ))}
-                        </select>
+                        hasCustomer ? (
+                          <select
+                            value={rowStaged?.retailPlanId ?? ""}
+                            onChange={(event) =>
+                              patchStaged(sim.iccid, { retailPlanId: event.target.value })
+                            }
+                            className="max-w-40 rounded-lg border border-line bg-canvas px-2 py-1 text-[11px]"
+                          >
+                            <option value="">No change</option>
+                            {planOptions
+                              .filter((plan) => plan.id !== sim.planId)
+                              .map((plan) => (
+                                <option key={plan.id} value={plan.id}>
+                                  {plan.label}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <span className="text-[11px] text-quiet">Assign first</span>
+                        )
                       ) : (
-                        <ChangeRatePlanButton
+                        <ChangeRetailPlanButton
                           iccid={sim.iccid}
-                          currentPlatformPlanId={sim.platformPlanId}
+                          currentPlanId={sim.planId}
+                          hasCustomer={hasCustomer}
                           options={planOptions}
+                          disabled={selectionActive}
                         />
                       )}
                     </td>

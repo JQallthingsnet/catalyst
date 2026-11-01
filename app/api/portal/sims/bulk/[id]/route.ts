@@ -3,13 +3,34 @@ import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import { can } from "@/lib/portal/role-model";
 import { getSimBulkJob, processSimBulkJobChunk } from "@/lib/portal/sim-bulk";
 
+function denyForBulkKind(ctx: Parameters<typeof denyUnless>[0], kind: string) {
+  if (kind === "rate_plan") return denyUnless(ctx, "rate_plan.change");
+  if (kind === "retail_plan") return denyUnless(ctx, "assign");
+  if (kind === "Activate" || kind === "Deactivate" || kind === "mixed") {
+    // Mixed jobs may include plan actions; allow anyone who can start any bulk action.
+    if (
+      can(ctx.role, "lifecycle") ||
+      can(ctx.role, "assign") ||
+      can(ctx.role, "rate_plan.change")
+    ) {
+      return null;
+    }
+    return denyUnless(ctx, "lifecycle");
+  }
+  return denyUnless(ctx, "lifecycle");
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> | { id: string } },
 ) {
   const ctx = await requirePortalApi();
   if (isResponse(ctx)) return ctx;
-  if (!can(ctx.role, "lifecycle") && !can(ctx.role, "rate_plan.change")) {
+  if (
+    !can(ctx.role, "lifecycle") &&
+    !can(ctx.role, "rate_plan.change") &&
+    !can(ctx.role, "assign")
+  ) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
@@ -30,13 +51,8 @@ export async function POST(
   const existing = await getSimBulkJob(ctx.tenantId, id);
   if (!existing) return NextResponse.json({ error: "Bulk job not found." }, { status: 404 });
 
-  if (existing.kind === "rate_plan") {
-    const denied = denyUnless(ctx, "rate_plan.change");
-    if (denied) return denied;
-  } else {
-    const denied = denyUnless(ctx, "lifecycle");
-    if (denied) return denied;
-  }
+  const denied = denyForBulkKind(ctx, existing.kind);
+  if (denied) return denied;
 
   try {
     const job = await processSimBulkJobChunk(ctx.tenantId, ctx.email, id);

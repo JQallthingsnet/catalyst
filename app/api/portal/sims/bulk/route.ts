@@ -17,17 +17,26 @@ export async function POST(request: Request) {
     const needsLifecycle = items.some(
       (item) => item.action === "Activate" || item.action === "Deactivate",
     );
-    const needsPlan = items.some((item) => item.action === "rate_plan");
+    const needsResellerPlan = items.some((item) => item.action === "rate_plan");
+    const needsRetailPlan = items.some((item) => item.action === "retail_plan");
     if (needsLifecycle) {
       const denied = denyUnless(ctx, "lifecycle");
       if (denied) return denied;
     }
-    if (needsPlan) {
+    if (needsResellerPlan) {
       const denied = denyUnless(ctx, "rate_plan.change");
       if (denied) return denied;
     }
-    if (!needsLifecycle && !needsPlan) {
-      if (!can(ctx.role, "lifecycle") && !can(ctx.role, "rate_plan.change")) {
+    if (needsRetailPlan) {
+      const denied = denyUnless(ctx, "assign");
+      if (denied) return denied;
+    }
+    if (!needsLifecycle && !needsResellerPlan && !needsRetailPlan) {
+      if (
+        !can(ctx.role, "lifecycle") &&
+        !can(ctx.role, "rate_plan.change") &&
+        !can(ctx.role, "assign")
+      ) {
         return NextResponse.json({ error: "Forbidden." }, { status: 403 });
       }
     }

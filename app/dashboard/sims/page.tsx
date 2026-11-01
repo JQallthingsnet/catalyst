@@ -2,8 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SimsInventoryPanel } from "@/components/portal/sims-inventory-panel";
 import { requirePortal } from "@/lib/portal/guard";
-import { listAssignedPlatformPlans } from "@/lib/portal/platform-plans";
-import { listSims } from "@/lib/portal/repo";
+import { listPlans, listSims } from "@/lib/portal/repo";
 import { btnSecondary } from "@/lib/portal/button-styles";
 import { can, simFieldsForRole } from "@/lib/portal/role-model";
 
@@ -19,26 +18,23 @@ export default async function SimsPage({
     const q = params.q?.trim();
     redirect(q ? `/dashboard/estate?q=${encodeURIComponent(q)}` : "/dashboard/estate");
   }
-  const [sims, contracted] = await Promise.all([
+  const [sims, retailPlans] = await Promise.all([
     listSims(ctx.tenantId, params.q ?? "", 5_000),
-    can(ctx.role, "rate_plan.change")
-      ? listAssignedPlatformPlans(ctx.tenantId)
-      : Promise.resolve([]),
+    can(ctx.role, "assign") ? listPlans(ctx.tenantId) : Promise.resolve([]),
   ]);
   const fields = simFieldsForRole(ctx.role);
-  const planOptions = contracted
-    .filter((plan) => plan.active)
-    .map((plan) => ({
-      id: plan.id,
-      label: plan.name,
-    }));
-  const canChangePlan = can(ctx.role, "rate_plan.change");
+  const planOptions = retailPlans.map((plan) => ({
+    id: plan.id,
+    label: plan.name,
+  }));
+  // Reseller SIMs page changes the end-customer retail plan (not ATN Reseller Plan).
+  const canChangePlan = can(ctx.role, "assign");
   const canLifecycle = can(ctx.role, "lifecycle");
   const canAssign = can(ctx.role, "assign");
 
   const headerLinks = (
     <>
-      {canChangePlan ? (
+      {can(ctx.role, "rate_plan.change") ? (
         <Link href="/dashboard/sims/rate-plan-changes" className={btnSecondary}>
           Plan changes
         </Link>
@@ -63,6 +59,7 @@ export default async function SimsPage({
         iccid: sim.iccid,
         tenantName: sim.tenantName,
         customerName: sim.customerName,
+        planId: sim.planId,
         planName: sim.planName,
         platformPlanId: sim.platformPlanId,
         platformPlanName: sim.platformPlanName,

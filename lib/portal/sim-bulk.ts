@@ -5,7 +5,7 @@ import { newId } from "@/lib/portal/ids";
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import { changeSimRatePlan } from "@/lib/portal/rate-plan-change";
 import { recipientsFromAlertSetup } from "@/lib/portal/rate-plan-notify";
-import { applyLifecycle, writeAudit } from "@/lib/portal/repo";
+import { applyLifecycle, changeSimRetailPlan, writeAudit } from "@/lib/portal/repo";
 import {
   BULK_SIM_CAP,
   type BulkItemAction,
@@ -35,7 +35,12 @@ function escapeHtml(value: string): string {
 }
 
 function isItemAction(value: string): value is BulkItemAction {
-  return value === "Activate" || value === "Deactivate" || value === "rate_plan";
+  return (
+    value === "Activate" ||
+    value === "Deactivate" ||
+    value === "rate_plan" ||
+    value === "retail_plan"
+  );
 }
 
 export async function createSimBulkJob(
@@ -43,7 +48,7 @@ export async function createSimBulkJob(
   actorEmail: string,
   input: { items: BulkJobItemInput[] },
 ): Promise<BulkJobStatus> {
-  // One ICCID may appear twice (lifecycle + Reseller Plan) in the same bulk run.
+  // One ICCID may appear twice (lifecycle + plan) in the same bulk run.
   const seen = new Set<string>();
   const items: BulkJobItemInput[] = [];
   for (const raw of input.items) {
@@ -69,36 +74,65 @@ export async function createSimBulkJob(
   const placeholders = uniqueIccids.map(() => "?").join(",");
   const owned = await db
     .prepare(
-      `SELECT iccid, state FROM sims WHERE tenant_id = ? AND iccid IN (${placeholders})`,
+      `SELECT iccid, state, customer_id FROM sims WHERE tenant_id = ? AND iccid IN (${placeholders})`,
     )
     .bind(tenantId, ...uniqueIccids)
-    .all<{ iccid: string; state: SimState }>();
-  const stateByIccid = new Map((owned.results ?? []).map((row) => [row.iccid, row.state]));
+    .all<{ iccid: string; state: SimState; customer_id: string | null }>();
+  const byIccid = new Map((owned.results ?? []).map((row) => [row.iccid, row]));
 
-  const planCache = new Map<string, boolean>();
+  const platformPlanCache = new Map<string, boolean>();
+  const retailPlanCache = new Map<string, { ok: boolean; name: string }>();
   for (const item of items) {
-    if (!stateByIccid.has(item.iccid)) {
+    const sim = byIccid.get(item.iccid);
+    if (!sim) {
       throw new Error(`SIM ${item.iccid} is not in this organisation.`);
     }
-    const state = stateByIccid.get(item.iccid)!;
     if (item.action === "Activate" || item.action === "Deactivate") {
-      if (!lifecycleTarget(item.action, state)) {
-        throw new Error(`${item.action} is not valid from ${state} (${item.iccid}).`);
+      if (!lifecycleTarget(item.action, sim.state)) {
+        throw new Error(`${item.action} is not valid from ${sim.state} (${item.iccid}).`);
       }
-    } else {
-      const planId = item.platformPlanId;
-      if (!planId) throw new Error(`Choose a Reseller Plan for ${item.iccid}.`);
-      let allowed = planCache.get(planId);
-      if (allowed == null) {
-        allowed = await tenantHasPlatformPlan(tenantId, planId);
-        planCache.set(planId, allowed);
-        if (allowed) {
-          const plan = await loadPlatformPlanRecord(planId);
-          if (!plan?.active) throw new Error(`Reseller Plan is deactivated (${planId}).`);
-        }
-      }
-      if (!allowed) throw new Error(`That rate plan is not on this reseller’s contract (${item.iccid}).`);
+      continue;
     }
+
+    const planId = item.platformPlanId;
+    if (item.action === "retail_plan") {
+      if (!planId) throw new Error(`Choose a retail plan for ${item.iccid}.`);
+      if (!sim.customer_id) {
+        throw new Error(`Assign ${item.iccid} to a customer before changing the retail plan.`);
+      }
+      let cached = retailPlanCache.get(planId);
+      if (!cached) {
+        const plan = await db
+          .prepare(
+            `SELECT id, name, platform_plan_id FROM plans WHERE id = ? AND tenant_id = ?`,
+          )
+          .bind(planId, tenantId)
+          .first<{ id: string; name: string; platform_plan_id: string | null }>();
+        if (!plan?.platform_plan_id) {
+          cached = { ok: false, name: planId };
+        } else {
+          const contracted = await tenantHasPlatformPlan(tenantId, plan.platform_plan_id);
+          cached = { ok: contracted, name: plan.name };
+        }
+        retailPlanCache.set(planId, cached);
+      }
+      if (!cached.ok) {
+        throw new Error(`That retail plan is not valid for this organisation (${item.iccid}).`);
+      }
+      continue;
+    }
+
+    if (!planId) throw new Error(`Choose a Reseller Plan for ${item.iccid}.`);
+    let allowed = platformPlanCache.get(planId);
+    if (allowed == null) {
+      allowed = await tenantHasPlatformPlan(tenantId, planId);
+      platformPlanCache.set(planId, allowed);
+      if (allowed) {
+        const plan = await loadPlatformPlanRecord(planId);
+        if (!plan?.active) throw new Error(`Reseller Plan is deactivated (${planId}).`);
+      }
+    }
+    if (!allowed) throw new Error(`That rate plan is not on this reseller’s contract (${item.iccid}).`);
   }
 
   const id = newId("sbj");
@@ -131,7 +165,7 @@ export async function createSimBulkJob(
   await writeAudit(
     tenantId,
     actorEmail,
-    jobKind === "rate_plan" ? "rate_plan" : "lifecycle",
+    jobKind === "rate_plan" ? "rate_plan" : jobKind === "retail_plan" ? "assign" : "lifecycle",
     `Bulk job ${id}: ${uniqueIccids.length} SIM(s) · ${items.length} change(s) · ${jobKind}`,
   );
 
@@ -232,6 +266,14 @@ export async function processSimBulkJobChunk(
           platformPlanId: planId,
           skipNotify: true,
         });
+      } else if (action === "retail_plan") {
+        const planId = item.platform_plan_id ?? job.platformPlanId;
+        if (!planId) throw new Error("Retail plan missing.");
+        await changeSimRetailPlan(tenantId, actorEmail, {
+          iccid: item.iccid,
+          planId,
+          skipNotify: true,
+        });
       } else if (action === "Activate" || action === "Deactivate") {
         await applyLifecycle(tenantId, actorEmail, {
           iccid: item.iccid,
@@ -316,7 +358,15 @@ async function notifyBulkJobComplete(tenantId: string, jobId: string): Promise<v
     .all<{ action: string | null; c: number }>();
   const actionLabel =
     (actionCounts.results ?? [])
-      .map((row) => `${row.action ?? "—"} × ${row.c}`)
+      .map((row) => {
+        const action =
+          row.action === "retail_plan"
+            ? "Retail plan"
+            : row.action === "rate_plan"
+              ? "Reseller Plan"
+              : (row.action ?? "—");
+        return `${action} × ${row.c}`;
+      })
       .join(", ") || job.kind;
 
   const DETAIL_CAP = 50;
@@ -340,14 +390,23 @@ async function notifyBulkJobComplete(tenantId: string, jobId: string): Promise<v
 
   const planNameCache = new Map<string, string>();
   async function actionDetail(action: string | null, platformPlanId: string | null): Promise<string> {
-    if (action === "rate_plan" && platformPlanId) {
-      let name = planNameCache.get(platformPlanId);
+    if ((action === "rate_plan" || action === "retail_plan") && platformPlanId) {
+      const cacheKey = `${action}:${platformPlanId}`;
+      let name = planNameCache.get(cacheKey);
       if (!name) {
-        const plan = await loadPlatformPlanRecord(platformPlanId);
-        name = plan?.name?.trim() || platformPlanId;
-        planNameCache.set(platformPlanId, name);
+        if (action === "retail_plan") {
+          const plan = await db
+            .prepare(`SELECT name FROM plans WHERE id = ?`)
+            .bind(platformPlanId)
+            .first<{ name: string }>();
+          name = plan?.name?.trim() || platformPlanId;
+        } else {
+          const plan = await loadPlatformPlanRecord(platformPlanId);
+          name = plan?.name?.trim() || platformPlanId;
+        }
+        planNameCache.set(cacheKey, name);
       }
-      return `Reseller Plan → ${name}`;
+      return action === "retail_plan" ? `Retail plan → ${name}` : `Reseller Plan → ${name}`;
     }
     return action ?? "—";
   }
