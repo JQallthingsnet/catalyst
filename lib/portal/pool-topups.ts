@@ -189,7 +189,7 @@ export async function createPoolModemTopup(input: {
     .first<{ ok: number }>();
   if (!onContract) {
     throw new Error(
-      `“${modemId}” is on SIMs (e.g. carried from Jasper) but not on the contract. Ask ATN to add it under Contract and set a unit price before buying a pool top-up.`,
+      `Legacy plan. Ask supplier to add “${modemId}” under Contract with the unit price before top-up.`,
     );
   }
 

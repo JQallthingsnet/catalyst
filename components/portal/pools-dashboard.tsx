@@ -848,14 +848,14 @@ export function PoolsDashboard({
                     <td className="px-4 py-3">
                       {!onContract ? (
                         <div className="max-w-64 space-y-1 text-xs">
-                          <p className="text-warn">Not on contract</p>
+                          <p className="text-warn">Legacy plan</p>
                           <p className="text-quiet">
-                            Carried from Jasper onto SIMs. Ask ATN to add{" "}
+                            Ask supplier to add{" "}
                             <span className="font-mono text-ink">{row.name}</span> under{" "}
                             <Link href="/dashboard/contracts" className="text-accent hover:underline">
                               Contract
                             </Link>{" "}
-                            and set a unit price before top-up.
+                            with the unit price before top-up.
                           </p>
                         </div>
                       ) : canTopupPlan ? (
