@@ -218,8 +218,8 @@ export function ResellerPlanDailyMatrix({
         </article>
       ) : (
         <p className="text-xs text-quiet">
-          Every Sydney calendar day in the From/To range is a column. Cells show plan count (1 = single plan, 2+ =
-          changed). Click a cell for details.
+          Full date matrix: every Sydney calendar day in From/To is a column (default whole month). · = not stamped
+          yet. Cells show plan count (1 = single plan, 2+ = changed). Click a cell for details.
         </p>
       )}
     </div>

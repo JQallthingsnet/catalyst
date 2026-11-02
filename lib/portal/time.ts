@@ -46,6 +46,16 @@ export function sydneyMonthStartDayKey(at: Date = new Date()): string {
   return `${year}-${String(month).padStart(2, "0")}-01`;
 }
 
+/** Last day of the current Sydney calendar month as YYYY-MM-DD. */
+export function sydneyMonthEndDayKey(at: Date = new Date()): string {
+  const { year, month } = sydneyYmd(at);
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  // Day 0 of next month UTC = last day of this month (calendar YMD labels).
+  const last = new Date(Date.UTC(nextYear, nextMonth - 1, 0));
+  return `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, "0")}-${String(last.getUTCDate()).padStart(2, "0")}`;
+}
+
 /** Sydney calendar day `daysAgo` before `at` (0 = today). */
 export function sydneyDayKeyDaysAgo(daysAgo: number, at: Date = new Date()): string {
   const n = Math.max(0, Math.floor(daysAgo));

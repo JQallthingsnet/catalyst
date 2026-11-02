@@ -14,7 +14,7 @@ import {
 } from "@/lib/portal/rate-plan-change";
 import { listSimPlatformPlanDailyMatrix } from "@/lib/portal/sim-platform-plan-daily";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
-import { formatAuDateTime, sydneyDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
+import { formatAuDateTime, sydneyMonthEndDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
 
 const PAGE_SIZE = 50;
 
@@ -153,9 +153,9 @@ export default async function RatePlanChangesPage({
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
   // Reseller: own org. Super admin: all ICCIDs, or one org when Organisation filter is set.
   const matrixTenantId = onPlatform ? filter.organisationId || undefined : ctx.tenantId;
-  // Daily matrix defaults to Sydney month-to-date when From/To are blank.
+  // Daily matrix defaults to the full Sydney calendar month (1st → last day).
   const matrixDateFrom = filter.dateFrom || sydneyMonthStartDayKey();
-  const matrixDateTo = filter.dateTo || sydneyDayKey();
+  const matrixDateTo = filter.dateTo || sydneyMonthEndDayKey();
   const [changes, listedCount, options, dailyMatrix] = await Promise.all([
     listRatePlanChanges(filter, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     countRatePlanChanges(filter),
@@ -333,8 +333,9 @@ export default async function RatePlanChangesPage({
           <p className="mt-1 text-sm text-quiet">
             Rows are ICCIDs
             {onPlatform ? " (all organisations, or filter Organisation above)" : ""}; every Sydney calendar day in
-            From/To is a column (default this calendar month). Cell value is how many Reseller Plans applied that day
-            (1 = unchanged, 2+ = changed). Click a cell for plan names.
+            From/To is a column (default the full current month, 1st–last day). Empty days show · until stamped.
+            Cell value is how many Reseller Plans applied that day (1 = unchanged, 2+ = changed). Click a cell for
+            plan names.
           </p>
         </div>
         <ResellerPlanDailyMatrix

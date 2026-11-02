@@ -1,7 +1,7 @@
 import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { loadPlatformPlanRecord } from "@/lib/portal/platform-plans";
-import { sydneyDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
+import { sydneyDayKey, sydneyMonthEndDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
 
 export type SimPlatformPlanDailyPlan = {
   platformPlanId: string;
@@ -63,7 +63,8 @@ function enumerateSydneyDays(dateFrom: string, dateTo: string): string[] {
   const days: string[] = [];
   // Walk UTC midnight labels — Sydney day keys are YMD strings we already store.
   let cursor = from;
-  while (cursor <= to && days.length < 62) {
+  // Cap ~one quarter so a full calendar month (and custom ranges) always materialises.
+  while (cursor <= to && days.length < 100) {
     days.push(cursor);
     const [y, m, d] = cursor.split("-").map(Number);
     const next = new Date(Date.UTC(y, m - 1, d + 1));
@@ -86,8 +87,9 @@ export async function listSimPlatformPlanDailyMatrix(input: {
   const tenantId = input.tenantId?.trim() || "";
   const includeOrganisation = !tenantId;
 
-  const dateTo = input.dateTo?.trim() || sydneyDayKey();
+  const dateTo = input.dateTo?.trim() || sydneyMonthEndDayKey();
   const dateFrom = input.dateFrom?.trim() || sydneyMonthStartDayKey();
+  // Always materialise every calendar day in From/To as columns (empty cells = ·).
   const days = enumerateSydneyDays(dateFrom, dateTo);
   if (days.length === 0) return { days: [], rows: [], includeOrganisation };
 
@@ -97,31 +99,53 @@ export async function listSimPlatformPlanDailyMatrix(input: {
   );
   const db = getDB();
 
+  // Pre-form the matrix: ICCIDs with a current Reseller Plan and/or any stamp in range.
   const iccidRows = tenantId
     ? await db
         .prepare(
-          `SELECT d.tenant_id, d.iccid, t.name AS organisation_name
-           FROM sim_platform_plan_daily d
-           JOIN tenants t ON t.id = d.tenant_id
-           WHERE d.tenant_id = ? AND d.day >= ? AND d.day <= ?
-           GROUP BY d.tenant_id, d.iccid
-           ORDER BY MAX(d.day) DESC, d.iccid ASC
+          `SELECT tenant_id, iccid, organisation_name, MAX(sort_day) AS sort_day
+           FROM (
+             SELECT d.tenant_id AS tenant_id, d.iccid AS iccid, t.name AS organisation_name,
+                    d.day AS sort_day
+             FROM sim_platform_plan_daily d
+             JOIN tenants t ON t.id = d.tenant_id
+             WHERE d.tenant_id = ? AND d.day >= ? AND d.day <= ?
+             UNION ALL
+             SELECT s.tenant_id AS tenant_id, s.iccid AS iccid, t.name AS organisation_name,
+                    ? AS sort_day
+             FROM sims s
+             JOIN tenants t ON t.id = s.tenant_id
+             WHERE s.tenant_id = ?
+               AND s.platform_plan_id IS NOT NULL AND TRIM(s.platform_plan_id) != ''
+           )
+           GROUP BY tenant_id, iccid
+           ORDER BY sort_day DESC, iccid ASC
            LIMIT ?`,
         )
-        .bind(tenantId, dateFrom, dateTo, limit)
-        .all<{ tenant_id: string; iccid: string; organisation_name: string }>()
+        .bind(tenantId, dateFrom, dateTo, dateTo, tenantId, limit)
+        .all<{ tenant_id: string; iccid: string; organisation_name: string; sort_day: string }>()
     : await db
         .prepare(
-          `SELECT d.tenant_id, d.iccid, t.name AS organisation_name
-           FROM sim_platform_plan_daily d
-           JOIN tenants t ON t.id = d.tenant_id
-           WHERE d.day >= ? AND d.day <= ?
-           GROUP BY d.tenant_id, d.iccid
-           ORDER BY MAX(d.day) DESC, t.name COLLATE NOCASE, d.iccid ASC
+          `SELECT tenant_id, iccid, organisation_name, MAX(sort_day) AS sort_day
+           FROM (
+             SELECT d.tenant_id AS tenant_id, d.iccid AS iccid, t.name AS organisation_name,
+                    d.day AS sort_day
+             FROM sim_platform_plan_daily d
+             JOIN tenants t ON t.id = d.tenant_id
+             WHERE d.day >= ? AND d.day <= ?
+             UNION ALL
+             SELECT s.tenant_id AS tenant_id, s.iccid AS iccid, t.name AS organisation_name,
+                    ? AS sort_day
+             FROM sims s
+             JOIN tenants t ON t.id = s.tenant_id
+             WHERE s.platform_plan_id IS NOT NULL AND TRIM(s.platform_plan_id) != ''
+           )
+           GROUP BY tenant_id, iccid
+           ORDER BY sort_day DESC, organisation_name COLLATE NOCASE, iccid ASC
            LIMIT ?`,
         )
-        .bind(dateFrom, dateTo, limit)
-        .all<{ tenant_id: string; iccid: string; organisation_name: string }>();
+        .bind(dateFrom, dateTo, dateTo, limit)
+        .all<{ tenant_id: string; iccid: string; organisation_name: string; sort_day: string }>();
 
   const iccidMeta = (iccidRows.results ?? []).map((row) => ({
     key: `${row.tenant_id}:${row.iccid}`,
