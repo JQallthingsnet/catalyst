@@ -11,6 +11,8 @@ export type ModemAllowanceRow = {
   customer: string | null;
   simCount: number;
   ctdUsageMb: number;
+  ctdSms: number;
+  ctdVoiceMin: number;
   updatedAt: string | null;
   updatedBy: string | null;
 };
@@ -19,6 +21,8 @@ export type PoolCustomerDay = {
   customer: string;
   day: string;
   ctdUsageMb: number;
+  ctdSms: number;
+  ctdVoiceMin: number;
   allowanceMb: number;
   modemCount: number;
   simCount: number;
@@ -34,6 +38,8 @@ export type PoolRatePlanDay = {
   ratePlan: string;
   day: string;
   ctdUsageMb: number;
+  ctdSms: number;
+  ctdVoiceMin: number;
   allowanceMb: number;
   simCount: number;
   snapshottedAt: string;
@@ -49,6 +55,8 @@ export type PoolModemDay = {
   customer: string | null;
   day: string;
   ctdUsageMb: number;
+  ctdSms: number;
+  ctdVoiceMin: number;
   allowanceMb: number;
   simCount: number;
   snapshottedAt: string;
@@ -63,6 +71,8 @@ export type PoolEntityLatest = {
   name: string;
   day: string;
   ctdUsageMb: number;
+  ctdSms: number;
+  ctdVoiceMin: number;
   allowanceMb: number;
   modemCount: number;
   simCount: number;
@@ -148,6 +158,30 @@ export async function listModemAllowances(input?: {
                       ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
               ) AS ctd_usage_mb,
+              (SELECT IFNULL(SUM(d.ctd_sms), 0)
+                 FROM cc_devices d
+                WHERE COALESCE(
+                        NULLIF(TRIM(d.platform_plan_id), ''),
+                        (SELECT s.platform_plan_id FROM sims s
+                          WHERE s.iccid = d.iccid
+                            AND s.platform_plan_id IS NOT NULL
+                            AND TRIM(s.platform_plan_id) != ''
+                          LIMIT 1)
+                      ) = k.platform_plan_id
+                  AND (? = '' OR IFNULL(d.customer, '') = ?)
+              ) AS ctd_sms,
+              (SELECT IFNULL(SUM(d.ctd_voice_min), 0)
+                 FROM cc_devices d
+                WHERE COALESCE(
+                        NULLIF(TRIM(d.platform_plan_id), ''),
+                        (SELECT s.platform_plan_id FROM sims s
+                          WHERE s.iccid = d.iccid
+                            AND s.platform_plan_id IS NOT NULL
+                            AND TRIM(s.platform_plan_id) != ''
+                          LIMIT 1)
+                      ) = k.platform_plan_id
+                  AND (? = '' OR IFNULL(d.customer, '') = ?)
+              ) AS ctd_voice_min,
               a.allowance_mb AS allowance_mb,
               a.updated_at AS updated_at,
               a.updated_by AS updated_by
@@ -166,6 +200,10 @@ export async function listModemAllowances(input?: {
       exact,
       exact,
       exact,
+      exact,
+      exact,
+      exact,
+      exact,
       q,
       `%${q}%`,
     )
@@ -174,6 +212,8 @@ export async function listModemAllowances(input?: {
       customer: string | null;
       sim_count: number;
       ctd_usage_mb: number;
+      ctd_sms: number;
+      ctd_voice_min: number;
       allowance_mb: number | null;
       updated_at: string | null;
       updated_by: string | null;
@@ -185,6 +225,8 @@ export async function listModemAllowances(input?: {
     customer: row.customer,
     simCount: row.sim_count,
     ctdUsageMb: row.ctd_usage_mb,
+    ctdSms: row.ctd_sms ?? 0,
+    ctdVoiceMin: row.ctd_voice_min ?? 0,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
   }));
@@ -322,6 +364,8 @@ export async function snapshotPoolCustomerDaily(
       `SELECT d.customer AS customer,
               d.rate_plan AS rate_plan,
               IFNULL(d.ctd_usage_mb, 0) AS ctd_usage_mb,
+              IFNULL(d.ctd_sms, 0) AS ctd_sms,
+              IFNULL(d.ctd_voice_min, 0) AS ctd_voice_min,
               NULLIF(TRIM(COALESCE(spp.name, pp.name)), '') AS plan_name
        FROM cc_devices d
        LEFT JOIN platform_plans pp ON pp.id = d.platform_plan_id
@@ -336,6 +380,8 @@ export async function snapshotPoolCustomerDaily(
       customer: string | null;
       rate_plan: string | null;
       ctd_usage_mb: number;
+      ctd_sms: number;
+      ctd_voice_min: number;
       plan_name: string | null;
     }>();
 
@@ -358,19 +404,30 @@ export async function snapshotPoolCustomerDaily(
 
   type CustomerAgg = {
     ctd: number;
+    sms: number;
+    voice: number;
     modemAllowance: number;
     ratePlanAllowance: number;
     simCount: number;
     simsWithModem: number;
   };
-  type RatePlanAgg = { ctd: number; allowance: number; simCount: number };
-  type ModemAgg = { ctd: number; allowance: number; simCount: number; customer: string | null };
+  type RatePlanAgg = { ctd: number; sms: number; voice: number; allowance: number; simCount: number };
+  type ModemAgg = {
+    ctd: number;
+    sms: number;
+    voice: number;
+    allowance: number;
+    simCount: number;
+    customer: string | null;
+  };
   const byCustomer = new Map<string, CustomerAgg>();
   const byRatePlan = new Map<string, RatePlanAgg>();
   const byModem = new Map<string, ModemAgg>();
 
   for (const row of deviceRows.results ?? []) {
     const ctd = row.ctd_usage_mb ?? 0;
+    const sms = row.ctd_sms ?? 0;
+    const voice = row.ctd_voice_min ?? 0;
     const customer = row.customer?.trim() ?? "";
     const inCustomerScope = !only || (customer !== "" && only.includes(customer.toLowerCase()));
     const planName = row.plan_name?.trim() ?? "";
@@ -378,10 +435,20 @@ export async function snapshotPoolCustomerDaily(
     if (customer && inCustomerScope) {
       let agg = byCustomer.get(customer);
       if (!agg) {
-        agg = { ctd: 0, modemAllowance: 0, ratePlanAllowance: 0, simCount: 0, simsWithModem: 0 };
+        agg = {
+          ctd: 0,
+          sms: 0,
+          voice: 0,
+          modemAllowance: 0,
+          ratePlanAllowance: 0,
+          simCount: 0,
+          simsWithModem: 0,
+        };
         byCustomer.set(customer, agg);
       }
       agg.ctd += ctd;
+      agg.sms += sms;
+      agg.voice += voice;
       agg.simCount += 1;
       if (planName) {
         agg.simsWithModem += 1;
@@ -396,10 +463,12 @@ export async function snapshotPoolCustomerDaily(
       if (ratePlan) {
         let agg = byRatePlan.get(ratePlan);
         if (!agg) {
-          agg = { ctd: 0, allowance: 0, simCount: 0 };
+          agg = { ctd: 0, sms: 0, voice: 0, allowance: 0, simCount: 0 };
           byRatePlan.set(ratePlan, agg);
         }
         agg.ctd += ctd;
+        agg.sms += sms;
+        agg.voice += voice;
         agg.simCount += 1;
         agg.allowance += allowanceByRatePlan.get(ratePlan) ?? 0;
       }
@@ -408,10 +477,12 @@ export async function snapshotPoolCustomerDaily(
     if (inCustomerScope && planName) {
       let agg = byModem.get(planName);
       if (!agg) {
-        agg = { ctd: 0, allowance: 0, simCount: 0, customer: customer || null };
+        agg = { ctd: 0, sms: 0, voice: 0, allowance: 0, simCount: 0, customer: customer || null };
         byModem.set(planName, agg);
       }
       agg.ctd += ctd;
+      agg.sms += sms;
+      agg.voice += voice;
       agg.simCount += 1;
       // Per-SIM application: same Reseller Plan on N SIMs counts N times.
       agg.allowance += allowanceByModem.get(planName) ?? 0;
@@ -426,11 +497,13 @@ export async function snapshotPoolCustomerDaily(
       db
         .prepare(
           `INSERT INTO pool_customer_daily
-             (customer, day, ctd_usage_mb, allowance_mb, rate_plan_allowance_mb,
+             (customer, day, ctd_usage_mb, ctd_sms, ctd_voice_min, allowance_mb, rate_plan_allowance_mb,
               modem_count, sim_count, snapshotted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(customer, day) DO UPDATE SET
              ctd_usage_mb = excluded.ctd_usage_mb,
+             ctd_sms = excluded.ctd_sms,
+             ctd_voice_min = excluded.ctd_voice_min,
              allowance_mb = excluded.allowance_mb,
              rate_plan_allowance_mb = excluded.rate_plan_allowance_mb,
              modem_count = excluded.modem_count,
@@ -441,6 +514,8 @@ export async function snapshotPoolCustomerDaily(
           customer,
           day,
           agg.ctd,
+          agg.sms,
+          agg.voice,
           agg.modemAllowance,
           agg.ratePlanAllowance,
           agg.simsWithModem,
@@ -454,15 +529,17 @@ export async function snapshotPoolCustomerDaily(
       db
         .prepare(
           `INSERT INTO pool_rate_plan_daily
-             (rate_plan, day, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at)
-           VALUES (?, ?, ?, ?, ?, ?)
+             (rate_plan, day, ctd_usage_mb, ctd_sms, ctd_voice_min, allowance_mb, sim_count, snapshotted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(rate_plan, day) DO UPDATE SET
              ctd_usage_mb = excluded.ctd_usage_mb,
+             ctd_sms = excluded.ctd_sms,
+             ctd_voice_min = excluded.ctd_voice_min,
              allowance_mb = excluded.allowance_mb,
              sim_count = excluded.sim_count,
              snapshotted_at = excluded.snapshotted_at`,
         )
-        .bind(ratePlan, day, agg.ctd, agg.allowance, agg.simCount, now),
+        .bind(ratePlan, day, agg.ctd, agg.sms, agg.voice, agg.allowance, agg.simCount, now),
     );
   }
   for (const [modemId, agg] of byModem) {
@@ -470,16 +547,18 @@ export async function snapshotPoolCustomerDaily(
       db
         .prepare(
           `INSERT INTO pool_modem_daily
-             (modem_id, day, customer, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+             (modem_id, day, customer, ctd_usage_mb, ctd_sms, ctd_voice_min, allowance_mb, sim_count, snapshotted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(modem_id, day) DO UPDATE SET
              customer = excluded.customer,
              ctd_usage_mb = excluded.ctd_usage_mb,
+             ctd_sms = excluded.ctd_sms,
+             ctd_voice_min = excluded.ctd_voice_min,
              allowance_mb = excluded.allowance_mb,
              sim_count = excluded.sim_count,
              snapshotted_at = excluded.snapshotted_at`,
         )
-        .bind(modemId, day, agg.customer, agg.ctd, agg.allowance, agg.simCount, now),
+        .bind(modemId, day, agg.customer, agg.ctd, agg.sms, agg.voice, agg.allowance, agg.simCount, now),
     );
   }
 
@@ -583,7 +662,9 @@ export async function listPoolCustomerLatest(input?: {
   const [rows, liveAllowances] = await Promise.all([
     getDB()
       .prepare(
-        `SELECT p.customer, p.day, p.ctd_usage_mb, p.allowance_mb, p.rate_plan_allowance_mb,
+        `SELECT p.customer, p.day, p.ctd_usage_mb, IFNULL(p.ctd_sms, 0) AS ctd_sms,
+                IFNULL(p.ctd_voice_min, 0) AS ctd_voice_min,
+                p.allowance_mb, p.rate_plan_allowance_mb,
                 p.modem_count, p.sim_count, p.snapshotted_at
          FROM pool_customer_daily p
          INNER JOIN (
@@ -599,6 +680,8 @@ export async function listPoolCustomerLatest(input?: {
         customer: string;
         day: string;
         ctd_usage_mb: number;
+        ctd_sms: number;
+        ctd_voice_min: number;
         allowance_mb: number;
         rate_plan_allowance_mb: number | null;
         modem_count: number;
@@ -616,6 +699,8 @@ export async function listPoolCustomerLatest(input?: {
       customer: row.customer,
       day: row.day,
       ctdUsageMb,
+      ctdSms: row.ctd_sms ?? 0,
+      ctdVoiceMin: row.ctd_voice_min ?? 0,
       allowanceMb,
       modemCount: row.modem_count,
       simCount: row.sim_count,
@@ -658,7 +743,9 @@ export async function listPoolCustomerSeries(input: {
   if (customers.length === 0) {
     const rows = await getDB()
       .prepare(
-        `SELECT customer, day, ctd_usage_mb, allowance_mb, rate_plan_allowance_mb,
+        `SELECT customer, day, ctd_usage_mb, IFNULL(ctd_sms, 0) AS ctd_sms,
+                IFNULL(ctd_voice_min, 0) AS ctd_voice_min,
+                allowance_mb, rate_plan_allowance_mb,
                 modem_count, sim_count, snapshotted_at
          FROM pool_customer_daily
          WHERE (? = '' OR day >= ?)
@@ -671,6 +758,8 @@ export async function listPoolCustomerSeries(input: {
         customer: string;
         day: string;
         ctd_usage_mb: number;
+        ctd_sms: number;
+        ctd_voice_min: number;
         allowance_mb: number;
         rate_plan_allowance_mb: number | null;
         modem_count: number;
@@ -683,7 +772,9 @@ export async function listPoolCustomerSeries(input: {
   const placeholders = customers.map(() => "?").join(", ");
   const rows = await getDB()
     .prepare(
-      `SELECT customer, day, ctd_usage_mb, allowance_mb, rate_plan_allowance_mb,
+      `SELECT customer, day, ctd_usage_mb, IFNULL(ctd_sms, 0) AS ctd_sms,
+              IFNULL(ctd_voice_min, 0) AS ctd_voice_min,
+              allowance_mb, rate_plan_allowance_mb,
               modem_count, sim_count, snapshotted_at
        FROM pool_customer_daily
        WHERE customer IN (${placeholders})
@@ -697,6 +788,8 @@ export async function listPoolCustomerSeries(input: {
       customer: string;
       day: string;
       ctd_usage_mb: number;
+      ctd_sms: number;
+      ctd_voice_min: number;
       allowance_mb: number;
       rate_plan_allowance_mb: number | null;
       modem_count: number;
@@ -712,6 +805,8 @@ function mapSeriesRow(
     customer: string;
     day: string;
     ctd_usage_mb: number;
+    ctd_sms: number;
+    ctd_voice_min: number;
     allowance_mb: number;
     rate_plan_allowance_mb: number | null;
     modem_count: number;
@@ -726,6 +821,8 @@ function mapSeriesRow(
     customer: row.customer,
     day: row.day,
     ctdUsageMb: row.ctd_usage_mb,
+    ctdSms: row.ctd_sms ?? 0,
+    ctdVoiceMin: row.ctd_voice_min ?? 0,
     // Prefer live mapping so chart/table match Rate plan allowances without a re-snapshot.
     allowanceMb: liveAllowances.get(row.customer) ?? snapAllowance,
     modemCount: row.modem_count,
@@ -756,7 +853,8 @@ export async function listPoolRatePlanLatest(input?: {
   const [rows, liveAllowances] = await Promise.all([
     getDB()
       .prepare(
-        `SELECT p.rate_plan, p.day, p.ctd_usage_mb, p.allowance_mb, p.sim_count, p.snapshotted_at
+        `SELECT p.rate_plan, p.day, p.ctd_usage_mb, IFNULL(p.ctd_sms, 0) AS ctd_sms,
+                IFNULL(p.ctd_voice_min, 0) AS ctd_voice_min, p.allowance_mb, p.sim_count, p.snapshotted_at
          FROM pool_rate_plan_daily p
          INNER JOIN (
            SELECT rate_plan, MAX(day) AS day FROM pool_rate_plan_daily GROUP BY rate_plan
@@ -770,6 +868,8 @@ export async function listPoolRatePlanLatest(input?: {
         rate_plan: string;
         day: string;
         ctd_usage_mb: number;
+        ctd_sms: number;
+        ctd_voice_min: number;
         allowance_mb: number;
         sim_count: number;
         snapshotted_at: string;
@@ -784,6 +884,8 @@ export async function listPoolRatePlanLatest(input?: {
       ratePlan: row.rate_plan,
       day: row.day,
       ctdUsageMb,
+      ctdSms: row.ctd_sms ?? 0,
+      ctdVoiceMin: row.ctd_voice_min ?? 0,
       allowanceMb,
       simCount: row.sim_count,
       snapshottedAt: row.snapshotted_at,
@@ -808,6 +910,8 @@ export async function listPoolRatePlanSeries(input: {
     rate_plan: string;
     day: string;
     ctd_usage_mb: number;
+    ctd_sms: number;
+    ctd_voice_min: number;
     allowance_mb: number;
     sim_count: number;
     snapshotted_at: string;
@@ -815,6 +919,8 @@ export async function listPoolRatePlanSeries(input: {
     ratePlan: row.rate_plan,
     day: row.day,
     ctdUsageMb: row.ctd_usage_mb,
+    ctdSms: row.ctd_sms ?? 0,
+    ctdVoiceMin: row.ctd_voice_min ?? 0,
     allowanceMb: liveAllowances.get(row.rate_plan) ?? row.allowance_mb ?? 0,
     simCount: row.sim_count,
     snapshottedAt: row.snapshotted_at,
@@ -823,7 +929,8 @@ export async function listPoolRatePlanSeries(input: {
   if (plans.length === 0) {
     const rows = await getDB()
       .prepare(
-        `SELECT rate_plan, day, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at
+        `SELECT rate_plan, day, ctd_usage_mb, IFNULL(ctd_sms, 0) AS ctd_sms,
+                IFNULL(ctd_voice_min, 0) AS ctd_voice_min, allowance_mb, sim_count, snapshotted_at
          FROM pool_rate_plan_daily
          WHERE (? = '' OR day >= ?)
            AND (? = '' OR day <= ?)
@@ -835,6 +942,8 @@ export async function listPoolRatePlanSeries(input: {
         rate_plan: string;
         day: string;
         ctd_usage_mb: number;
+        ctd_sms: number;
+        ctd_voice_min: number;
         allowance_mb: number;
         sim_count: number;
         snapshotted_at: string;
@@ -845,7 +954,8 @@ export async function listPoolRatePlanSeries(input: {
   const placeholders = plans.map(() => "?").join(", ");
   const rows = await getDB()
     .prepare(
-      `SELECT rate_plan, day, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at
+      `SELECT rate_plan, day, ctd_usage_mb, IFNULL(ctd_sms, 0) AS ctd_sms,
+              IFNULL(ctd_voice_min, 0) AS ctd_voice_min, allowance_mb, sim_count, snapshotted_at
        FROM pool_rate_plan_daily
        WHERE rate_plan IN (${placeholders})
          AND (? = '' OR day >= ?)
@@ -858,6 +968,8 @@ export async function listPoolRatePlanSeries(input: {
       rate_plan: string;
       day: string;
       ctd_usage_mb: number;
+      ctd_sms: number;
+      ctd_voice_min: number;
       allowance_mb: number;
       sim_count: number;
       snapshotted_at: string;
@@ -870,6 +982,8 @@ export function toPoolEntityFromCustomer(row: PoolCustomerLatest): PoolEntityLat
     name: row.customer,
     day: row.day,
     ctdUsageMb: row.ctdUsageMb,
+    ctdSms: row.ctdSms,
+    ctdVoiceMin: row.ctdVoiceMin,
     allowanceMb: row.allowanceMb,
     modemCount: row.modemCount,
     simCount: row.simCount,
@@ -882,6 +996,8 @@ export function toPoolEntityFromRatePlan(row: PoolRatePlanLatest): PoolEntityLat
     name: row.ratePlan,
     day: row.day,
     ctdUsageMb: row.ctdUsageMb,
+    ctdSms: row.ctdSms,
+    ctdVoiceMin: row.ctdVoiceMin,
     allowanceMb: row.allowanceMb,
     modemCount: 0,
     simCount: row.simCount,
@@ -894,6 +1010,8 @@ export function toPoolEntityFromModem(row: PoolModemLatest): PoolEntityLatest {
     name: row.modemId,
     day: row.day,
     ctdUsageMb: row.ctdUsageMb,
+    ctdSms: row.ctdSms,
+    ctdVoiceMin: row.ctdVoiceMin,
     allowanceMb: row.allowanceMb,
     modemCount: row.simCount,
     simCount: row.simCount,
@@ -975,6 +1093,8 @@ export async function listPoolModemLatest(input?: {
       customer: row.customer ?? (exact || null),
       day,
       ctdUsageMb,
+      ctdSms: row.ctdSms ?? 0,
+      ctdVoiceMin: row.ctdVoiceMin ?? 0,
       allowanceMb,
       simCount: row.simCount,
       snapshottedAt: row.updatedAt ?? new Date().toISOString(),
@@ -1005,6 +1125,8 @@ async function listLivePoolModemLatest(input?: {
                 MAX(IFNULL(NULLIF(TRIM(d.customer), ''), ?)) AS customer,
                 COUNT(*) AS sim_count,
                 IFNULL(SUM(IFNULL(d.ctd_usage_mb, 0)), 0) AS ctd_usage_mb,
+                IFNULL(SUM(IFNULL(d.ctd_sms, 0)), 0) AS ctd_sms,
+                IFNULL(SUM(IFNULL(d.ctd_voice_min, 0)), 0) AS ctd_voice_min,
                 a.allowance_mb AS allowance_mb,
                 a.updated_at AS updated_at,
                 a.updated_by AS updated_by
@@ -1026,6 +1148,8 @@ async function listLivePoolModemLatest(input?: {
         customer: string | null;
         sim_count: number;
         ctd_usage_mb: number;
+        ctd_sms: number;
+        ctd_voice_min: number;
         allowance_mb: number | null;
         updated_at: string | null;
         updated_by: string | null;
@@ -1037,6 +1161,8 @@ async function listLivePoolModemLatest(input?: {
       customer: row.customer,
       simCount: row.sim_count,
       ctdUsageMb: row.ctd_usage_mb,
+      ctdSms: row.ctd_sms ?? 0,
+      ctdVoiceMin: row.ctd_voice_min ?? 0,
       updatedAt: row.updated_at,
       updatedBy: row.updated_by,
     }));
@@ -1048,6 +1174,8 @@ async function listLivePoolModemLatest(input?: {
               MAX(d.customer) AS customer,
               COUNT(*) AS sim_count,
               IFNULL(SUM(IFNULL(d.ctd_usage_mb, 0)), 0) AS ctd_usage_mb,
+              IFNULL(SUM(IFNULL(d.ctd_sms, 0)), 0) AS ctd_sms,
+              IFNULL(SUM(IFNULL(d.ctd_voice_min, 0)), 0) AS ctd_voice_min,
               a.allowance_mb AS allowance_mb,
               a.updated_at AS updated_at,
               a.updated_by AS updated_by
@@ -1070,6 +1198,8 @@ async function listLivePoolModemLatest(input?: {
       customer: string | null;
       sim_count: number;
       ctd_usage_mb: number;
+      ctd_sms: number;
+      ctd_voice_min: number;
       allowance_mb: number | null;
       updated_at: string | null;
       updated_by: string | null;
@@ -1081,6 +1211,8 @@ async function listLivePoolModemLatest(input?: {
     customer: row.customer,
     simCount: row.sim_count,
     ctdUsageMb: row.ctd_usage_mb,
+    ctdSms: row.ctd_sms ?? 0,
+    ctdVoiceMin: row.ctd_voice_min ?? 0,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
   }));
@@ -1116,6 +1248,8 @@ export async function listPoolModemSeries(input: {
     customer: string | null;
     day: string;
     ctd_usage_mb: number;
+    ctd_sms: number;
+    ctd_voice_min: number;
     allowance_mb: number;
     sim_count: number;
     snapshotted_at: string;
@@ -1124,6 +1258,8 @@ export async function listPoolModemSeries(input: {
     customer: row.customer,
     day: row.day,
     ctdUsageMb: row.ctd_usage_mb,
+    ctdSms: row.ctd_sms ?? 0,
+    ctdVoiceMin: row.ctd_voice_min ?? 0,
     allowanceMb: liveAllowances.get(row.modem_id) ?? row.allowance_mb ?? 0,
     simCount: row.sim_count,
     snapshottedAt: row.snapshotted_at,
@@ -1132,7 +1268,8 @@ export async function listPoolModemSeries(input: {
   if (ids.length === 0) {
     const rows = await getDB()
       .prepare(
-        `SELECT modem_id, customer, day, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at
+        `SELECT modem_id, customer, day, ctd_usage_mb, IFNULL(ctd_sms, 0) AS ctd_sms,
+                IFNULL(ctd_voice_min, 0) AS ctd_voice_min, allowance_mb, sim_count, snapshotted_at
          FROM pool_modem_daily
          WHERE (? = '' OR day >= ?)
            AND (? = '' OR day <= ?)
@@ -1145,6 +1282,8 @@ export async function listPoolModemSeries(input: {
         customer: string | null;
         day: string;
         ctd_usage_mb: number;
+        ctd_sms: number;
+        ctd_voice_min: number;
         allowance_mb: number;
         sim_count: number;
         snapshotted_at: string;
@@ -1155,7 +1294,8 @@ export async function listPoolModemSeries(input: {
   const placeholders = ids.map(() => "?").join(", ");
   const rows = await getDB()
     .prepare(
-      `SELECT modem_id, customer, day, ctd_usage_mb, allowance_mb, sim_count, snapshotted_at
+      `SELECT modem_id, customer, day, ctd_usage_mb, IFNULL(ctd_sms, 0) AS ctd_sms,
+              IFNULL(ctd_voice_min, 0) AS ctd_voice_min, allowance_mb, sim_count, snapshotted_at
        FROM pool_modem_daily
        WHERE modem_id IN (${placeholders})
          AND (? = '' OR day >= ?)
@@ -1169,6 +1309,8 @@ export async function listPoolModemSeries(input: {
       customer: string | null;
       day: string;
       ctd_usage_mb: number;
+      ctd_sms: number;
+      ctd_voice_min: number;
       allowance_mb: number;
       sim_count: number;
       snapshotted_at: string;

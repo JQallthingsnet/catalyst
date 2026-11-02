@@ -66,6 +66,8 @@ export async function GET(request: Request) {
           name: point.ratePlan,
           day: point.day,
           ctdUsageMb: point.ctdUsageMb,
+          ctdSms: point.ctdSms,
+          ctdVoiceMin: point.ctdVoiceMin,
           allowanceMb: point.allowanceMb,
         })),
       });
@@ -82,6 +84,8 @@ export async function GET(request: Request) {
         name: point.modemId,
         day: point.day,
         ctdUsageMb: point.ctdUsageMb,
+        ctdSms: point.ctdSms,
+        ctdVoiceMin: point.ctdVoiceMin,
         allowanceMb: point.allowanceMb,
       })),
     });

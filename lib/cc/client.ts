@@ -61,6 +61,8 @@ export type JasperDevice = {
   status: string;
   ratePlan?: string;
   communicationPlan?: string;
+  /** Optus / operator product SKU when present on device details. */
+  sku?: string | null;
   imsi?: string;
   msisdn?: string;
   imei?: string;
@@ -114,8 +116,14 @@ export type JasperDevicesPage = {
 export type JasperCtdUsage = {
   iccid?: string;
   ctdDataUsage?: number;
+  /** Combined MO+MT SMS count for the billing cycle. */
+  ctdSMSUsage?: number;
+  /** Voice seconds for the billing cycle (we store minutes on the snapshot). */
+  ctdVoiceUsage?: number;
+  ctdSessionCount?: number;
   imsi?: string;
   msisdn?: string;
+  imei?: string;
   status?: string;
   ratePlan?: string;
   communicationPlan?: string;

@@ -102,6 +102,12 @@ export type CcDevice = {
   /** Portal customer name (reseller → end customer assign). */
   endCustomer: string | null;
   ctdUsageMb: number | null;
+  /** Cycle-to-date SMS (message count). */
+  ctdSms: number | null;
+  /** Cycle-to-date voice (minutes). */
+  ctdVoiceMin: number | null;
+  /** Control Center SKU when returned on device details. */
+  sku: string | null;
   inSession: boolean | null;
   sessionStartedAt: string | null;
   sessionEndedAt: string | null;
@@ -187,6 +193,29 @@ function defaultModifiedSince(): string {
 function bytesToMb(bytes: number | undefined): number | null {
   if (bytes == null || Number.isNaN(bytes)) return null;
   return Math.round((bytes / (1024 * 1024)) * 10) / 10;
+}
+
+function smsCount(msgs: number | undefined): number | null {
+  if (msgs == null || Number.isNaN(msgs)) return null;
+  return Math.round(msgs);
+}
+
+/** Jasper CTD voice is seconds; CC UI labels it in minutes. */
+function voiceSecondsToMin(seconds: number | undefined): number | null {
+  if (seconds == null || Number.isNaN(seconds)) return null;
+  return Math.round((seconds / 60) * 10) / 10;
+}
+
+function extractSku(details: JasperDevice | null | undefined): string | null {
+  if (!details) return null;
+  const direct = textOrNull(details.sku);
+  if (direct) return direct;
+  for (const [key, value] of Object.entries(details)) {
+    if (!/^sku$/i.test(key)) continue;
+    const text = textOrNull(value);
+    if (text) return text;
+  }
+  return null;
 }
 
 function isPresent(value: string | null | undefined): boolean {
@@ -833,7 +862,8 @@ export async function runScheduledCcPoll(): Promise<CcSyncResult | null> {
 }
 
 const CC_DEVICE_COLUMNS = `iccid, IFNULL(NULLIF(TRIM(supplier), ''), '${DEFAULT_PLAN_SUPPLIER}') AS supplier,
-              status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, in_session,
+              status, rate_plan, communication_plan, imsi, msisdn, ctd_usage_mb, ctd_sms, ctd_voice_min,
+              sku, in_session,
               session_started_at, session_ended_at, session_ip, session_apn,
               date_added, date_activated, polled_at, details_polled_at,
               imei, customer, end_consumer_id, end_customer, date_updated, date_shipped, account_id,
@@ -850,6 +880,9 @@ type CcDeviceRow = {
   imsi: string | null;
   msisdn: string | null;
   ctd_usage_mb: number | null;
+  ctd_sms: number | null;
+  ctd_voice_min: number | null;
+  sku: string | null;
   in_session: number | null;
   session_started_at: string | null;
   session_ended_at: string | null;
@@ -909,6 +942,9 @@ function mapCcDevice(row: CcDeviceRow): CcDevice {
     endConsumerId: row.end_consumer_id,
     endCustomer: row.end_customer,
     ctdUsageMb: row.ctd_usage_mb,
+    ctdSms: row.ctd_sms,
+    ctdVoiceMin: row.ctd_voice_min,
+    sku: row.sku,
     inSession: row.in_session == null ? null : Boolean(row.in_session),
     sessionStartedAt: row.session_started_at,
     sessionEndedAt: row.session_ended_at,
@@ -1726,6 +1762,9 @@ async function persistDeviceEnrichment(
   const imsi = textOrNull(details?.imsi ?? usage?.imsi);
   const msisdn = textOrNull(details?.msisdn ?? usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
+  const sms = smsCount(usage?.ctdSMSUsage);
+  const voiceMin = voiceSecondsToMin(usage?.ctdVoiceUsage);
+  const sku = extractSku(details);
   const customFields = details ? packCustomFields(details) : null;
   const detailsJson = details ? JSON.stringify(details) : null;
   const applySession = session ? 1 : 0;
@@ -1742,6 +1781,9 @@ async function persistDeviceEnrichment(
            customer = COALESCE(?, customer),
            end_consumer_id = COALESCE(?, end_consumer_id),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
+           ctd_sms = COALESCE(?, ctd_sms),
+           ctd_voice_min = COALESCE(?, ctd_voice_min),
+           sku = COALESCE(?, sku),
            in_session = CASE WHEN ? = 0 THEN in_session ELSE ? END,
            session_started_at = CASE WHEN ? = 0 THEN session_started_at ELSE ? END,
            session_ended_at = CASE WHEN ? = 0 THEN session_ended_at ELSE ? END,
@@ -1778,6 +1820,9 @@ async function persistDeviceEnrichment(
       textOrNull(details?.customer),
       textOrNull(details?.endConsumerId),
       usageMb,
+      sms,
+      voiceMin,
+      sku,
       applySession,
       session?.inSession ?? 0,
       applySession,
@@ -1843,6 +1888,8 @@ function usageRefreshStatement(
   const imsi = textOrNull(usage?.imsi);
   const msisdn = textOrNull(usage?.msisdn);
   const usageMb = bytesToMb(usage?.ctdDataUsage);
+  const sms = smsCount(usage?.ctdSMSUsage);
+  const voiceMin = voiceSecondsToMin(usage?.ctdVoiceUsage);
   const applySession = session ? 1 : 0;
 
   // Usage ticks skip sims overlay — saves a D1 write per SIM. CC snapshot / pools
@@ -1856,6 +1903,8 @@ function usageRefreshStatement(
            imsi = COALESCE(?, imsi),
            msisdn = COALESCE(?, msisdn),
            ctd_usage_mb = COALESCE(?, ctd_usage_mb),
+           ctd_sms = COALESCE(?, ctd_sms),
+           ctd_voice_min = COALESCE(?, ctd_voice_min),
            in_session = CASE WHEN ? = 0 THEN in_session ELSE ? END,
            session_started_at = CASE WHEN ? = 0 THEN session_started_at ELSE ? END,
            session_ended_at = CASE WHEN ? = 0 THEN session_ended_at ELSE ? END,
@@ -1872,6 +1921,8 @@ function usageRefreshStatement(
       imsi,
       msisdn,
       usageMb,
+      sms,
+      voiceMin,
       applySession,
       session?.inSession ?? 0,
       applySession,
@@ -1896,6 +1947,7 @@ async function persistDeviceDetailsOnly(iccid: string, details: JasperDevice | n
   const communicationPlan = details.communicationPlan ?? null;
   const imsi = textOrNull(details.imsi);
   const msisdn = textOrNull(details.msisdn);
+  const sku = extractSku(details);
   const customFields = packCustomFields(details);
   const detailsJson = JSON.stringify(details);
 
@@ -1920,6 +1972,7 @@ async function persistDeviceDetailsOnly(iccid: string, details: JasperDevice | n
            sim_notes = COALESCE(?, sim_notes),
            device_id = COALESCE(?, device_id),
            modem_id = COALESCE(?, modem_id),
+           sku = COALESCE(?, sku),
            global_sim_type = COALESCE(?, global_sim_type),
            mec = COALESCE(?, mec),
            euiccid = COALESCE(?, euiccid),
@@ -1949,6 +2002,7 @@ async function persistDeviceDetailsOnly(iccid: string, details: JasperDevice | n
       textOrNull(details.simNotes),
       textOrNull(details.deviceID),
       textOrNull(details.modemID),
+      sku,
       textOrNull(details.globalSimType),
       textOrNull(details.mec),
       textOrNull(details.euiccid),

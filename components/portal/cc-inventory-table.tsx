@@ -89,6 +89,7 @@ export function CcInventoryTable({
             <th className="px-3 py-2.5">MSISDN</th>
             <th className="px-3 py-2.5">SIM status</th>
             <th className="px-3 py-2.5">Rate plan</th>
+            <th className="px-3 py-2.5">SKU</th>
             <th className="px-3 py-2.5">Communication plan</th>
             <th className="px-3 py-2.5">CC customer</th>
             <th className="px-3 py-2.5">End customer</th>
@@ -97,6 +98,8 @@ export function CcInventoryTable({
             <th className="px-3 py-2.5">Reseller Plan</th>
             <th className="px-3 py-2.5">Fixed IP</th>
             <th className="px-3 py-2.5">Cycle to date (MB)</th>
+            <th className="px-3 py-2.5">Cycle to date SMS (msgs)</th>
+            <th className="px-3 py-2.5">Cycle to date Voice (min)</th>
             <th className="px-3 py-2.5">In session</th>
             <th className="px-3 py-2.5">Session started</th>
             <th className="px-3 py-2.5">Session ended</th>
@@ -130,6 +133,7 @@ export function CcInventoryTable({
                 <TextCell value={device.msisdn ?? ""} mono className="max-w-32" />
                 <td className="whitespace-nowrap px-3 py-2.5">{device.status}</td>
                 <WrapCell value={device.ratePlan ?? ""} className="max-w-56" />
+                <TextCell value={device.sku ?? ""} className="max-w-40" />
                 <WrapCell value={device.communicationPlan ?? ""} className="max-w-72" />
                 <WrapCell
                   value={
@@ -150,6 +154,14 @@ export function CcInventoryTable({
                 />
                 <td className="whitespace-nowrap px-3 py-2.5">
                   {device.ctdUsageMb != null ? device.ctdUsageMb.toLocaleString("en-AU") : "—"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2.5">
+                  {device.ctdSms != null ? device.ctdSms.toLocaleString("en-AU") : "—"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2.5">
+                  {device.ctdVoiceMin != null
+                    ? device.ctdVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 1 })
+                    : "—"}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5">
                   {device.inSession == null ? "—" : device.inSession ? "Yes" : "No"}

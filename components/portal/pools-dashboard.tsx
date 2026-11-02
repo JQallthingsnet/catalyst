@@ -11,6 +11,8 @@ export type PoolLatestRow = {
   name: string;
   day: string;
   ctdUsageMb: number;
+  ctdSms: number;
+  ctdVoiceMin: number;
   allowanceMb: number;
   modemCount: number;
   simCount: number;
@@ -22,8 +24,12 @@ export type PoolSeriesPoint = {
   name: string;
   day: string;
   ctdUsageMb: number;
+  ctdSms: number;
+  ctdVoiceMin: number;
   allowanceMb: number;
 };
+
+type PoolChartMetric = "data" | "sms" | "voice";
 
 const PLOT_COLORS = [
   "#2dd4bf",
@@ -178,10 +184,16 @@ function EntityPickerDialog({
   );
 }
 
-function formatMbShort(mb: number): string {
-  if (mb >= 1_000_000) return `${(mb / 1_000_000).toFixed(1)}M`;
-  if (mb >= 1000) return `${Math.round(mb / 1000)}k`;
-  return `${Math.round(mb)}`;
+function formatAxisShort(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1000) return `${Math.round(value / 1000)}k`;
+  return `${Math.round(value)}`;
+}
+
+function metricValue(point: PoolSeriesPoint, metric: PoolChartMetric): number {
+  if (metric === "sms") return point.ctdSms ?? 0;
+  if (metric === "voice") return point.ctdVoiceMin ?? 0;
+  return point.ctdUsageMb;
 }
 
 function MultiEntityChart({
@@ -191,6 +203,7 @@ function MultiEntityChart({
   busy,
   allowPick,
   entityLabel,
+  metric = "data",
   title = "CTD usage over time",
   subtitle,
   onOpenPicker,
@@ -201,14 +214,17 @@ function MultiEntityChart({
   busy: boolean;
   allowPick: boolean;
   entityLabel: string;
+  metric?: PoolChartMetric;
   title?: string;
   subtitle?: string;
   onOpenPicker: () => void;
 }) {
+  const showAllowance = metric === "data";
+  const unitLabel = metric === "sms" ? "msgs" : metric === "voice" ? "min" : "MB";
   const [hover, setHover] = useState<{
     name: string;
     day: string;
-    ctdUsageMb: number;
+    value: number;
     allowanceMb: number;
     pct: number;
     color: string;
@@ -224,16 +240,16 @@ function MultiEntityChart({
     return [...set].sort();
   }, [plotted, seriesByName]);
 
-  // Scale to CTD only so large allowances don't squash the usage lines.
-  const maxMb = useMemo(() => {
+  // Scale to the plotted metric so large allowances don't squash the usage lines.
+  const maxValue = useMemo(() => {
     let max = 1;
     for (const name of plotted) {
       for (const point of seriesByName.get(name) ?? []) {
-        max = Math.max(max, point.ctdUsageMb);
+        max = Math.max(max, metricValue(point, metric));
       }
     }
     return max * 1.12;
-  }, [plotted, seriesByName]);
+  }, [plotted, seriesByName, metric]);
 
   const width = 720;
   const height = 280;
@@ -249,16 +265,20 @@ function MultiEntityChart({
     return padL + (i / (days.length - 1)) * innerW;
   }
 
-  function yAt(mb: number) {
-    const clamped = Math.min(Math.max(mb, 0), maxMb);
-    return padT + innerH - (clamped / maxMb) * innerH;
+  function yAt(value: number) {
+    const clamped = Math.min(Math.max(value, 0), maxValue);
+    return padT + innerH - (clamped / maxValue) * innerH;
   }
 
-  const hint =
-    subtitle ??
-    `Sydney day · solid CTD · dashed allowance (hover a point)${
-      allowPick ? ` · top 10 ${entityLabel.toLowerCase()}s` : ""
-    }${days.length === 1 ? " · lines from day 2" : ""}`;
+  const defaultHint =
+    metric === "data"
+      ? `Sydney day · solid CTD · dashed allowance (hover a point)${
+          allowPick ? ` · top 10 ${entityLabel.toLowerCase()}s` : ""
+        }${days.length === 1 ? " · lines from day 2" : ""}`
+      : `Sydney day · same grouping as data${
+          allowPick ? ` · same series as data chart` : ""
+        }${days.length === 1 ? " · lines from day 2" : ""}`;
+  const hint = subtitle ?? defaultHint;
 
   return (
     <article className="flex h-full flex-col rounded-card border border-line bg-panel p-4 sm:p-5">
@@ -311,7 +331,7 @@ function MultiEntityChart({
                     strokeOpacity={0.35}
                   />
                   <text x={padL - 6} y={y + 3} textAnchor="end" className="fill-quiet text-[9px]">
-                    {t === 0 ? "0" : formatMbShort(maxMb * t)}
+                    {t === 0 ? "0" : formatAxisShort(maxValue * t)}
                   </text>
                 </g>
               );
@@ -351,8 +371,8 @@ function MultiEntityChart({
                 });
                 return d.trim();
               };
-              const ctdPath = buildPath((p) => p.ctdUsageMb);
-              const allowPath = buildPath((p) => p.allowanceMb);
+              const valuePath = buildPath((p) => metricValue(p, metric));
+              const allowPath = showAllowance ? buildPath((p) => p.allowanceMb) : "";
               return (
                 <g key={name} opacity={hover && !active ? 0.28 : 1}>
                   {allowPath ? (
@@ -366,9 +386,9 @@ function MultiEntityChart({
                       pointerEvents="none"
                     />
                   ) : null}
-                  {ctdPath ? (
+                  {valuePath ? (
                     <path
-                      d={ctdPath}
+                      d={valuePath}
                       fill="none"
                       stroke={color}
                       strokeWidth={active ? 3 : 2.25}
@@ -379,6 +399,7 @@ function MultiEntityChart({
                   {days.map((day, i) => {
                     const p = byDay.get(day);
                     if (!p) return null;
+                    const value = metricValue(p, metric);
                     const latest = latestByName.get(name);
                     const pct =
                       latest?.pct ??
@@ -387,7 +408,7 @@ function MultiEntityChart({
                       <circle
                         key={`${name}-${day}`}
                         cx={xAt(i)}
-                        cy={yAt(p.ctdUsageMb)}
+                        cy={yAt(value)}
                         r={active ? 5 : 3.5}
                         fill={color}
                         className="cursor-pointer"
@@ -395,7 +416,7 @@ function MultiEntityChart({
                           setHover({
                             name,
                             day,
-                            ctdUsageMb: p.ctdUsageMb,
+                            value,
                             allowanceMb: p.allowanceMb,
                             pct,
                             color,
@@ -430,12 +451,15 @@ function MultiEntityChart({
             </p>
             <p className="mt-1 text-[11px] text-quiet">{hover.day}</p>
             <p className="mt-1 text-xs text-ink">
-              CTD {hover.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB
+              CTD {hover.value.toLocaleString("en-AU", { maximumFractionDigits: metric === "data" ? 0 : 1 })}{" "}
+              {unitLabel}
             </p>
-            <p className="text-xs text-quiet">
-              Cap {hover.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB ·{" "}
-              {hover.pct}%
-            </p>
+            {showAllowance ? (
+              <p className="text-xs text-quiet">
+                Cap {hover.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 0 })} MB ·{" "}
+                {hover.pct}%
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -531,7 +555,10 @@ export function PoolsDashboard({
     setPlotted((current) => (current.includes(name) ? current : [...current, name]));
   }
 
-  const chart = (
+  const groupTitle =
+    groupBy === "modem" ? "Reseller Plan" : groupBy === "rate_plan" ? "Supplier code" : "CC customer";
+
+  const dataChart = (
     <MultiEntityChart
       plotted={plotted}
       seriesByName={seriesByName}
@@ -539,20 +566,57 @@ export function PoolsDashboard({
       busy={seriesBusy}
       allowPick={platformView}
       entityLabel={entityLabel}
+      metric="data"
       title={
         mode === "chart"
-          ? groupBy === "modem"
-            ? "Data usage by Reseller Plan"
-            : "Data usage by Supplier code"
-          : "CTD usage over time"
+          ? `Data usage by ${groupTitle}`
+          : "CTD data over time"
       }
       subtitle={
         mode === "chart"
-          ? "Same plot as Pools · top 10 by CTD · hover a point for details"
+          ? "Same plot as Pools · top 10 by CTD data · hover a point for details"
           : undefined
       }
       onOpenPicker={() => setPickerOpen(true)}
     />
+  );
+
+  const smsChart = (
+    <MultiEntityChart
+      plotted={plotted}
+      seriesByName={seriesByName}
+      latestByName={latestByName}
+      busy={seriesBusy}
+      allowPick={false}
+      entityLabel={entityLabel}
+      metric="sms"
+      title={`CTD SMS by ${groupTitle}`}
+      subtitle="Same series as data · messages (MO+MT)"
+      onOpenPicker={() => setPickerOpen(true)}
+    />
+  );
+
+  const voiceChart = (
+    <MultiEntityChart
+      plotted={plotted}
+      seriesByName={seriesByName}
+      latestByName={latestByName}
+      busy={seriesBusy}
+      allowPick={false}
+      entityLabel={entityLabel}
+      metric="voice"
+      title={`CTD voice by ${groupTitle}`}
+      subtitle="Same series as data · minutes"
+      onOpenPicker={() => setPickerOpen(true)}
+    />
+  );
+
+  const charts = (
+    <div className="space-y-6">
+      {dataChart}
+      {smsChart}
+      {voiceChart}
+    </div>
   );
 
   const picker = (
@@ -570,7 +634,7 @@ export function PoolsDashboard({
     return (
       <div className="flex h-full min-h-0 flex-col">
         {message ? <p className="mb-3 shrink-0 text-sm text-quiet">{message}</p> : null}
-        <div className="min-h-0 flex-1">{chart}</div>
+        <div className="min-h-0 flex-1">{dataChart}</div>
         {picker}
       </div>
     );
@@ -615,7 +679,7 @@ export function PoolsDashboard({
 
       {message ? <p className="mt-3 text-sm text-quiet">{message}</p> : null}
 
-      <div className="mt-6">{chart}</div>
+      <div className="mt-6">{charts}</div>
 
       <form
         className="mt-6"
@@ -645,6 +709,8 @@ export function PoolsDashboard({
               <th className="px-4 py-3">{entityLabel}</th>
               <th className="px-4 py-3">Day</th>
               <th className="px-4 py-3">CTD MB</th>
+              <th className="px-4 py-3">CTD SMS</th>
+              <th className="px-4 py-3">CTD voice (min)</th>
               <th className="px-4 py-3">{allowanceLabel}</th>
               <th className="px-4 py-3">%</th>
               <th className="px-4 py-3">SIMs</th>
@@ -673,6 +739,12 @@ export function PoolsDashboard({
                   <td className="px-4 py-3 font-mono text-xs">{row.day}</td>
                   <td className="px-4 py-3">
                     {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {(row.ctdSms ?? 0).toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {(row.ctdVoiceMin ?? 0).toLocaleString("en-AU", { maximumFractionDigits: 1 })}
                   </td>
                   <td className="px-4 py-3">
                     {row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}

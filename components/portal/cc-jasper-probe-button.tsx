@@ -18,6 +18,8 @@ type CtdBody = {
   status?: string;
   ratePlan?: string;
   ctdDataUsage?: number;
+  ctdSMSUsage?: number;
+  ctdVoiceUsage?: number;
   ctdSessionCount?: number;
   msisdn?: string;
   imei?: string;
@@ -90,6 +92,20 @@ function ProbeCard({ result }: { result: ProbeResult }) {
           <div>
             <dt className="text-quiet">CTD data</dt>
             <dd className="mt-0.5 font-medium text-ink">{formatBytes(ctd.ctdDataUsage)}</dd>
+          </div>
+          <div>
+            <dt className="text-quiet">CTD SMS</dt>
+            <dd className="mt-0.5 font-medium tabular-nums text-ink">
+              {ctd.ctdSMSUsage != null ? `${ctd.ctdSMSUsage.toLocaleString("en-AU")} msgs` : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-quiet">CTD voice</dt>
+            <dd className="mt-0.5 font-medium tabular-nums text-ink">
+              {ctd.ctdVoiceUsage != null
+                ? `${(Math.round((ctd.ctdVoiceUsage / 60) * 10) / 10).toLocaleString("en-AU")} min`
+                : "—"}
+            </dd>
           </div>
           <div>
             <dt className="text-quiet">Sessions</dt>
