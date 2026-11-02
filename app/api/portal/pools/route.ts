@@ -118,16 +118,26 @@ export async function PUT(request: Request) {
       modemId?: string;
       ratePlan?: string;
       allowanceMb?: number | null;
+      allowanceSms?: number | null;
+      allowanceVoiceMin?: number | null;
       clear?: boolean;
     };
     if (body.ratePlan?.trim()) {
       if (ctx.role !== "super_admin") {
         return NextResponse.json({ error: "Only super admin can edit rate plan allowances." }, { status: 403 });
       }
-      if (body.clear || body.allowanceMb == null) {
+      if (body.clear) {
         await clearRatePlanAllowance(body.ratePlan);
       } else {
-        await setRatePlanAllowance(body.ratePlan, Number(body.allowanceMb), ctx.email);
+        await setRatePlanAllowance(
+          body.ratePlan,
+          {
+            allowanceMb: body.allowanceMb ?? null,
+            allowanceSms: body.allowanceSms ?? null,
+            allowanceVoiceMin: body.allowanceVoiceMin ?? null,
+          },
+          ctx.email,
+        );
       }
       return NextResponse.json({ success: true });
     }
@@ -140,10 +150,18 @@ export async function PUT(request: Request) {
         { status: 403 },
       );
     }
-    if (body.clear || body.allowanceMb == null) {
+    if (body.clear) {
       await clearModemAllowance(body.modemId);
     } else {
-      await setModemAllowance(body.modemId, Number(body.allowanceMb), ctx.email);
+      await setModemAllowance(
+        body.modemId,
+        {
+          allowanceMb: body.allowanceMb ?? null,
+          allowanceSms: body.allowanceSms ?? null,
+          allowanceVoiceMin: body.allowanceVoiceMin ?? null,
+        },
+        ctx.email,
+      );
     }
     return NextResponse.json({ success: true });
   } catch (err) {
