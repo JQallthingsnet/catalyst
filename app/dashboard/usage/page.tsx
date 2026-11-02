@@ -36,7 +36,10 @@ export default async function UsagePage({
   const sims = can(ctx.role, "pool.view")
     ? await listSimModemUsage({
         basis,
-        customer: customerScope,
+        // Reseller: same warehouse scope as Pools (not only bound CC customer match).
+        ...(basis === "modem"
+          ? { tenantId: ctx.tenantId }
+          : { customer: customerScope }),
         q,
         minPct: alertsOnly ? highlightPct : undefined,
         limit: 500,
@@ -51,11 +54,11 @@ export default async function UsagePage({
     <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-semibold">Usage & alerts</h1>
+          <h1 className="text-3xl font-semibold">Usage</h1>
           <p className="mt-1 text-sm text-quiet">
             {basis === "rate_plan"
               ? "Super admin: per SIM, CTD MB ÷ Supplier code allowance (Jasper rate plan, mapped on Pools). Daily digests use "
-              : "Reseller: per SIM, CTD MB ÷ Reseller Plan allowance. Daily digests use "}
+              : "Reseller: per SIM, CTD MB ÷ Reseller Plan allowance (same warehouse SIMs as Pools). CC customer is live from Jasper and may differ from your bound customer after Jasper edits. Daily digests use "}
             <Link href="/dashboard/alerts" className="text-accent">
               Alerts
             </Link>
@@ -113,7 +116,12 @@ export default async function UsagePage({
             )}
             {" · "}
             Showing {sims.length.toLocaleString("en-AU")} row{sims.length === 1 ? "" : "s"}
-            {customerScope ? ` · CC customer ${customerScope}` : ""}.
+            {basis === "modem" && customerScope
+              ? ` · org bound to ${customerScope} (rows show live Jasper CC customer)`
+              : customerScope
+                ? ` · CC customer ${customerScope}`
+                : ""}
+            .
           </p>
 
           <div className="mt-4 overflow-x-auto rounded-card border border-line bg-panel">

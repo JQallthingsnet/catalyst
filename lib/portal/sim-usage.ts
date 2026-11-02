@@ -30,16 +30,97 @@ export type SimModemUsage = {
 
 export async function listSimModemUsage(input?: {
   basis?: UsageAllowanceBasis;
+  /** Exact Jasper/CC customer filter (super-admin Usage). */
   customer?: string;
+  /**
+   * Reseller org — same scope as Pools: warehouse sims.platform_plan_id.
+   * Live CC customer on each row may differ from the org’s bound cc_customer after Jasper edits.
+   */
+  tenantId?: string;
   q?: string;
   minPct?: number;
   limit?: number;
 }): Promise<SimModemUsage[]> {
   const basis: UsageAllowanceBasis = input?.basis ?? "modem";
   const customer = input?.customer?.trim() ?? "";
+  const tenantId = input?.tenantId?.trim() ?? "";
   const q = input?.q?.trim() ?? "";
   const minPct = input?.minPct;
   const limit = Math.min(Math.max(input?.limit ?? 500, 1), 2000);
+
+  // Reseller: Catalyst Reseller Plan from sims (align with Pools), not raw Jasper modem_ID.
+  if (basis === "modem" && tenantId) {
+    const rows = await getDB()
+      .prepare(
+        `SELECT s.iccid,
+                d.customer AS customer,
+                TRIM(pp.name) AS modem_id,
+                d.rate_plan AS rate_plan,
+                IFNULL(d.status, IFNULL(s.cc_status, '')) AS status,
+                IFNULL(d.ctd_usage_mb, IFNULL(s.current_volume_mb, 0)) AS ctd_usage_mb,
+                a.allowance_mb AS allowance_mb
+         FROM sims s
+         JOIN platform_plans pp ON pp.id = s.platform_plan_id
+         LEFT JOIN cc_devices d ON d.iccid = s.iccid
+         LEFT JOIN modem_allowances a ON a.modem_id = TRIM(pp.name)
+         WHERE s.tenant_id = ?
+           AND s.platform_plan_id IS NOT NULL AND TRIM(s.platform_plan_id) != ''
+           AND TRIM(IFNULL(pp.name, '')) != ''
+           AND (
+             ? = ''
+             OR s.iccid LIKE ?
+             OR TRIM(pp.name) LIKE ?
+             OR IFNULL(d.customer, '') LIKE ?
+             OR IFNULL(d.rate_plan, '') LIKE ?
+           )
+         ORDER BY
+           CASE WHEN a.allowance_mb IS NOT NULL AND a.allowance_mb > 0
+                THEN IFNULL(d.ctd_usage_mb, IFNULL(s.current_volume_mb, 0)) / a.allowance_mb
+                ELSE -1 END DESC,
+           s.iccid ASC
+         LIMIT ?`,
+      )
+      .bind(
+        tenantId,
+        q,
+        `%${q.replace(/\s/g, "")}%`,
+        `%${q}%`,
+        `%${q}%`,
+        `%${q}%`,
+        limit,
+      )
+      .all<{
+        iccid: string;
+        customer: string | null;
+        modem_id: string | null;
+        rate_plan: string | null;
+        status: string;
+        ctd_usage_mb: number;
+        allowance_mb: number | null;
+      }>();
+
+    const mapped = (rows.results ?? []).map((row) => {
+      const allowanceMb = row.allowance_mb;
+      const ctdUsageMb = row.ctd_usage_mb ?? 0;
+      const pct =
+        allowanceMb != null && allowanceMb > 0
+          ? Math.round((ctdUsageMb / allowanceMb) * 1000) / 10
+          : null;
+      return {
+        iccid: row.iccid,
+        customer: row.customer,
+        modemId: row.modem_id,
+        ratePlan: row.rate_plan,
+        ctdUsageMb,
+        allowanceMb,
+        pct,
+        status: row.status,
+        basis,
+      };
+    });
+    if (minPct == null) return mapped;
+    return mapped.filter((row) => row.pct != null && row.pct >= minPct);
+  }
 
   const allowanceJoin =
     basis === "rate_plan"
