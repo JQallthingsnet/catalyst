@@ -5,12 +5,35 @@ import { useEffect, useRef, useState } from "react";
 type RatePlanRow = {
   ratePlan: string;
   allowanceMb: number | null;
+  allowanceSms: number | null;
+  allowanceVoiceMin: number | null;
 };
+
+type Draft = { mb: string; sms: string; voice: string };
+
+function draftFromRow(row: RatePlanRow): Draft {
+  return {
+    mb: row.allowanceMb != null ? String(row.allowanceMb) : "",
+    sms: row.allowanceSms != null ? String(row.allowanceSms) : "",
+    voice: row.allowanceVoiceMin != null ? String(row.allowanceVoiceMin) : "",
+  };
+}
+
+function parseField(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  return Number(text);
+}
+
+function draftsEqual(a: Draft | undefined, b: Draft | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.mb.trim() === b.mb.trim() && a.sms.trim() === b.sms.trim() && a.voice.trim() === b.voice.trim();
+}
 
 export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [rows, setRows] = useState<RatePlanRow[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [baseline, setBaseline] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [baseline, setBaseline] = useState<Record<string, Draft>>({});
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,10 +54,8 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
         if (cancelled) return;
         const plans = data.ratePlans ?? [];
         setRows(plans);
-        const next: Record<string, string> = {};
-        for (const row of plans) {
-          next[row.ratePlan] = row.allowanceMb != null ? String(row.allowanceMb) : "";
-        }
+        const next: Record<string, Draft> = {};
+        for (const row of plans) next[row.ratePlan] = draftFromRow(row);
         setDrafts(next);
         setBaseline(next);
       } catch (err) {
@@ -46,12 +67,12 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
     };
   }, [open]);
 
-  async function persistAll(current: Record<string, string>, previous: Record<string, string>) {
-    const changes: { ratePlan: string; raw: string }[] = [];
+  async function persistAll(current: Record<string, Draft>, previous: Record<string, Draft>) {
+    const changes: { ratePlan: string; draft: Draft }[] = [];
     for (const ratePlan of Object.keys(current)) {
-      const raw = (current[ratePlan] ?? "").trim();
-      const prev = (previous[ratePlan] ?? "").trim();
-      if (raw !== prev) changes.push({ ratePlan, raw });
+      if (!draftsEqual(current[ratePlan], previous[ratePlan])) {
+        changes.push({ ratePlan, draft: current[ratePlan] ?? { mb: "", sms: "", voice: "" } });
+      }
     }
     if (changes.length === 0) return;
 
@@ -59,19 +80,27 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
     setError("");
     try {
       for (const change of changes) {
+        const mb = parseField(change.draft.mb);
+        const sms = parseField(change.draft.sms);
+        const voice = parseField(change.draft.voice);
+        const clear = mb == null && sms == null && voice == null;
         const res = await fetch("/api/portal/pools", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
-            change.raw === ""
+            clear
               ? { ratePlan: change.ratePlan, clear: true }
-              : { ratePlan: change.ratePlan, allowanceMb: Number(change.raw) },
+              : {
+                  ratePlan: change.ratePlan,
+                  allowanceMb: mb,
+                  allowanceSms: sms,
+                  allowanceVoiceMin: voice,
+                },
           ),
         });
         const data = (await res.json()) as { error?: string };
         if (!res.ok) throw new Error(data.error ?? `Could not save ${change.ratePlan}.`);
       }
-      // One pool snapshot so Σ rate plan allowance MB updates on the table.
       const snap = await fetch("/api/portal/pools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,19 +135,29 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
     return row.ratePlan.toLowerCase().includes(needle);
   });
 
-  const dirty = Object.keys(drafts).some(
-    (id) => (drafts[id] ?? "").trim() !== (baseline[id] ?? "").trim(),
-  );
+  const dirty = Object.keys(drafts).some((id) => !draftsEqual(drafts[id], baseline[id]));
+
+  function setField(ratePlan: string, field: keyof Draft, value: string) {
+    setDrafts((current) => ({
+      ...current,
+      [ratePlan]: {
+        mb: current[ratePlan]?.mb ?? "",
+        sms: current[ratePlan]?.sms ?? "",
+        voice: current[ratePlan]?.voice ?? "",
+        [field]: value,
+      },
+    }));
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-card border border-line bg-panel shadow-xl">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-card border border-line bg-panel shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold">Supplier code allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB per Supplier code (Jasper rate plan). Super-admin Usage and Pools use CTD ÷ this
-              allowance.
+              Inclusive data (MB), SMS (msgs), and voice (min) per Supplier code.{" "}
+              <span className="text-ink">0 = PAYG</span>. Leave blank to clear.
             </p>
           </div>
           <button
@@ -144,28 +183,50 @@ export function RatePlanAllowancesDialog({ open, onClose }: { open: boolean; onC
             <thead className="text-quiet">
               <tr>
                 <th className="py-2">Supplier code</th>
-                <th className="py-2">Allowance MB</th>
+                <th className="py-2">Data MB</th>
+                <th className="py-2">SMS</th>
+                <th className="py-2">Voice (min)</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
-                <tr key={row.ratePlan} className="border-t border-line">
-                  <td className="py-2 text-xs">{row.ratePlan}</td>
-                  <td className="py-2">
-                    <input
-                      value={drafts[row.ratePlan] ?? ""}
-                      onChange={(event) =>
-                        setDrafts((current) => ({ ...current, [row.ratePlan]: event.target.value }))
-                      }
-                      placeholder="—"
-                      className="w-32 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
-                    />
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((row) => {
+                const draft = drafts[row.ratePlan] ?? { mb: "", sms: "", voice: "" };
+                return (
+                  <tr key={row.ratePlan} className="border-t border-line">
+                    <td className="py-2 pr-3 text-xs">{row.ratePlan}</td>
+                    <td className="py-2 pr-2">
+                      <input
+                        value={draft.mb}
+                        onChange={(event) => setField(row.ratePlan, "mb", event.target.value)}
+                        placeholder="—"
+                        title="0 = PAYG"
+                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        value={draft.sms}
+                        onChange={(event) => setField(row.ratePlan, "sms", event.target.value)}
+                        placeholder="—"
+                        title="0 = PAYG"
+                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                      />
+                    </td>
+                    <td className="py-2">
+                      <input
+                        value={draft.voice}
+                        onChange={(event) => setField(row.ratePlan, "voice", event.target.value)}
+                        placeholder="—"
+                        title="0 = PAYG"
+                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={2} className="py-8 text-quiet">
+                  <td colSpan={4} className="py-8 text-quiet">
                     No rate plans in the CC snapshot yet. Sync devices first.
                   </td>
                 </tr>

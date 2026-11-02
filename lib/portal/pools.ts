@@ -1,4 +1,5 @@
 import { getDB } from "@/lib/env";
+import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import type { UsageAllowanceBasis } from "@/lib/portal/sim-usage";
 import { sydneyDayKey, sydneyDayKeyDaysAgo } from "@/lib/portal/time";
 
@@ -7,7 +8,12 @@ export const POOL_SERIES_DEFAULT_DAYS = 90;
 
 export type ModemAllowanceRow = {
   modemId: string;
+  /** Data MB. null = unset; 0 = PAYG. */
   allowanceMb: number | null;
+  /** SMS messages. null = unset; 0 = PAYG. */
+  allowanceSms: number | null;
+  /** Voice minutes. null = unset; 0 = PAYG. */
+  allowanceVoiceMin: number | null;
   customer: string | null;
   simCount: number;
   ctdUsageMb: number;
@@ -183,6 +189,8 @@ export async function listModemAllowances(input?: {
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
               ) AS ctd_voice_min,
               a.allowance_mb AS allowance_mb,
+              ${await modemAllowanceSmsExpr()} AS allowance_sms,
+              ${await modemAllowanceVoiceExpr()} AS allowance_voice_min,
               a.updated_at AS updated_at,
               a.updated_by AS updated_by
        FROM plan_keys k
@@ -215,6 +223,8 @@ export async function listModemAllowances(input?: {
       ctd_sms: number;
       ctd_voice_min: number;
       allowance_mb: number | null;
+      allowance_sms: number | null;
+      allowance_voice_min: number | null;
       updated_at: string | null;
       updated_by: string | null;
     }>();
@@ -222,6 +232,8 @@ export async function listModemAllowances(input?: {
   return (rows.results ?? []).map((row) => ({
     modemId: row.modem_id,
     allowanceMb: row.allowance_mb,
+    allowanceSms: row.allowance_sms,
+    allowanceVoiceMin: row.allowance_voice_min,
     customer: row.customer,
     simCount: row.sim_count,
     ctdUsageMb: row.ctd_usage_mb,
@@ -232,17 +244,67 @@ export async function listModemAllowances(input?: {
   }));
 }
 
+async function modemAllowanceSmsExpr(): Promise<string> {
+  return (await portalTableHasColumn("modem_allowances", "allowance_sms"))
+    ? "a.allowance_sms"
+    : "NULL";
+}
+
+async function modemAllowanceVoiceExpr(): Promise<string> {
+  return (await portalTableHasColumn("modem_allowances", "allowance_voice_min"))
+    ? "a.allowance_voice_min"
+    : "NULL";
+}
+
+/**
+ * Upsert Reseller Plan allowances. null clears that channel; 0 = PAYG.
+ * If data, SMS, and voice are all null, the row is removed.
+ */
 export async function setModemAllowance(
   modemId: string,
-  allowanceMb: number,
+  input: {
+    allowanceMb: number | null;
+    allowanceSms: number | null;
+    allowanceVoiceMin: number | null;
+  },
   actorEmail: string,
 ): Promise<void> {
   const id = modemId.trim();
   if (!id) throw new Error("Reseller Plan is required.");
-  if (!Number.isFinite(allowanceMb) || allowanceMb < 0) {
-    throw new Error("Allowance must be a non-negative number of MB.");
+  const mb = input.allowanceMb == null ? null : parseNonNegAllowance(Number(input.allowanceMb), "Data allowance");
+  const sms =
+    input.allowanceSms == null ? null : parseNonNegAllowance(Number(input.allowanceSms), "SMS allowance");
+  const voice =
+    input.allowanceVoiceMin == null
+      ? null
+      : parseNonNegAllowance(Number(input.allowanceVoiceMin), "Voice allowance");
+
+  if (mb == null && sms == null && voice == null) {
+    await clearModemAllowance(id);
+    return;
   }
+
   const now = new Date().toISOString();
+  const mbStored = mb ?? 0;
+  const hasSms = await portalTableHasColumn("modem_allowances", "allowance_sms");
+  const hasVoice = await portalTableHasColumn("modem_allowances", "allowance_voice_min");
+  if (hasSms && hasVoice) {
+    await getDB()
+      .prepare(
+        `INSERT INTO modem_allowances
+           (modem_id, allowance_mb, allowance_sms, allowance_voice_min, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(modem_id) DO UPDATE SET
+           allowance_mb = excluded.allowance_mb,
+           allowance_sms = excluded.allowance_sms,
+           allowance_voice_min = excluded.allowance_voice_min,
+           updated_at = excluded.updated_at,
+           updated_by = excluded.updated_by`,
+      )
+      .bind(id, mbStored, sms, voice, now, actorEmail)
+      .run();
+    return;
+  }
   await getDB()
     .prepare(
       `INSERT INTO modem_allowances (modem_id, allowance_mb, updated_at, updated_by)
@@ -252,7 +314,7 @@ export async function setModemAllowance(
          updated_at = excluded.updated_at,
          updated_by = excluded.updated_by`,
     )
-    .bind(id, allowanceMb, now, actorEmail)
+    .bind(id, mbStored, now, actorEmail)
     .run();
 }
 
@@ -264,21 +326,39 @@ export async function clearModemAllowance(modemId: string): Promise<void> {
 
 export type RatePlanAllowanceRow = {
   ratePlan: string;
+  /** Data MB. null = unset; 0 = PAYG. */
   allowanceMb: number | null;
+  /** SMS messages. null = unset; 0 = PAYG. */
+  allowanceSms: number | null;
+  /** Voice minutes. null = unset; 0 = PAYG. */
+  allowanceVoiceMin: number | null;
   simCount: number;
   ctdUsageMb: number;
   updatedAt: string | null;
   updatedBy: string | null;
 };
 
+function parseNonNegAllowance(value: number, label: string): number {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative number (0 = PAYG).`);
+  }
+  return value;
+}
+
 /** Distinct Jasper/CC rate plans with optional manual allowance (super-admin Usage). */
 export async function listRatePlanAllowances(): Promise<RatePlanAllowanceRow[]> {
+  const hasSms = await portalTableHasColumn("rate_plan_allowances", "allowance_sms");
+  const hasVoice = await portalTableHasColumn("rate_plan_allowances", "allowance_voice_min");
+  const smsExpr = hasSms ? "a.allowance_sms" : "NULL";
+  const voiceExpr = hasVoice ? "a.allowance_voice_min" : "NULL";
   const rows = await getDB()
     .prepare(
       `SELECT d.rate_plan AS rate_plan,
               COUNT(*) AS sim_count,
               IFNULL(SUM(d.ctd_usage_mb), 0) AS ctd_usage_mb,
               a.allowance_mb AS allowance_mb,
+              ${smsExpr} AS allowance_sms,
+              ${voiceExpr} AS allowance_voice_min,
               a.updated_at AS updated_at,
               a.updated_by AS updated_by
        FROM cc_devices d
@@ -293,6 +373,8 @@ export async function listRatePlanAllowances(): Promise<RatePlanAllowanceRow[]> 
       sim_count: number;
       ctd_usage_mb: number;
       allowance_mb: number | null;
+      allowance_sms: number | null;
+      allowance_voice_min: number | null;
       updated_at: string | null;
       updated_by: string | null;
     }>();
@@ -300,6 +382,8 @@ export async function listRatePlanAllowances(): Promise<RatePlanAllowanceRow[]> 
   return (rows.results ?? []).map((row) => ({
     ratePlan: row.rate_plan,
     allowanceMb: row.allowance_mb,
+    allowanceSms: row.allowance_sms,
+    allowanceVoiceMin: row.allowance_voice_min,
     simCount: row.sim_count,
     ctdUsageMb: row.ctd_usage_mb,
     updatedAt: row.updated_at,
@@ -307,17 +391,56 @@ export async function listRatePlanAllowances(): Promise<RatePlanAllowanceRow[]> 
   }));
 }
 
+/**
+ * Upsert Supplier code allowances. null clears that channel; 0 = PAYG.
+ * If data, SMS, and voice are all null, the row is removed.
+ */
 export async function setRatePlanAllowance(
   ratePlan: string,
-  allowanceMb: number,
+  input: {
+    allowanceMb: number | null;
+    allowanceSms: number | null;
+    allowanceVoiceMin: number | null;
+  },
   actorEmail: string,
 ): Promise<void> {
   const id = ratePlan.trim();
   if (!id) throw new Error("Rate plan is required.");
-  if (!Number.isFinite(allowanceMb) || allowanceMb < 0) {
-    throw new Error("Allowance must be a non-negative number of MB.");
+  const mb = input.allowanceMb == null ? null : parseNonNegAllowance(Number(input.allowanceMb), "Data allowance");
+  const sms =
+    input.allowanceSms == null ? null : parseNonNegAllowance(Number(input.allowanceSms), "SMS allowance");
+  const voice =
+    input.allowanceVoiceMin == null
+      ? null
+      : parseNonNegAllowance(Number(input.allowanceVoiceMin), "Voice allowance");
+
+  if (mb == null && sms == null && voice == null) {
+    await clearRatePlanAllowance(id);
+    return;
   }
+
   const now = new Date().toISOString();
+  // allowance_mb is NOT NULL in the original table — store 0 (PAYG) when only SMS/voice are set.
+  const mbStored = mb ?? 0;
+  const hasSms = await portalTableHasColumn("rate_plan_allowances", "allowance_sms");
+  const hasVoice = await portalTableHasColumn("rate_plan_allowances", "allowance_voice_min");
+  if (hasSms && hasVoice) {
+    await getDB()
+      .prepare(
+        `INSERT INTO rate_plan_allowances
+           (rate_plan, allowance_mb, allowance_sms, allowance_voice_min, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(rate_plan) DO UPDATE SET
+           allowance_mb = excluded.allowance_mb,
+           allowance_sms = excluded.allowance_sms,
+           allowance_voice_min = excluded.allowance_voice_min,
+           updated_at = excluded.updated_at,
+           updated_by = excluded.updated_by`,
+      )
+      .bind(id, mbStored, sms, voice, now, actorEmail)
+      .run();
+    return;
+  }
   await getDB()
     .prepare(
       `INSERT INTO rate_plan_allowances (rate_plan, allowance_mb, updated_at, updated_by)
@@ -327,7 +450,7 @@ export async function setRatePlanAllowance(
          updated_at = excluded.updated_at,
          updated_by = excluded.updated_by`,
     )
-    .bind(id, allowanceMb, now, actorEmail)
+    .bind(id, mbStored, now, actorEmail)
     .run();
 }
 
@@ -1118,6 +1241,9 @@ async function listLivePoolModemLatest(input?: {
   const q = input?.q?.trim() ?? "";
   const tenantId = input?.tenantId?.trim() ?? "";
 
+  const smsExpr = await modemAllowanceSmsExpr();
+  const voiceExpr = await modemAllowanceVoiceExpr();
+
   if (tenantId) {
     const rows = await getDB()
       .prepare(
@@ -1128,6 +1254,8 @@ async function listLivePoolModemLatest(input?: {
                 IFNULL(SUM(IFNULL(d.ctd_sms, 0)), 0) AS ctd_sms,
                 IFNULL(SUM(IFNULL(d.ctd_voice_min, 0)), 0) AS ctd_voice_min,
                 a.allowance_mb AS allowance_mb,
+                ${smsExpr} AS allowance_sms,
+                ${voiceExpr} AS allowance_voice_min,
                 a.updated_at AS updated_at,
                 a.updated_by AS updated_by
          FROM sims s
@@ -1151,6 +1279,8 @@ async function listLivePoolModemLatest(input?: {
         ctd_sms: number;
         ctd_voice_min: number;
         allowance_mb: number | null;
+        allowance_sms: number | null;
+        allowance_voice_min: number | null;
         updated_at: string | null;
         updated_by: string | null;
       }>();
@@ -1158,6 +1288,8 @@ async function listLivePoolModemLatest(input?: {
     return (rows.results ?? []).map((row) => ({
       modemId: row.modem_id,
       allowanceMb: row.allowance_mb,
+      allowanceSms: row.allowance_sms,
+      allowanceVoiceMin: row.allowance_voice_min,
       customer: row.customer,
       simCount: row.sim_count,
       ctdUsageMb: row.ctd_usage_mb,
@@ -1177,6 +1309,8 @@ async function listLivePoolModemLatest(input?: {
               IFNULL(SUM(IFNULL(d.ctd_sms, 0)), 0) AS ctd_sms,
               IFNULL(SUM(IFNULL(d.ctd_voice_min, 0)), 0) AS ctd_voice_min,
               a.allowance_mb AS allowance_mb,
+              ${smsExpr} AS allowance_sms,
+              ${voiceExpr} AS allowance_voice_min,
               a.updated_at AS updated_at,
               a.updated_by AS updated_by
        FROM cc_devices d
@@ -1201,6 +1335,8 @@ async function listLivePoolModemLatest(input?: {
       ctd_sms: number;
       ctd_voice_min: number;
       allowance_mb: number | null;
+      allowance_sms: number | null;
+      allowance_voice_min: number | null;
       updated_at: string | null;
       updated_by: string | null;
     }>();
@@ -1208,6 +1344,8 @@ async function listLivePoolModemLatest(input?: {
   return (rows.results ?? []).map((row) => ({
     modemId: row.modem_id,
     allowanceMb: row.allowance_mb,
+    allowanceSms: row.allowance_sms,
+    allowanceVoiceMin: row.allowance_voice_min,
     customer: row.customer,
     simCount: row.sim_count,
     ctdUsageMb: row.ctd_usage_mb,

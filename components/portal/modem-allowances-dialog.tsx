@@ -5,12 +5,35 @@ import { useEffect, useRef, useState } from "react";
 type ModemRow = {
   modemId: string;
   allowanceMb: number | null;
+  allowanceSms: number | null;
+  allowanceVoiceMin: number | null;
 };
+
+type Draft = { mb: string; sms: string; voice: string };
+
+function draftFromRow(row: ModemRow): Draft {
+  return {
+    mb: row.allowanceMb != null ? String(row.allowanceMb) : "",
+    sms: row.allowanceSms != null ? String(row.allowanceSms) : "",
+    voice: row.allowanceVoiceMin != null ? String(row.allowanceVoiceMin) : "",
+  };
+}
+
+function parseField(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  return Number(text);
+}
+
+function draftsEqual(a: Draft | undefined, b: Draft | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.mb.trim() === b.mb.trim() && a.sms.trim() === b.sms.trim() && a.voice.trim() === b.voice.trim();
+}
 
 export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [rows, setRows] = useState<ModemRow[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [baseline, setBaseline] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [baseline, setBaseline] = useState<Record<string, Draft>>({});
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,10 +54,8 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
         if (cancelled) return;
         const modems = data.modems ?? [];
         setRows(modems);
-        const next: Record<string, string> = {};
-        for (const row of modems) {
-          next[row.modemId] = row.allowanceMb != null ? String(row.allowanceMb) : "";
-        }
+        const next: Record<string, Draft> = {};
+        for (const row of modems) next[row.modemId] = draftFromRow(row);
         setDrafts(next);
         setBaseline(next);
       } catch (err) {
@@ -46,12 +67,12 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
     };
   }, [open]);
 
-  async function persistAll(current: Record<string, string>, previous: Record<string, string>) {
-    const changes: { modemId: string; raw: string }[] = [];
+  async function persistAll(current: Record<string, Draft>, previous: Record<string, Draft>) {
+    const changes: { modemId: string; draft: Draft }[] = [];
     for (const modemId of Object.keys(current)) {
-      const raw = (current[modemId] ?? "").trim();
-      const prev = (previous[modemId] ?? "").trim();
-      if (raw !== prev) changes.push({ modemId, raw });
+      if (!draftsEqual(current[modemId], previous[modemId])) {
+        changes.push({ modemId, draft: current[modemId] ?? { mb: "", sms: "", voice: "" } });
+      }
     }
     if (changes.length === 0) return;
 
@@ -59,13 +80,22 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
     setError("");
     try {
       for (const change of changes) {
+        const mb = parseField(change.draft.mb);
+        const sms = parseField(change.draft.sms);
+        const voice = parseField(change.draft.voice);
+        const clear = mb == null && sms == null && voice == null;
         const res = await fetch("/api/portal/pools", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
-            change.raw === ""
+            clear
               ? { modemId: change.modemId, clear: true }
-              : { modemId: change.modemId, allowanceMb: Number(change.raw) },
+              : {
+                  modemId: change.modemId,
+                  allowanceMb: mb,
+                  allowanceSms: sms,
+                  allowanceVoiceMin: voice,
+                },
           ),
         });
         const data = (await res.json()) as { error?: string };
@@ -81,8 +111,13 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
       setBaseline({ ...current });
       setRows((existing) =>
         existing.map((row) => {
-          const raw = (current[row.modemId] ?? "").trim();
-          return { ...row, allowanceMb: raw === "" ? null : Number(raw) };
+          const draft = current[row.modemId] ?? { mb: "", sms: "", voice: "" };
+          return {
+            ...row,
+            allowanceMb: parseField(draft.mb),
+            allowanceSms: parseField(draft.sms),
+            allowanceVoiceMin: parseField(draft.voice),
+          };
         }),
       );
     } catch (err) {
@@ -118,19 +153,29 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
     return row.modemId.toLowerCase().includes(needle);
   });
 
-  const dirty = Object.keys(drafts).some(
-    (id) => (drafts[id] ?? "").trim() !== (baseline[id] ?? "").trim(),
-  );
+  const dirty = Object.keys(drafts).some((id) => !draftsEqual(drafts[id], baseline[id]));
+
+  function setField(modemId: string, field: keyof Draft, value: string) {
+    setDrafts((current) => ({
+      ...current,
+      [modemId]: {
+        mb: current[modemId]?.mb ?? "",
+        sms: current[modemId]?.sms ?? "",
+        voice: current[modemId]?.voice ?? "",
+        [field]: value,
+      },
+    }));
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-card border border-line bg-panel shadow-xl">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-card border border-line bg-panel shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
             <h2 className="text-lg font-semibold">Reseller Plan allowances</h2>
             <p className="mt-1 text-sm text-quiet">
-              Manual MB per Reseller Plan (Contract plans plus any mirrored from Jasper modem_ID on SIMs).
-              Reseller Usage and Pools use CTD ÷ this allowance (set by ATN only).
+              Inclusive data (MB), SMS (msgs), and voice (min) per Reseller Plan.{" "}
+              <span className="text-ink">0 = PAYG</span>. Leave blank to clear. Set by ATN only.
             </p>
           </div>
           <button
@@ -156,28 +201,50 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
             <thead className="text-quiet">
               <tr>
                 <th className="py-2">Reseller Plan</th>
-                <th className="py-2">Allowance MB</th>
+                <th className="py-2">Data MB</th>
+                <th className="py-2">SMS</th>
+                <th className="py-2">Voice (min)</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
-                <tr key={row.modemId} className="border-t border-line">
-                  <td className="py-2 font-mono text-xs">{row.modemId}</td>
-                  <td className="py-2">
-                    <input
-                      value={drafts[row.modemId] ?? ""}
-                      onChange={(event) =>
-                        setDrafts((current) => ({ ...current, [row.modemId]: event.target.value }))
-                      }
-                      placeholder="—"
-                      className="w-32 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
-                    />
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((row) => {
+                const draft = drafts[row.modemId] ?? { mb: "", sms: "", voice: "" };
+                return (
+                  <tr key={row.modemId} className="border-t border-line">
+                    <td className="py-2 pr-3 font-mono text-xs">{row.modemId}</td>
+                    <td className="py-2 pr-2">
+                      <input
+                        value={draft.mb}
+                        onChange={(event) => setField(row.modemId, "mb", event.target.value)}
+                        placeholder="—"
+                        title="0 = PAYG"
+                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                      />
+                    </td>
+                    <td className="py-2 pr-2">
+                      <input
+                        value={draft.sms}
+                        onChange={(event) => setField(row.modemId, "sms", event.target.value)}
+                        placeholder="—"
+                        title="0 = PAYG"
+                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                      />
+                    </td>
+                    <td className="py-2">
+                      <input
+                        value={draft.voice}
+                        onChange={(event) => setField(row.modemId, "voice", event.target.value)}
+                        placeholder="—"
+                        title="0 = PAYG"
+                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={2} className="py-8 text-quiet">
+                  <td colSpan={4} className="py-8 text-quiet">
                     No Reseller Plans in the CC snapshot yet. Sync the device list first.
                   </td>
                 </tr>
