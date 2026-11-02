@@ -19,10 +19,13 @@ const ICCID_STICKY_ONLY = "left-0 w-48 min-w-48 max-w-48";
 export function ResellerPlanDailyMatrix({
   matrix,
   showSupplierCode = false,
+  showUnitPrice = false,
 }: {
   matrix: SimPlatformPlanDailyMatrix;
   /** Jasper Supplier code in cell detail — ATN / super admin only. */
   showSupplierCode?: boolean;
+  /** Contract unit price — ATN / super admin only. */
+  showUnitPrice?: boolean;
 }) {
   const [selected, setSelected] = useState<{ iccid: string; day: string } | null>(null);
   const showOrg = matrix.includeOrganisation;
@@ -173,7 +176,7 @@ export function ResellerPlanDailyMatrix({
               <p className="mt-1 text-xs text-quiet">
                 Plan count {detail.planCount}
                 {detail.planCount > 1
-                  ? " (changed this day — highest value rank is billed)"
+                  ? " (changed this day — highest unit price is billed)"
                   : " (no change this day)"}
               </p>
             </div>
@@ -193,9 +196,11 @@ export function ResellerPlanDailyMatrix({
               >
                 <span className="font-medium">{plan.planName}</span>
                 <span className="flex flex-wrap items-center gap-2 text-quiet">
-                  <span className="tabular-nums">
-                    ${plan.unitPriceAud.toLocaleString("en-AU", { maximumFractionDigits: 2 })}
-                  </span>
+                  {showUnitPrice ? (
+                    <span className="tabular-nums">
+                      ${plan.unitPriceAud.toLocaleString("en-AU", { maximumFractionDigits: 2 })}
+                    </span>
+                  ) : null}
                   {plan.billed ? (
                     <span className="rounded-full border border-ok/40 px-2 py-0.5 text-[11px] text-ok">
                       Billed
@@ -214,8 +219,7 @@ export function ResellerPlanDailyMatrix({
       ) : (
         <p className="text-xs text-quiet">
           Every Sydney calendar day in the From/To range is a column. Cells show plan count (1 = single plan, 2+ =
-          changed). When two plans share a day, Contract value rank picks which is billed. Click a cell for
-          details.
+          changed). Click a cell for details.
         </p>
       )}
     </div>

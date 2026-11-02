@@ -484,7 +484,7 @@ export async function setContractPlanUnitPrice(
       newId("aud"),
       tenantId,
       actorEmail,
-      "plan",
+      "unit_price",
       `Unit price $${price.toFixed(2)} AUD: ${plan?.name ?? platformPlanId}`,
       new Date().toISOString(),
     )

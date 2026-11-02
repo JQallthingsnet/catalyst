@@ -338,7 +338,7 @@ function csvEscape(value: string): string {
   return value;
 }
 
-/** CSV: day, ICCID, Reseller Plan (and optional organisation / Supplier code for ATN). */
+/** CSV: day, ICCID, Reseller Plan (and optional organisation / Supplier code / unit price for ATN). */
 export async function exportSimPlatformPlanDailyCsv(input: {
   tenantId?: string;
   dateFrom?: string;
@@ -346,6 +346,8 @@ export async function exportSimPlatformPlanDailyCsv(input: {
   includeOrganisation?: boolean;
   /** Jasper Supplier code column — super admin only. */
   includeSupplierCode?: boolean;
+  /** Contract unit price — super admin only. */
+  includeUnitPrice?: boolean;
 }): Promise<string> {
   const clauses: string[] = [];
   const binds: Array<string> = [];
@@ -458,12 +460,13 @@ export async function exportSimPlatformPlanDailyCsv(input: {
 
   const includeOrg = Boolean(input.includeOrganisation);
   const includeSupplier = Boolean(input.includeSupplierCode);
+  const includeUnitPrice = Boolean(input.includeUnitPrice);
   const header = [
     "day",
     ...(includeOrg ? ["organisation"] : []),
     "iccid",
     "reseller_plan",
-    "unit_price_aud",
+    ...(includeUnitPrice ? ["unit_price_aud"] : []),
     "billed",
     ...(includeSupplier ? ["supplier_code"] : []),
   ];
@@ -474,7 +477,7 @@ export async function exportSimPlatformPlanDailyCsv(input: {
       ...(includeOrg ? [row.organisation] : []),
       row.iccid,
       row.plan_name,
-      String(row.unitPriceAud),
+      ...(includeUnitPrice ? [String(row.unitPriceAud)] : []),
       row.billed ? "yes" : "no",
       ...(includeSupplier ? [row.supplier_code ?? ""] : []),
     ];

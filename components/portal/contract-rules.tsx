@@ -29,7 +29,7 @@ const RESELLER_ADMIN_RULES = [
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",
   "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
   "Change Reseller Plan any time within this contract (any SIM state).",
-  "Plan changes is your log of ICCID plan moves. Daily plans CSV lists every Reseller Plan used per ICCID per day. If two plans share a day, ATN’s Unit Price on your contract picks which is billed.",
+  "Plan changes is your log of ICCID plan moves. Daily plans CSV lists every Reseller Plan used per ICCID per day.",
 ];
 
 export function ContractRules({ variant }: { variant: "super_admin" | "reseller_admin" }) {

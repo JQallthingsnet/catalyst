@@ -21,6 +21,11 @@ export type AuditLogFilter = {
   actorEmail?: string;
   dateFrom?: string;
   dateTo?: string;
+  /**
+   * Hide ATN commercial unit-price audit rows (reseller admin / operator / org views).
+   * Super-admin platform Logs keeps them.
+   */
+  hideUnitPrice?: boolean;
 };
 
 export type AuditLogFilterOptions = {
@@ -49,6 +54,7 @@ export function normalizeAuditLogFilter(input: AuditLogFilter = {}): AuditLogFil
     actorEmail: clip(input.actorEmail),
     dateFrom,
     dateTo,
+    hideUnitPrice: Boolean(input.hideUnitPrice),
   };
 }
 
@@ -98,6 +104,15 @@ function auditWhere(filter: AuditLogFilter): { sql: string; binds: (string | num
       clauses.push("a.created_at < ?");
       binds.push(end);
     }
+  }
+  if (n.hideUnitPrice) {
+    // New rows use action=unit_price; older rows were action=plan with Unit price detail.
+    clauses.push(
+      `NOT (
+         a.action = 'unit_price'
+         OR (a.action = 'plan' AND IFNULL(a.detail, '') LIKE 'Unit price %')
+       )`,
+    );
   }
 
   return {
@@ -248,6 +263,8 @@ export function auditActionLabel(action: string): string {
       return "Order";
     case "plan":
       return "Plan";
+    case "unit_price":
+      return "Unit price";
     case "pool":
       return "Pool";
     case "customer":
