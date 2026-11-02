@@ -1,5 +1,6 @@
 import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
+import { sumPoolTopupMbByModem, sumPoolTopupUnitsByModem } from "@/lib/portal/pool-topups";
 import type { UsageAllowanceBasis } from "@/lib/portal/sim-usage";
 import { sydneyDayKey, sydneyDayKeyDaysAgo } from "@/lib/portal/time";
 
@@ -79,12 +80,21 @@ export type PoolEntityLatest = {
   ctdUsageMb: number;
   ctdSms: number;
   ctdVoiceMin: number;
+  /** Pool total data allowance (Σ per-SIM × SIMs + current-month top-ups). */
   allowanceMb: number;
   modemCount: number;
   simCount: number;
   pct: number;
   /** CC customer when grouping by modem_ID. */
   customer?: string | null;
+  /** Per-SIM data allowance from modem_allowances (Reseller Plan). */
+  perSimAllowanceMb?: number | null;
+  /** Current Sydney-month top-up SIM units for this plan. */
+  topupSimUnits?: number;
+  /** Current Sydney-month top-up MB for this plan. */
+  topupAllowanceMb?: number;
+  /** Contract unit price AUD for this Reseller Plan (reseller top-up). */
+  unitPriceAud?: number | null;
 };
 
 /**
@@ -1128,7 +1138,14 @@ export function toPoolEntityFromRatePlan(row: PoolRatePlanLatest): PoolEntityLat
   };
 }
 
-export function toPoolEntityFromModem(row: PoolModemLatest): PoolEntityLatest {
+export function toPoolEntityFromModem(
+  row: PoolModemLatest & {
+    perSimAllowanceMb?: number | null;
+    topupSimUnits?: number;
+    topupAllowanceMb?: number;
+    unitPriceAud?: number | null;
+  },
+): PoolEntityLatest {
   return {
     name: row.modemId,
     day: row.day,
@@ -1140,10 +1157,14 @@ export function toPoolEntityFromModem(row: PoolModemLatest): PoolEntityLatest {
     simCount: row.simCount,
     pct: row.pct,
     customer: row.customer,
+    perSimAllowanceMb: row.perSimAllowanceMb,
+    topupSimUnits: row.topupSimUnits,
+    topupAllowanceMb: row.topupAllowanceMb,
+    unitPriceAud: row.unitPriceAud,
   };
 }
 
-/** Live Σ Reseller Plan allowance (mapped MB × each SIM on that Catalyst plan). */
+/** Live Σ Reseller Plan allowance (mapped MB × each SIM on that Catalyst plan + month top-ups). */
 export async function sumLivePoolAllowancesByModem(input?: {
   exactCustomer?: string;
   /** Reseller org — group from sims.platform_plan_id (same as SIMs page). */
@@ -1166,7 +1187,12 @@ export async function sumLivePoolAllowancesByModem(input?: {
       )
       .bind(tenantId)
       .all<{ modem_id: string; allowance_mb: number }>();
-    return new Map((rows.results ?? []).map((row) => [row.modem_id, row.allowance_mb ?? 0]));
+    const base = new Map((rows.results ?? []).map((row) => [row.modem_id, row.allowance_mb ?? 0]));
+    const topups = await sumPoolTopupMbByModem({ tenantId });
+    for (const [modemId, mb] of topups) {
+      base.set(modemId, (base.get(modemId) ?? 0) + mb);
+    }
+    return base;
   }
 
   const exact = input?.exactCustomer?.trim() ?? "";
@@ -1195,12 +1221,22 @@ export async function listPoolModemLatest(input?: {
   exactCustomer?: string;
   /** Reseller org — required so grouping matches SIMs (sims.platform_plan_id). */
   tenantId?: string;
-}): Promise<PoolModemLatest[]> {
+}): Promise<
+  Array<
+    PoolModemLatest & {
+      perSimAllowanceMb: number | null;
+      topupSimUnits: number;
+      topupAllowanceMb: number;
+      unitPriceAud: number | null;
+    }
+  >
+> {
   // undefined = unrestricted; "" = reseller unbound → empty.
   if (input?.exactCustomer !== undefined && !input.exactCustomer.trim()) return [];
   const exact = input?.exactCustomer?.trim() ?? "";
   const q = input?.q?.trim() ?? "";
   const day = sydneyDayKey();
+  const tenantId = input?.tenantId?.trim() ?? "";
 
   // Same source as SIMs Reseller Plan column: sims.platform_plan_id → platform_plans.name.
   const live = await listLivePoolModemLatest({
@@ -1208,8 +1244,16 @@ export async function listPoolModemLatest(input?: {
     exactCustomer: input?.exactCustomer,
     tenantId: input?.tenantId,
   });
+  const topupMb = tenantId ? await sumPoolTopupMbByModem({ tenantId }) : new Map<string, number>();
+  const topupUnits = tenantId ? await sumPoolTopupUnitsByModem({ tenantId }) : new Map<string, number>();
+  const unitPrices = tenantId ? await unitPricesByModemName(tenantId) : new Map<string, number>();
+
   return live.map((row) => {
-    const allowanceMb = row.allowanceMb ?? 0;
+    const perSim = row.allowanceMb;
+    // Pool total: per-SIM × SIMs (+ current-month top-ups). PAYG/unset → 0 base.
+    const baseMb = (perSim != null ? perSim : 0) * (row.simCount || 0);
+    const extraMb = topupMb.get(row.modemId) ?? 0;
+    const allowanceMb = baseMb + extraMb;
     const ctdUsageMb = row.ctdUsageMb ?? 0;
     return {
       modemId: row.modemId,
@@ -1222,8 +1266,27 @@ export async function listPoolModemLatest(input?: {
       simCount: row.simCount,
       snapshottedAt: row.updatedAt ?? new Date().toISOString(),
       pct: allowanceMb > 0 ? Math.round((ctdUsageMb / allowanceMb) * 100) : 0,
+      perSimAllowanceMb: perSim,
+      topupSimUnits: topupUnits.get(row.modemId) ?? 0,
+      topupAllowanceMb: extraMb,
+      unitPriceAud: unitPrices.has(row.modemId) ? (unitPrices.get(row.modemId) ?? 0) : null,
     };
   });
+}
+
+async function unitPricesByModemName(tenantId: string): Promise<Map<string, number>> {
+  const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
+  if (!hasUnitPrice) return new Map();
+  const rows = await getDB()
+    .prepare(
+      `SELECT TRIM(p.name) AS modem_id, IFNULL(a.unit_price_aud, 0) AS unit_price_aud
+       FROM tenant_plan_assignments a
+       JOIN platform_plans p ON p.id = a.platform_plan_id
+       WHERE a.tenant_id = ? AND TRIM(IFNULL(p.name, '')) != ''`,
+    )
+    .bind(tenantId)
+    .all<{ modem_id: string; unit_price_aud: number }>();
+  return new Map((rows.results ?? []).map((row) => [row.modem_id, Number(row.unit_price_aud) || 0]));
 }
 
 /**

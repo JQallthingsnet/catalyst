@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ModemAllowancesDialog } from "@/components/portal/modem-allowances-dialog";
 import { RatePlanAllowancesDialog } from "@/components/portal/rate-plan-allowances-dialog";
@@ -18,6 +19,10 @@ export type PoolLatestRow = {
   simCount: number;
   pct: number;
   customer?: string | null;
+  perSimAllowanceMb?: number | null;
+  topupSimUnits?: number;
+  topupAllowanceMb?: number;
+  unitPriceAud?: number | null;
 };
 
 export type PoolSeriesPoint = {
@@ -497,12 +502,20 @@ export function PoolsDashboard({
   const [ratePlanAllowancesOpen, setRatePlanAllowancesOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [rows, setRows] = useState(initialRows);
+  const [topupDrafts, setTopupDrafts] = useState<Record<string, string>>({});
+  const [topupBusy, setTopupBusy] = useState<string | null>(null);
+  const canBuyTopup = !platformView && groupBy === "modem" && canEdit;
+
+  useEffect(() => {
+    setRows(initialRows);
+  }, [initialRows]);
 
   const latestByName = useMemo(() => {
     const map = new Map<string, PoolLatestRow>();
-    for (const row of initialRows) map.set(row.name, row);
+    for (const row of rows) map.set(row.name, row);
     return map;
-  }, [initialRows]);
+  }, [rows]);
 
   const seriesByName = useMemo(() => {
     const map = new Map<string, PoolSeriesPoint[]>();
@@ -542,17 +555,68 @@ export function PoolsDashboard({
 
   const filtered = useMemo(() => {
     const q = filterQ.trim().toLowerCase();
-    const rows = [...initialRows].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
-    if (!q) return rows;
-    return rows.filter(
+    const sorted = [...rows].sort((a, b) => b.ctdUsageMb - a.ctdUsageMb);
+    if (!q) return sorted;
+    return sorted.filter(
       (row) =>
         row.name.toLowerCase().includes(q) ||
         (row.customer ?? "").toLowerCase().includes(q),
     );
-  }, [filterQ, initialRows]);
+  }, [filterQ, rows]);
 
   function addToPlot(name: string) {
     setPlotted((current) => (current.includes(name) ? current : [...current, name]));
+  }
+
+  async function buyTopup(modemId: string) {
+    const raw = topupDrafts[modemId] ?? "";
+    const simUnits = Math.floor(Number(raw));
+    if (!Number.isFinite(simUnits) || simUnits < 1) {
+      setMessage("Enter SIM units of at least 1.");
+      return;
+    }
+    setTopupBusy(modemId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/portal/pool-topups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modemId, simUnits }),
+      });
+      const data = (await res.json()) as {
+        error?: string;
+        topup?: {
+          simUnits: number;
+          allowanceMb: number;
+          chargeAud: number;
+          unitPriceAud: number;
+        };
+      };
+      if (!res.ok) throw new Error(data.error ?? "Could not buy pool top-up.");
+      const added = data.topup;
+      setRows((current) =>
+        current.map((row) => {
+          if (row.name !== modemId || !added) return row;
+          const allowanceMb = row.allowanceMb + added.allowanceMb;
+          return {
+            ...row,
+            allowanceMb,
+            topupSimUnits: (row.topupSimUnits ?? 0) + added.simUnits,
+            topupAllowanceMb: (row.topupAllowanceMb ?? 0) + added.allowanceMb,
+            pct: allowanceMb > 0 ? Math.round((row.ctdUsageMb / allowanceMb) * 100) : 0,
+          };
+        }),
+      );
+      setTopupDrafts((current) => ({ ...current, [modemId]: "" }));
+      setMessage(
+        `Top-up applied for ${modemId}: +${added?.simUnits ?? simUnits} SIM unit${(added?.simUnits ?? simUnits) === 1 ? "" : "s"} · +${(added?.allowanceMb ?? 0).toLocaleString("en-AU")} MB · $${(added?.chargeAud ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (this month).`,
+      );
+      void loadSeries(plotted);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not buy pool top-up.");
+    } finally {
+      setTopupBusy(null);
+    }
   }
 
   const groupTitle =
@@ -622,7 +686,7 @@ export function PoolsDashboard({
   const picker = (
     <EntityPickerDialog
       open={pickerOpen}
-      rows={initialRows}
+      rows={rows}
       selected={plotted}
       entityLabel={entityLabel}
       onClose={() => setPickerOpen(false)}
@@ -649,7 +713,7 @@ export function PoolsDashboard({
             {groupBy === "rate_plan"
               ? "Grouped by Supplier code (Jasper rate plan): daily Σ CTD MB and Σ Supplier code allowance across SIMs on that plan (one point per Sydney calendar day)."
               : groupBy === "modem" && scopedCustomer
-                ? `Grouped by Reseller Plan for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ Reseller Plan allowance across SIMs on that plan (one point per Sydney calendar day).`
+                ? `Grouped by Reseller Plan for CC customer “${scopedCustomer}”: daily Σ CTD MB and Σ Reseller Plan allowance across SIMs on that plan (one point per Sydney calendar day).${canBuyTopup ? " Buy pool top-up in SIM units for the current Sydney month — applies immediately, no SIMs shipped." : ""}`
                 : groupBy === "modem"
                   ? "This organisation is not bound to a Control Center customer yet. Sell stock / bind first to see Reseller Plan pools."
                   : scopedCustomer
@@ -674,6 +738,11 @@ export function PoolsDashboard({
               Reseller Plan allowances
             </button>
           </div>
+        ) : null}
+        {canBuyTopup ? (
+          <Link href="/dashboard/billable" className={btnSecondary}>
+            Billable items
+          </Link>
         ) : null}
       </div>
 
@@ -714,12 +783,21 @@ export function PoolsDashboard({
               <th className="px-4 py-3">{allowanceLabel}</th>
               <th className="px-4 py-3">%</th>
               <th className="px-4 py-3">SIMs</th>
+              {canBuyTopup ? <th className="px-4 py-3">Top-up this month</th> : null}
               <th className="px-4 py-3">Chart</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((row) => {
               const onChart = plotted.includes(row.name);
+              const perSim = row.perSimAllowanceMb;
+              const canTopupPlan = perSim != null && perSim > 0;
+              const unitsDraft = topupDrafts[row.name] ?? "";
+              const draftUnits = Math.floor(Number(unitsDraft));
+              const quoteOk = Number.isFinite(draftUnits) && draftUnits >= 1 && canTopupPlan;
+              const quoteMb = quoteOk && perSim != null ? perSim * draftUnits : 0;
+              const quoteAud =
+                quoteOk && row.unitPriceAud != null ? row.unitPriceAud * draftUnits : null;
               return (
                 <tr key={row.name} className="border-t border-line hover:bg-panel-2">
                   {groupBy === "modem" ? (
@@ -747,7 +825,13 @@ export function PoolsDashboard({
                     {(row.ctdVoiceMin ?? 0).toLocaleString("en-AU", { maximumFractionDigits: 1 })}
                   </td>
                   <td className="px-4 py-3">
-                    {row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                    <div>{row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}</div>
+                    {canBuyTopup && (row.topupSimUnits ?? 0) > 0 ? (
+                      <div className="mt-0.5 text-xs text-quiet">
+                        incl. +{(row.topupSimUnits ?? 0).toLocaleString("en-AU")} SIM unit
+                        {(row.topupSimUnits ?? 0) === 1 ? "" : "s"}
+                      </div>
+                    ) : null}
                   </td>
                   <td
                     className={`px-4 py-3 ${
@@ -757,6 +841,55 @@ export function PoolsDashboard({
                     {row.pct}%
                   </td>
                   <td className="px-4 py-3">{row.simCount}</td>
+                  {canBuyTopup ? (
+                    <td className="px-4 py-3">
+                      {canTopupPlan ? (
+                        <div className="flex min-w-56 flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={5000}
+                              step={1}
+                              value={unitsDraft}
+                              onChange={(event) =>
+                                setTopupDrafts((current) => ({
+                                  ...current,
+                                  [row.name]: event.target.value,
+                                }))
+                              }
+                              placeholder="SIM units"
+                              className="h-9 w-24 rounded-lg border border-line bg-canvas px-2 font-mono text-xs outline-none focus:border-accent"
+                            />
+                            <button
+                              type="button"
+                              disabled={topupBusy === row.name || !quoteOk}
+                              onClick={() => void buyTopup(row.name)}
+                              className="inline-flex h-9 items-center justify-center rounded-full bg-accent px-3 text-xs font-medium text-accent-ink disabled:opacity-40"
+                            >
+                              {topupBusy === row.name ? "Buying…" : "Buy top-up"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-quiet">
+                            {row.unitPriceAud != null
+                              ? `$${row.unitPriceAud.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / SIM unit`
+                              : "Unit price not set"}
+                            {quoteOk
+                              ? ` · +${quoteMb.toLocaleString("en-AU")} MB${
+                                  quoteAud != null
+                                    ? ` · $${quoteAud.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                    : ""
+                                }`
+                              : null}
+                          </p>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-quiet">
+                          {perSim === 0 ? "PAYG — no top-up" : "Set allowance first"}
+                        </span>
+                      )}
+                    </td>
+                  ) : null}
                   <td className="px-4 py-3">
                     {onChart ? (
                       <button

@@ -92,6 +92,7 @@ const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
     { href: "/dashboard/sims", label: "SIMs" },
     { href: "/dashboard/customers", label: "Customers" },
     { href: "/dashboard/pools", label: "Pools" },
+    { href: "/dashboard/billable", label: "Billable" },
     { href: "/dashboard/usage", label: "Usage" },
     { href: "/dashboard/alerts", label: "Alerts" },
     { href: "/dashboard/contracts", label: "Contract" },
