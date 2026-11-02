@@ -41,7 +41,7 @@ export function ChangeRatePlanButton({
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/portal/rate-plan-change", {
+      const res = await fetch("/api/portal/sims/change-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ iccid, platformPlanId }),
