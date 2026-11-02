@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     actorEmail: url.searchParams.get("by") ?? "",
     dateFrom: url.searchParams.get("dateFrom") ?? "",
     dateTo: url.searchParams.get("dateTo") ?? "",
+    hideUnitPrice: !onPlatform,
   });
 
   try {

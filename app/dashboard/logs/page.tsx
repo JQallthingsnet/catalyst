@@ -103,6 +103,8 @@ export default async function LogsPage({
     actorEmail: params.by,
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
+    // ATN commercial pricing is super-admin only — not for reseller admin / operator / org.
+    hideUnitPrice: !onPlatform,
   });
   const filtered = auditLogFilterActive(filter);
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);

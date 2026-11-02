@@ -25,6 +25,7 @@ export async function GET(request: Request) {
       dateTo: url.searchParams.get("dateTo") ?? undefined,
       includeOrganisation: onPlatform && !tenantId,
       includeSupplierCode: onPlatform,
+      includeUnitPrice: onPlatform,
     });
     const stamp = new Date().toISOString().slice(0, 10);
     const scope = tenantId ? "org" : "all";
