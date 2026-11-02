@@ -152,3 +152,56 @@ export async function notifySuperAdminsOfOrder(input: {
   }
   return { sent, errors };
 }
+
+/** Same ATN recipient list as Order SIMs — pool top-up applied immediately (no SIMs shipped). */
+export async function notifySuperAdminsOfPoolTopup(input: {
+  topupId: string;
+  tenantName: string;
+  modemId: string;
+  simUnits: number;
+  allowanceMb: number;
+  unitPriceAud: number;
+  chargeAud: number;
+  monthKey: string;
+  createdBy: string;
+}): Promise<{ sent: number; errors: string[] }> {
+  const setting = await getOrderNotifySetting();
+  if (setting.recipients.length === 0) {
+    return { sent: 0, errors: [] };
+  }
+
+  const charge = input.chargeAud.toLocaleString("en-AU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const subject = `Catalyst Pool top-up: ${input.tenantName} · ${input.modemId} × ${input.simUnits}`;
+  const html = `
+  <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto;">
+    <p style="margin:0;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#0d9488;font-weight:700;">ATN Catalyst</p>
+    <h2 style="margin:8px 0 16px;color:#111827;">Pool top-up (applied)</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;color:#111827;">
+      <tr><td style="padding:6px 0;color:#6b7280;">Organisation</td><td style="padding:6px 0;">${escapeHtml(input.tenantName)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Reseller Plan</td><td style="padding:6px 0;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(input.modemId)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">SIM units</td><td style="padding:6px 0;">${input.simUnits.toLocaleString("en-AU")}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Allowance added</td><td style="padding:6px 0;">${input.allowanceMb.toLocaleString("en-AU")} MB</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Unit price</td><td style="padding:6px 0;">$${input.unitPriceAud.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Charge</td><td style="padding:6px 0;">$${charge}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Sydney month</td><td style="padding:6px 0;">${escapeHtml(input.monthKey)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Submitted by</td><td style="padding:6px 0;">${escapeHtml(input.createdBy)}</td></tr>
+      <tr><td style="padding:6px 0;color:#6b7280;">Top-up id</td><td style="padding:6px 0;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(input.topupId)}</td></tr>
+    </table>
+    <p style="margin:20px 0 0;color:#6b7280;font-size:13px;">Applied immediately for this month (no SIMs shipped). Open Catalyst → Billable / Pools to review.</p>
+  </div>`;
+
+  let sent = 0;
+  const errors: string[] = [];
+  for (const to of setting.recipients) {
+    try {
+      await sendSystemEmail(to, subject, html);
+      sent += 1;
+    } catch (err) {
+      errors.push(`${to}: ${err instanceof Error ? err.message : "send failed"}`);
+    }
+  }
+  return { sent, errors };
+}

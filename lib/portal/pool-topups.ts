@@ -2,6 +2,7 @@ import { getDB } from "@/lib/env";
 import { newId } from "@/lib/portal/ids";
 import { writeAudit } from "@/lib/portal/repo";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
+import { loadTenant } from "@/lib/portal/tenant";
 import { sydneyYmd } from "@/lib/portal/time";
 
 export type PoolModemTopup = {
@@ -251,6 +252,28 @@ export async function createPoolModemTopup(input: {
     "pool",
     `Pool top-up ${modemId} × ${simUnits} SIM unit${simUnits === 1 ? "" : "s"} · +${allowanceMb.toLocaleString("en-AU")} MB · $${chargeAud.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${monthKey}`,
   );
+
+  // Soft-fail: top-up already applied even if SMTP / recipients misconfigured.
+  try {
+    const { notifySuperAdminsOfPoolTopup } = await import("@/lib/portal/order-notify");
+    const tenant = await loadTenant(tenantId);
+    const result = await notifySuperAdminsOfPoolTopup({
+      topupId: id,
+      tenantName: tenant?.name ?? tenantId,
+      modemId,
+      simUnits,
+      allowanceMb,
+      unitPriceAud,
+      chargeAud,
+      monthKey,
+      createdBy: input.actorEmail,
+    });
+    if (result.errors.length > 0) {
+      console.error("[pool-topup-notify]", result.errors.join("; "));
+    }
+  } catch (err) {
+    console.error("[pool-topup-notify]", err instanceof Error ? err.message : err);
+  }
 
   return {
     id,

@@ -31,8 +31,8 @@ export function OrderNotifySettingsForm({
       const count = data.setting?.recipients.length ?? 0;
       setMessage(
         count
-          ? `Saved — ${count} recipient${count === 1 ? "" : "s"} get Order SIMs, lifecycle, and Reseller Plan change emails.`
-          : "Saved — no recipients (order / lifecycle / plan-change emails are off until you add addresses).",
+          ? `Saved — ${count} recipient${count === 1 ? "" : "s"} get Order SIMs, pool top-up, lifecycle, and Reseller Plan change emails.`
+          : "Saved — no recipients (order / top-up / lifecycle / plan-change emails are off until you add addresses).",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
@@ -45,8 +45,9 @@ export function OrderNotifySettingsForm({
     <article className="rounded-card border border-line bg-panel p-5">
       <h2 className="font-semibold">Order SIMs</h2>
       <p className="mt-1 text-sm text-quiet">
-        Email these ATN addresses for Order SIMs, reseller lifecycle requests, Reseller Plan changes, and applied
-        SIM state changes. Leave empty to keep those emails off (requests still queue).
+        Email these ATN addresses for Order SIMs, pool top-ups, reseller lifecycle requests, Reseller Plan changes,
+        and applied SIM state changes. Leave empty to keep those emails off (requests still queue / top-ups still
+        apply).
       </p>
 
       <form
