@@ -854,7 +854,15 @@ export async function listUsage(tenantId: string): Promise<UsagePoint[]> {
 
 export async function listAudit(tenantId: string): Promise<AuditEvent[]> {
   const rows = await getDB()
-    .prepare("SELECT id, action, detail, created_at FROM audit_events WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 40")
+    .prepare(
+      `SELECT id, action, detail, created_at FROM audit_events
+       WHERE tenant_id = ?
+         AND NOT (
+           action = 'unit_price'
+           OR (action = 'plan' AND IFNULL(detail, '') LIKE 'Unit price %')
+         )
+       ORDER BY created_at DESC LIMIT 40`,
+    )
     .bind(tenantId)
     .all<{ id: string; action: string; detail: string; created_at: string }>();
   return (rows.results ?? []).map((row) => ({
