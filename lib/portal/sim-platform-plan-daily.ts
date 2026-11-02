@@ -7,9 +7,9 @@ export type SimPlatformPlanDailyPlan = {
   platformPlanId: string;
   planName: string;
   supplierCode: string | null;
-  /** Contract value rank (0 if unknown / off-contract). */
-  valueRank: number;
-  /** True when this is the plan billed for the day (highest value rank). */
+  /** Contract unit price AUD (0 if unknown / off-contract). */
+  unitPriceAud: number;
+  /** True when this is the plan billed for the day (highest unit price). */
   billed: boolean;
 };
 
@@ -21,18 +21,18 @@ export type SimPlatformPlanDailyCell = {
   billedPlatformPlanId: string | null;
 };
 
-/** Higher value_rank wins; ties → default flag, then name. */
+/** Higher unit price wins; ties → default flag, then name. */
 export function pickBilledPlatformPlanId(
   plans: Array<{
     platformPlanId: string;
     planName: string;
-    valueRank: number;
+    unitPriceAud: number;
     isDefault?: boolean;
   }>,
 ): string | null {
   if (plans.length === 0) return null;
   const sorted = [...plans].sort((a, b) => {
-    if (b.valueRank !== a.valueRank) return b.valueRank - a.valueRank;
+    if (b.unitPriceAud !== a.unitPriceAud) return b.unitPriceAud - a.unitPriceAud;
     if (Boolean(b.isDefault) !== Boolean(a.isDefault)) return Number(b.isDefault) - Number(a.isDefault);
     return a.planName.localeCompare(b.planName, undefined, { sensitivity: "base" });
   });
@@ -152,32 +152,33 @@ export async function listSimPlatformPlanDailyMatrix(input: {
     }>();
 
   const tenantIds = [...new Set(iccidMeta.map((row) => row.tenantId))];
-  const rankByTenantPlan = new Map<string, { valueRank: number; isDefault: boolean }>();
+  const priceByTenantPlan = new Map<string, { unitPriceAud: number; isDefault: boolean }>();
   if (tenantIds.length > 0) {
+    const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
     const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
+    const priceExpr = hasUnitPrice
+      ? "IFNULL(unit_price_aud, 0)"
+      : hasValueRank
+        ? "IFNULL(value_rank, 0)"
+        : "0";
     const placeholders = tenantIds.map(() => "?").join(", ");
-    const rankRows = await db
+    const priceRows = await db
       .prepare(
-        hasValueRank
-          ? `SELECT tenant_id, platform_plan_id, IFNULL(value_rank, 0) AS value_rank,
-                    IFNULL(is_default, 0) AS is_default
-             FROM tenant_plan_assignments
-             WHERE tenant_id IN (${placeholders})`
-          : `SELECT tenant_id, platform_plan_id, 0 AS value_rank,
-                    IFNULL(is_default, 0) AS is_default
-             FROM tenant_plan_assignments
-             WHERE tenant_id IN (${placeholders})`,
+        `SELECT tenant_id, platform_plan_id, ${priceExpr} AS unit_price_aud,
+                IFNULL(is_default, 0) AS is_default
+         FROM tenant_plan_assignments
+         WHERE tenant_id IN (${placeholders})`,
       )
       .bind(...tenantIds)
       .all<{
         tenant_id: string;
         platform_plan_id: string;
-        value_rank: number;
+        unit_price_aud: number;
         is_default: number;
       }>();
-    for (const row of rankRows.results ?? []) {
-      rankByTenantPlan.set(`${row.tenant_id}:${row.platform_plan_id}`, {
-        valueRank: Number(row.value_rank) || 0,
+    for (const row of priceRows.results ?? []) {
+      priceByTenantPlan.set(`${row.tenant_id}:${row.platform_plan_id}`, {
+        unitPriceAud: Number(row.unit_price_aud) || 0,
         isDefault: Boolean(row.is_default),
       });
     }
@@ -187,7 +188,7 @@ export async function listSimPlatformPlanDailyMatrix(input: {
     platformPlanId: string;
     planName: string;
     supplierCode: string | null;
-    valueRank: number;
+    unitPriceAud: number;
     isDefault: boolean;
   };
   const byKey = new Map<string, Map<string, RankedDayPlan[]>>();
@@ -195,14 +196,14 @@ export async function listSimPlatformPlanDailyMatrix(input: {
   for (const row of detailRows.results ?? []) {
     const dayMap = byKey.get(`${row.tenant_id}:${row.iccid}`);
     if (!dayMap) continue;
-    const rank = rankByTenantPlan.get(`${row.tenant_id}:${row.platform_plan_id}`);
+    const price = priceByTenantPlan.get(`${row.tenant_id}:${row.platform_plan_id}`);
     const list = dayMap.get(row.day) ?? [];
     list.push({
       platformPlanId: row.platform_plan_id,
       planName: row.plan_name,
       supplierCode: row.supplier_code,
-      valueRank: rank?.valueRank ?? 0,
-      isDefault: rank?.isDefault ?? false,
+      unitPriceAud: price?.unitPriceAud ?? 0,
+      isDefault: price?.isDefault ?? false,
     });
     dayMap.set(row.day, list);
   }
@@ -221,12 +222,12 @@ export async function listSimPlatformPlanDailyMatrix(input: {
             platformPlanId: plan.platformPlanId,
             planName: plan.planName,
             supplierCode: plan.supplierCode,
-            valueRank: plan.valueRank,
+            unitPriceAud: plan.unitPriceAud,
             billed: plan.platformPlanId === billedId,
           }))
           .sort((a: SimPlatformPlanDailyPlan, b: SimPlatformPlanDailyPlan) => {
             if (a.billed !== b.billed) return a.billed ? -1 : 1;
-            if (b.valueRank !== a.valueRank) return b.valueRank - a.valueRank;
+            if (b.unitPriceAud !== a.unitPriceAud) return b.unitPriceAud - a.unitPriceAud;
             return a.planName.localeCompare(b.planName, undefined, { sensitivity: "base" });
           });
         return {
@@ -383,32 +384,34 @@ export async function exportSimPlatformPlanDailyCsv(input: {
       organisation: string;
     }>();
 
+  const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
   const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
-  const rankRows = await getDB()
+  const priceExpr = hasUnitPrice
+    ? "IFNULL(unit_price_aud, 0)"
+    : hasValueRank
+      ? "IFNULL(value_rank, 0)"
+      : "0";
+  const priceRows = await getDB()
     .prepare(
-      hasValueRank
-        ? `SELECT tenant_id, platform_plan_id, IFNULL(value_rank, 0) AS value_rank,
-                  IFNULL(is_default, 0) AS is_default
-           FROM tenant_plan_assignments`
-        : `SELECT tenant_id, platform_plan_id, 0 AS value_rank,
-                  IFNULL(is_default, 0) AS is_default
-           FROM tenant_plan_assignments`,
+      `SELECT tenant_id, platform_plan_id, ${priceExpr} AS unit_price_aud,
+              IFNULL(is_default, 0) AS is_default
+       FROM tenant_plan_assignments`,
     )
     .all<{
       tenant_id: string;
       platform_plan_id: string;
-      value_rank: number;
+      unit_price_aud: number;
       is_default: number;
     }>();
-  const rankByTenantPlan = new Map<string, { valueRank: number; isDefault: boolean }>();
-  for (const row of rankRows.results ?? []) {
-    rankByTenantPlan.set(`${row.tenant_id}:${row.platform_plan_id}`, {
-      valueRank: Number(row.value_rank) || 0,
+  const priceByTenantPlan = new Map<string, { unitPriceAud: number; isDefault: boolean }>();
+  for (const row of priceRows.results ?? []) {
+    priceByTenantPlan.set(`${row.tenant_id}:${row.platform_plan_id}`, {
+      unitPriceAud: Number(row.unit_price_aud) || 0,
       isDefault: Boolean(row.is_default),
     });
   }
 
-  // Group same-day plans per ICCID to mark the billed (highest value rank) row.
+  // Group same-day plans per ICCID to mark the billed (highest unit price) row.
   type ExportRow = {
     day: string;
     iccid: string;
@@ -417,17 +420,17 @@ export async function exportSimPlatformPlanDailyCsv(input: {
     plan_name: string;
     supplier_code: string | null;
     organisation: string;
-    valueRank: number;
+    unitPriceAud: number;
     billed: boolean;
   };
   const grouped = new Map<string, ExportRow[]>();
   for (const row of rows.results ?? []) {
-    const rank = rankByTenantPlan.get(`${row.tenant_id}:${row.platform_plan_id}`);
+    const price = priceByTenantPlan.get(`${row.tenant_id}:${row.platform_plan_id}`);
     const key = `${row.tenant_id}:${row.iccid}:${row.day}`;
     const list = grouped.get(key) ?? [];
     list.push({
       ...row,
-      valueRank: rank?.valueRank ?? 0,
+      unitPriceAud: price?.unitPriceAud ?? 0,
       billed: false,
     });
     grouped.set(key, list);
@@ -438,8 +441,8 @@ export async function exportSimPlatformPlanDailyCsv(input: {
       list.map((row) => ({
         platformPlanId: row.platform_plan_id,
         planName: row.plan_name,
-        valueRank: row.valueRank,
-        isDefault: rankByTenantPlan.get(`${row.tenant_id}:${row.platform_plan_id}`)?.isDefault,
+        unitPriceAud: row.unitPriceAud,
+        isDefault: priceByTenantPlan.get(`${row.tenant_id}:${row.platform_plan_id}`)?.isDefault,
       })),
     );
     for (const row of list) {
@@ -460,7 +463,7 @@ export async function exportSimPlatformPlanDailyCsv(input: {
     ...(includeOrg ? ["organisation"] : []),
     "iccid",
     "reseller_plan",
-    "value_rank",
+    "unit_price_aud",
     "billed",
     ...(includeSupplier ? ["supplier_code"] : []),
   ];
@@ -471,7 +474,7 @@ export async function exportSimPlatformPlanDailyCsv(input: {
       ...(includeOrg ? [row.organisation] : []),
       row.iccid,
       row.plan_name,
-      String(row.valueRank),
+      String(row.unitPriceAud),
       row.billed ? "yes" : "no",
       ...(includeSupplier ? [row.supplier_code ?? ""] : []),
     ];

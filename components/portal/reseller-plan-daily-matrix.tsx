@@ -193,7 +193,9 @@ export function ResellerPlanDailyMatrix({
               >
                 <span className="font-medium">{plan.planName}</span>
                 <span className="flex flex-wrap items-center gap-2 text-quiet">
-                  <span className="tabular-nums">rank {plan.valueRank}</span>
+                  <span className="tabular-nums">
+                    ${plan.unitPriceAud.toLocaleString("en-AU", { maximumFractionDigits: 2 })}
+                  </span>
                   {plan.billed ? (
                     <span className="rounded-full border border-ok/40 px-2 py-0.5 text-[11px] text-ok">
                       Billed

@@ -3,7 +3,7 @@ import { BindPlanToResellerForm } from "@/components/portal/bind-plan-to-reselle
 import { ContractCataloguePicker } from "@/components/portal/contract-catalogue-picker";
 import { ContractRules } from "@/components/portal/contract-rules";
 import { SetDefaultPlanButton } from "@/components/portal/set-default-plan-button";
-import { SetValueRankField } from "@/components/portal/set-value-rank-field";
+import { SetUnitPriceField } from "@/components/portal/set-unit-price-field";
 import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
@@ -252,8 +252,9 @@ export function ContractResellerDetail({
         <section className="rounded-card border border-line bg-panel p-5">
           <h2 className="text-sm font-semibold text-ink">Reseller Plans</h2>
           <p className="mt-1 text-xs text-quiet">
-            Contracted Reseller Plans this organisation may sell on. Value rank decides billing when two
-            plans occur on the same Sydney day — higher number is billed.
+            Contracted Reseller Plans this organisation may sell on. Unit Price (AUD) is what ATN
+            charges this organisation per SIM on that plan (invoice). When two plans occur on the same
+            Sydney day, the higher unit price is billed.
           </p>
 
           {entry.plans.length === 0 ? (
@@ -265,10 +266,10 @@ export function ContractResellerDetail({
                   key={plan.platformPlanId}
                   className="flex flex-col gap-2 px-3 py-3 text-sm sm:flex-row sm:items-center sm:gap-3"
                 >
-                  <SetValueRankField
+                  <SetUnitPriceField
                     tenantId={entry.tenantId}
                     platformPlanId={plan.platformPlanId}
-                    valueRank={plan.valueRank}
+                    unitPriceAud={plan.unitPriceAud}
                     disabled={!entry.tenantActive}
                   />
                   <div className="min-w-0 flex-1">

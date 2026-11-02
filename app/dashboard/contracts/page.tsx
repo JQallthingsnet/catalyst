@@ -36,7 +36,7 @@ export default async function ContractsPage() {
             <thead className="border-b border-line text-quiet">
               <tr>
                 <th className="px-4 py-3 font-medium">Reseller Plan</th>
-                <th className="px-4 py-3 font-medium">Value rank</th>
+                <th className="px-4 py-3 font-medium">Unit Price (AUD)</th>
                 <th className="px-4 py-3 font-medium">Default for bulk</th>
                 <th className="px-4 py-3 font-medium">SIMs on line</th>
               </tr>
@@ -52,8 +52,14 @@ export default async function ContractsPage() {
               {lines.map((line) => (
                 <tr key={line.platformPlanId} className="border-t border-line">
                   <td className="px-4 py-3 text-ink">{line.remarks}</td>
-                  <td className="px-4 py-3 tabular-nums" title="Higher rank is billed when two plans share a day">
-                    {line.valueRank}
+                  <td
+                    className="px-4 py-3 tabular-nums"
+                    title="AUD ATN charges your organisation per SIM on this Reseller Plan"
+                  >
+                    {line.unitPriceAud.toLocaleString("en-AU", {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    })}
                   </td>
                   <td className="px-4 py-3">{line.isDefault ? <span className="text-ok">Default</span> : "—"}</td>
                   <td className="px-4 py-3">{line.simCount}</td>

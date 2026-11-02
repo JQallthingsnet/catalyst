@@ -442,30 +442,39 @@ export async function setDefaultContractPlan(
     .run();
 }
 
-/** Higher value_rank is billed when multiple Reseller Plans occur on the same Sydney day. */
-export async function setContractPlanValueRank(
+/** Unit price (AUD) charged to the reseller organisation for this contracted Reseller Plan. */
+export async function setContractPlanUnitPrice(
   actorEmail: string,
   tenantId: string,
   platformPlanId: string,
-  valueRank: number,
+  unitPriceAud: number,
 ): Promise<void> {
   const allowed = await tenantHasPlatformPlan(tenantId, platformPlanId);
   if (!allowed) throw new Error("That plan is not on contract for this reseller.");
-  const rank = Math.floor(Number(valueRank));
-  if (!Number.isFinite(rank) || rank < 0 || rank > 9999) {
-    throw new Error("Value rank must be a whole number from 0 to 9999.");
+  const price = Math.round(Number(unitPriceAud) * 100) / 100;
+  if (!Number.isFinite(price) || price < 0 || price > 999_999.99) {
+    throw new Error("Unit price must be from 0 to 999999.99 AUD.");
   }
-  const hasColumn = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
+  const hasColumn = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
   if (!hasColumn) {
-    throw new Error("Value rank is not available yet — run schema migrate (0042).");
+    throw new Error("Unit price is not available yet — run schema migrate (0044).");
   }
   const db = getDB();
   await db
     .prepare(
-      `UPDATE tenant_plan_assignments SET value_rank = ? WHERE tenant_id = ? AND platform_plan_id = ?`,
+      `UPDATE tenant_plan_assignments SET unit_price_aud = ? WHERE tenant_id = ? AND platform_plan_id = ?`,
     )
-    .bind(rank, tenantId, platformPlanId)
+    .bind(price, tenantId, platformPlanId)
     .run();
+  // Keep value_rank aligned (integer) for same-day billed-plan selection.
+  if (await portalTableHasColumn("tenant_plan_assignments", "value_rank")) {
+    await db
+      .prepare(
+        `UPDATE tenant_plan_assignments SET value_rank = ? WHERE tenant_id = ? AND platform_plan_id = ?`,
+      )
+      .bind(Math.floor(price), tenantId, platformPlanId)
+      .run();
+  }
   const plan = await getPlatformPlan(platformPlanId);
   await db
     .prepare(
@@ -476,7 +485,7 @@ export async function setContractPlanValueRank(
       tenantId,
       actorEmail,
       "plan",
-      `Value rank ${rank}: ${plan?.name ?? platformPlanId}`,
+      `Unit price $${price.toFixed(2)} AUD: ${plan?.name ?? platformPlanId}`,
       new Date().toISOString(),
     )
     .run();
@@ -601,8 +610,8 @@ export type ContractBookEntry = {
     commPlan: string;
     active: boolean;
     isDefault: boolean;
-    /** Higher wins billing when multiple Reseller Plans apply on the same Sydney day. */
-    valueRank: number;
+    /** AUD unit price charged to this reseller for the Reseller Plan (invoice). */
+    unitPriceAud: number;
     simCount: number;
   }[];
   /** Catalogue SKUs this reseller may Order SIMs for. */
@@ -629,32 +638,29 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
     .bind(homeTenantId)
     .all<{ id: string; name: string; active: number }>();
 
+  const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
   const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
+  const priceExpr = hasUnitPrice
+    ? "IFNULL(a.unit_price_aud, 0)"
+    : hasValueRank
+      ? "IFNULL(a.value_rank, 0)"
+      : "0";
   const rows = await db
     .prepare(
-      hasValueRank
-        ? `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-                  IFNULL(a.value_rank, 0) AS value_rank,
-                  p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
-                  p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-                  (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
-           FROM tenant_plan_assignments a
-           JOIN platform_plans p ON p.id = a.platform_plan_id
-           ORDER BY IFNULL(a.value_rank, 0) DESC, p.cc_rate_plan COLLATE NOCASE`
-        : `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-                  0 AS value_rank,
-                  p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
-                  p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-                  (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
-           FROM tenant_plan_assignments a
-           JOIN platform_plans p ON p.id = a.platform_plan_id
-           ORDER BY p.cc_rate_plan COLLATE NOCASE`,
+      `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
+              ${priceExpr} AS unit_price_aud,
+              p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
+              p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
+              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+       FROM tenant_plan_assignments a
+       JOIN platform_plans p ON p.id = a.platform_plan_id
+       ORDER BY ${priceExpr} DESC, p.cc_rate_plan COLLATE NOCASE`,
     )
     .all<{
       tenant_id: string;
       platform_plan_id: string;
       is_default: number;
-      value_rank: number;
+      unit_price_aud: number;
       remarks: string;
       supplier: string;
       cc_rate_plan: string;
@@ -674,7 +680,7 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
       commPlan: row.comm_plan,
       active: Boolean(row.plan_active),
       isDefault: Boolean(row.is_default),
-      valueRank: Number(row.value_rank) || 0,
+      unitPriceAud: Number(row.unit_price_aud) || 0,
       simCount: row.sim_count,
     });
     byTenant.set(row.tenant_id, list);
@@ -727,34 +733,30 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
 export async function listResellerContract(tenantId: string): Promise<ContractBookEntry["plans"]> {
   const db = getDB();
   try {
+    const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
     const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
+    const priceExpr = hasUnitPrice
+      ? "IFNULL(a.unit_price_aud, 0)"
+      : hasValueRank
+        ? "IFNULL(a.value_rank, 0)"
+        : "0";
     const rows = await db
       .prepare(
-        hasValueRank
-          ? `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-                    IFNULL(a.value_rank, 0) AS value_rank,
-                    p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
-                    p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
-             FROM tenant_plan_assignments a
-             JOIN platform_plans p ON p.id = a.platform_plan_id
-             WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
-             ORDER BY IFNULL(a.value_rank, 0) DESC, IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`
-          : `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
-                    0 AS value_rank,
-                    p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
-                    p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-                    (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
-             FROM tenant_plan_assignments a
-             JOIN platform_plans p ON p.id = a.platform_plan_id
-             WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
-             ORDER BY IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
+        `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
+                ${priceExpr} AS unit_price_aud,
+                p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
+                p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
+                (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+         FROM tenant_plan_assignments a
+         JOIN platform_plans p ON p.id = a.platform_plan_id
+         WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
+         ORDER BY ${priceExpr} DESC, IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
       )
       .bind(tenantId)
       .all<{
         platform_plan_id: string;
         is_default: number;
-        value_rank: number;
+        unit_price_aud: number;
         remarks: string;
         supplier: string;
         cc_rate_plan: string;
@@ -770,7 +772,7 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
       commPlan: row.comm_plan,
       active: Boolean(row.plan_active),
       isDefault: Boolean(row.is_default),
-      valueRank: Number(row.value_rank) || 0,
+      unitPriceAud: Number(row.unit_price_aud) || 0,
       simCount: row.sim_count,
     }));
   } catch {
@@ -800,7 +802,7 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
       commPlan: row.comm_plan,
       active: true,
       isDefault: false,
-      valueRank: 0,
+      unitPriceAud: 0,
       simCount: row.sim_count,
     }));
   }
