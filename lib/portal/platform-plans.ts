@@ -654,7 +654,7 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
               (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
        FROM tenant_plan_assignments a
        JOIN platform_plans p ON p.id = a.platform_plan_id
-       ORDER BY ${priceExpr} DESC, p.cc_rate_plan COLLATE NOCASE`,
+       ORDER BY ${priceExpr} ASC, p.cc_rate_plan COLLATE NOCASE`,
     )
     .all<{
       tenant_id: string;
@@ -750,7 +750,7 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
          FROM tenant_plan_assignments a
          JOIN platform_plans p ON p.id = a.platform_plan_id
          WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
-         ORDER BY ${priceExpr} DESC, IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
+         ORDER BY ${priceExpr} ASC, IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
       )
       .bind(tenantId)
       .all<{
