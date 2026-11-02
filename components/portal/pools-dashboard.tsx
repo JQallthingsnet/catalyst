@@ -741,8 +741,8 @@ export function PoolsDashboard({
           </div>
         ) : null}
         {canBuyTopup ? (
-          <Link href="/dashboard/billable" className={btnSecondary}>
-            Billable items
+          <Link href="/dashboard/invoices" className={btnSecondary}>
+            Invoices
           </Link>
         ) : null}
       </div>

@@ -10,7 +10,7 @@ export async function GET(request: Request) {
 
   if (ctx.role === "super_admin") {
     return NextResponse.json(
-      { error: "Billable pool top-ups are shown in reseller admin view." },
+      { error: "Pool top-ups are shown under Invoices in reseller admin view." },
       { status: 403 },
     );
   }

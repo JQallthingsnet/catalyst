@@ -190,7 +190,7 @@ export async function notifySuperAdminsOfPoolTopup(input: {
       <tr><td style="padding:6px 0;color:#6b7280;">Submitted by</td><td style="padding:6px 0;">${escapeHtml(input.createdBy)}</td></tr>
       <tr><td style="padding:6px 0;color:#6b7280;">Top-up id</td><td style="padding:6px 0;font-family:ui-monospace,monospace;font-size:12px;">${escapeHtml(input.topupId)}</td></tr>
     </table>
-    <p style="margin:20px 0 0;color:#6b7280;font-size:13px;">Applied immediately for this month (no SIMs shipped). Open Catalyst → Billable / Pools to review.</p>
+    <p style="margin:20px 0 0;color:#6b7280;font-size:13px;">Applied immediately for this month (no SIMs shipped). Open Catalyst → Invoices / Pools to review.</p>
   </div>`;
 
   let sent = 0;
