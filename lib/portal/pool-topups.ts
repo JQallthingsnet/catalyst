@@ -187,7 +187,9 @@ export async function createPoolModemTopup(input: {
     .bind(tenantId, plan.platform_plan_id)
     .first<{ ok: number }>();
   if (!onContract) {
-    throw new Error(`“${modemId}” is not on this organisation’s contract.`);
+    throw new Error(
+      `“${modemId}” is on SIMs (e.g. carried from Jasper) but not on the contract. Ask ATN to add it under Contract and set a unit price before buying a pool top-up.`,
+    );
   }
 
   const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");

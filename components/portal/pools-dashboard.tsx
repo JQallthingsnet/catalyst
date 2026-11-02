@@ -23,6 +23,7 @@ export type PoolLatestRow = {
   topupSimUnits?: number;
   topupAllowanceMb?: number;
   unitPriceAud?: number | null;
+  onContract?: boolean;
 };
 
 export type PoolSeriesPoint = {
@@ -791,10 +792,12 @@ export function PoolsDashboard({
             {filtered.map((row) => {
               const onChart = plotted.includes(row.name);
               const perSim = row.perSimAllowanceMb;
+              const onContract = row.onContract !== false && row.unitPriceAud != null;
               const canTopupPlan = perSim != null && perSim > 0;
               const unitsDraft = topupDrafts[row.name] ?? "";
               const draftUnits = Math.floor(Number(unitsDraft));
-              const quoteOk = Number.isFinite(draftUnits) && draftUnits >= 1 && canTopupPlan;
+              const quoteOk =
+                Number.isFinite(draftUnits) && draftUnits >= 1 && canTopupPlan && onContract;
               const quoteMb = quoteOk && perSim != null ? perSim * draftUnits : 0;
               const quoteAud =
                 quoteOk && row.unitPriceAud != null ? row.unitPriceAud * draftUnits : null;
@@ -843,7 +846,19 @@ export function PoolsDashboard({
                   <td className="px-4 py-3">{row.simCount}</td>
                   {canBuyTopup ? (
                     <td className="px-4 py-3">
-                      {canTopupPlan ? (
+                      {!onContract ? (
+                        <div className="max-w-64 space-y-1 text-xs">
+                          <p className="text-warn">Not on contract</p>
+                          <p className="text-quiet">
+                            Carried from Jasper onto SIMs. Ask ATN to add{" "}
+                            <span className="font-mono text-ink">{row.name}</span> under{" "}
+                            <Link href="/dashboard/contracts" className="text-accent hover:underline">
+                              Contract
+                            </Link>{" "}
+                            and set a unit price before top-up.
+                          </p>
+                        </div>
+                      ) : canTopupPlan ? (
                         <div className="flex min-w-56 flex-col gap-1.5">
                           <div className="flex items-center gap-2">
                             <input
@@ -871,9 +886,7 @@ export function PoolsDashboard({
                             </button>
                           </div>
                           <p className="text-xs text-quiet">
-                            {row.unitPriceAud != null
-                              ? `$${row.unitPriceAud.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / SIM unit`
-                              : "Unit price not set"}
+                            {`$${(row.unitPriceAud ?? 0).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / SIM unit`}
                             {quoteOk
                               ? ` · +${quoteMb.toLocaleString("en-AU")} MB${
                                   quoteAud != null

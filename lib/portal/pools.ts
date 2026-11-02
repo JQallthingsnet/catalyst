@@ -95,6 +95,8 @@ export type PoolEntityLatest = {
   topupAllowanceMb?: number;
   /** Contract unit price AUD for this Reseller Plan (reseller top-up). */
   unitPriceAud?: number | null;
+  /** False when the plan is on SIMs (e.g. Jasper carry) but not on the org contract. */
+  onContract?: boolean;
 };
 
 /**
@@ -1144,6 +1146,7 @@ export function toPoolEntityFromModem(
     topupSimUnits?: number;
     topupAllowanceMb?: number;
     unitPriceAud?: number | null;
+    onContract?: boolean;
   },
 ): PoolEntityLatest {
   return {
@@ -1161,6 +1164,7 @@ export function toPoolEntityFromModem(
     topupSimUnits: row.topupSimUnits,
     topupAllowanceMb: row.topupAllowanceMb,
     unitPriceAud: row.unitPriceAud,
+    onContract: row.onContract,
   };
 }
 
@@ -1228,6 +1232,7 @@ export async function listPoolModemLatest(input?: {
       topupSimUnits: number;
       topupAllowanceMb: number;
       unitPriceAud: number | null;
+      onContract: boolean;
     }
   >
 > {
@@ -1255,6 +1260,7 @@ export async function listPoolModemLatest(input?: {
     const extraMb = topupMb.get(row.modemId) ?? 0;
     const allowanceMb = baseMb + extraMb;
     const ctdUsageMb = row.ctdUsageMb ?? 0;
+    const onContract = unitPrices.has(row.modemId);
     return {
       modemId: row.modemId,
       customer: row.customer ?? (exact || null),
@@ -1269,7 +1275,8 @@ export async function listPoolModemLatest(input?: {
       perSimAllowanceMb: perSim,
       topupSimUnits: topupUnits.get(row.modemId) ?? 0,
       topupAllowanceMb: extraMb,
-      unitPriceAud: unitPrices.has(row.modemId) ? (unitPrices.get(row.modemId) ?? 0) : null,
+      unitPriceAud: onContract ? (unitPrices.get(row.modemId) ?? 0) : null,
+      onContract,
     };
   });
 }
