@@ -122,6 +122,13 @@ export function sydneyDayStartIso(ymd: string): string | null {
   return sydneyLocalToUtcIso(parsed.year, parsed.month, parsed.day, 0, 0, 0);
 }
 
+/** UTC instant at 00:00 Sydney on the 1st of the month containing `ymd`. */
+export function sydneyMonthStartIsoForDay(ymd: string): string | null {
+  const parsed = parseYmd(ymd);
+  if (!parsed) return null;
+  return sydneyLocalToUtcIso(parsed.year, parsed.month, 1, 0, 0, 0);
+}
+
 /** Exclusive UTC instant after the Sydney calendar day (next day 00:00). */
 export function sydneyDayEndExclusiveIso(ymd: string): string | null {
   const parsed = parseYmd(ymd);

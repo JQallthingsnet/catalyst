@@ -2,7 +2,12 @@ import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { sumPoolTopupMbByModem, sumPoolTopupUnitsByModem } from "@/lib/portal/pool-topups";
 import type { UsageAllowanceBasis } from "@/lib/portal/sim-usage";
-import { sydneyDayKey, sydneyMonthEndDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
+import {
+  sydneyDayKey,
+  sydneyMonthEndDayKey,
+  sydneyMonthStartDayKey,
+  sydneyMonthStartIsoForDay,
+} from "@/lib/portal/time";
 
 /** Default chart window: current Sydney calendar month (1st → month-end). */
 
@@ -489,6 +494,10 @@ export async function snapshotPoolCustomerDaily(
     opts?.customers?.map((c) => c.trim()).filter(Boolean).map((c) => c.toLowerCase()) ?? null;
   if (only && only.length === 0) return 0;
   const writeRatePlans = only == null;
+  // Jasper CTD is cycle-to-date and only refreshes on poll. After a Sydney month
+  // boundary, unrefreshed devices still hold prior-cycle totals — treat those as 0
+  // so day-1 pool snapshots don't freeze last month's usage into the new month.
+  const monthStartIso = sydneyMonthStartIsoForDay(day);
 
   const db = getDB();
   // Catalyst Reseller Plan name: prefer sims.platform_plan_id (SIMs page source of truth),
@@ -500,6 +509,7 @@ export async function snapshotPoolCustomerDaily(
               IFNULL(d.ctd_usage_mb, 0) AS ctd_usage_mb,
               IFNULL(d.ctd_sms, 0) AS ctd_sms,
               IFNULL(d.ctd_voice_min, 0) AS ctd_voice_min,
+              d.polled_at AS polled_at,
               NULLIF(TRIM(COALESCE(spp.name, pp.name)), '') AS plan_name
        FROM cc_devices d
        LEFT JOIN platform_plans pp ON pp.id = d.platform_plan_id
@@ -516,6 +526,7 @@ export async function snapshotPoolCustomerDaily(
       ctd_usage_mb: number;
       ctd_sms: number;
       ctd_voice_min: number;
+      polled_at: string | null;
       plan_name: string | null;
     }>();
 
@@ -559,9 +570,12 @@ export async function snapshotPoolCustomerDaily(
   const byModem = new Map<string, ModemAgg>();
 
   for (const row of deviceRows.results ?? []) {
-    const ctd = row.ctd_usage_mb ?? 0;
-    const sms = row.ctd_sms ?? 0;
-    const voice = row.ctd_voice_min ?? 0;
+    const polledAt = row.polled_at?.trim() ?? "";
+    const priorCycle =
+      Boolean(monthStartIso) && (!polledAt || polledAt < (monthStartIso as string));
+    const ctd = priorCycle ? 0 : (row.ctd_usage_mb ?? 0);
+    const sms = priorCycle ? 0 : (row.ctd_sms ?? 0);
+    const voice = priorCycle ? 0 : (row.ctd_voice_min ?? 0);
     const customer = row.customer?.trim() ?? "";
     const inCustomerScope = !only || (customer !== "" && only.includes(customer.toLowerCase()));
     const planName = row.plan_name?.trim() ?? "";

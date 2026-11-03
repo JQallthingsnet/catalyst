@@ -46,12 +46,9 @@ export default {
 
     // Everything else is CC poll (`*/15 * * * *`, legacy hourly, etc.).
     // Exact-match-only used to no-op when Wrangler triggers lagged the Worker deploy.
+    // Snapshot AFTER poll so day rows prefer freshly refreshed Jasper CTD (avoids
+    // freezing prior-cycle totals into the new Sydney month on the first tick).
     console.log("[cron:cc-poll] start", cron);
-    try {
-      await snapshotPoolCustomerDailyIfNeeded();
-    } catch (err) {
-      console.error("[cron:cc-poll] pool snapshot failed", err);
-    }
     try {
       const result = await runScheduledCcPoll();
       console.log(
@@ -68,6 +65,11 @@ export default {
       );
     } catch (err) {
       console.error("[cron:cc-poll] failed", cron, err);
+    }
+    try {
+      await snapshotPoolCustomerDailyIfNeeded();
+    } catch (err) {
+      console.error("[cron:cc-poll] pool snapshot failed", err);
     }
   },
 };

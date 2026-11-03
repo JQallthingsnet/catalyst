@@ -278,12 +278,13 @@ function MultiEntityChart({
     return false;
   }, [plotted, seriesByName]);
 
-  // Scale to the plotted metric so large allowances don't squash the usage lines.
+  // Include allowance on data charts so the dashed cap stays on-scale early month.
   const maxValue = useMemo(() => {
     let max = 1;
     for (const name of plotted) {
       for (const point of seriesByName.get(name) ?? []) {
         max = Math.max(max, metricValue(point, metric));
+        if (metric === "data") max = Math.max(max, point.allowanceMb ?? 0);
       }
     }
     return max * 1.12;
