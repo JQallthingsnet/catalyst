@@ -2,10 +2,9 @@ import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { sumPoolTopupMbByModem, sumPoolTopupUnitsByModem } from "@/lib/portal/pool-topups";
 import type { UsageAllowanceBasis } from "@/lib/portal/sim-usage";
-import { sydneyDayKey, sydneyDayKeyDaysAgo } from "@/lib/portal/time";
+import { sydneyDayKey, sydneyMonthEndDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
 
-/** Default chart window: daily points accumulate on the date axis. */
-export const POOL_SERIES_DEFAULT_DAYS = 90;
+/** Default chart window: current Sydney calendar month (1st → month-end). */
 
 export type ModemAllowanceRow = {
   modemId: string;
@@ -870,8 +869,8 @@ export async function listPoolCustomerSeries(input: {
         : allowed;
     if (customers.length === 0) return [];
   }
-  const fromDay = input.fromDay?.trim() || sydneyDayKeyDaysAgo(POOL_SERIES_DEFAULT_DAYS - 1);
-  const toDay = input.toDay?.trim() || sydneyDayKey();
+  const fromDay = input.fromDay?.trim() || sydneyMonthStartDayKey();
+  const toDay = input.toDay?.trim() || sydneyMonthEndDayKey();
   const limit = Math.min(Math.max(input.limit ?? 2000, 1), 5000);
   const liveAllowances = await sumLivePoolAllowancesByCustomer(basis);
 
@@ -1036,8 +1035,8 @@ export async function listPoolRatePlanSeries(input: {
   limit?: number;
 }): Promise<PoolRatePlanDay[]> {
   const plans = (input.ratePlans ?? []).map((p) => p.trim()).filter(Boolean);
-  const fromDay = input.fromDay?.trim() || sydneyDayKeyDaysAgo(POOL_SERIES_DEFAULT_DAYS - 1);
-  const toDay = input.toDay?.trim() || sydneyDayKey();
+  const fromDay = input.fromDay?.trim() || sydneyMonthStartDayKey();
+  const toDay = input.toDay?.trim() || sydneyMonthEndDayKey();
   const limit = Math.min(Math.max(input.limit ?? 2000, 1), 5000);
   const liveAllowances = await sumLivePoolAllowancesByRatePlan();
 
@@ -1437,8 +1436,8 @@ export async function listPoolModemSeries(input: {
   if (input.exactCustomer !== undefined && !input.exactCustomer.trim()) return [];
   const exact = input.exactCustomer?.trim() ?? "";
   let ids = (input.modemIds ?? []).map((id) => id.trim()).filter(Boolean);
-  const fromDay = input.fromDay?.trim() || sydneyDayKeyDaysAgo(POOL_SERIES_DEFAULT_DAYS - 1);
-  const toDay = input.toDay?.trim() || sydneyDayKey();
+  const fromDay = input.fromDay?.trim() || sydneyMonthStartDayKey();
+  const toDay = input.toDay?.trim() || sydneyMonthEndDayKey();
   const limit = Math.min(Math.max(input.limit ?? 2000, 1), 5000);
   const liveAllowances = await sumLivePoolAllowancesByModem({
     exactCustomer: input.exactCustomer,

@@ -1,7 +1,12 @@
 import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { loadPlatformPlanRecord } from "@/lib/portal/platform-plans";
-import { sydneyDayKey, sydneyMonthEndDayKey, sydneyMonthStartDayKey } from "@/lib/portal/time";
+import {
+  enumerateSydneyDays,
+  sydneyDayKey,
+  sydneyMonthEndDayKey,
+  sydneyMonthStartDayKey,
+} from "@/lib/portal/time";
 
 export type SimPlatformPlanDailyPlan = {
   platformPlanId: string;
@@ -53,25 +58,6 @@ export type SimPlatformPlanDailyMatrix = {
   /** True when rows may include multiple organisations. */
   includeOrganisation: boolean;
 };
-
-function enumerateSydneyDays(dateFrom: string, dateTo: string): string[] {
-  const from = dateFrom.trim();
-  const to = dateTo.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
-    return [];
-  }
-  const days: string[] = [];
-  // Walk UTC midnight labels — Sydney day keys are YMD strings we already store.
-  let cursor = from;
-  // Cap ~one quarter so a full calendar month (and custom ranges) always materialises.
-  while (cursor <= to && days.length < 100) {
-    days.push(cursor);
-    const [y, m, d] = cursor.split("-").map(Number);
-    const next = new Date(Date.UTC(y, m - 1, d + 1));
-    cursor = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
-  }
-  return days;
-}
 
 /**
  * ICCID × every Sydney calendar day in From/To (inclusive).

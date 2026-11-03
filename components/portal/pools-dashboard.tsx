@@ -5,6 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModemAllowancesDialog } from "@/components/portal/modem-allowances-dialog";
 import { RatePlanAllowancesDialog } from "@/components/portal/rate-plan-allowances-dialog";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
+import {
+  enumerateSydneyDays,
+  sydneyMonthEndDayKey,
+  sydneyMonthStartDayKey,
+} from "@/lib/portal/time";
 
 export type PoolGroupBy = "rate_plan" | "modem" | "customer";
 
@@ -260,12 +265,17 @@ function MultiEntityChart({
     return () => ro.disconnect();
   }, [fillCard]);
 
-  const days = useMemo(() => {
-    const set = new Set<string>();
+  // Full Sydney calendar month on the x-axis (same idea as the plan matrix).
+  const days = useMemo(
+    () => enumerateSydneyDays(sydneyMonthStartDayKey(), sydneyMonthEndDayKey()),
+    [],
+  );
+
+  const hasPoints = useMemo(() => {
     for (const name of plotted) {
-      for (const point of seriesByName.get(name) ?? []) set.add(point.day);
+      if ((seriesByName.get(name) ?? []).length > 0) return true;
     }
-    return [...set].sort();
+    return false;
   }, [plotted, seriesByName]);
 
   // Scale to the plotted metric so large allowances don't squash the usage lines.
@@ -300,12 +310,12 @@ function MultiEntityChart({
 
   const defaultHint =
     metric === "data"
-      ? `Sydney day · solid CTD · dashed allowance (hover a point)${
+      ? `Sydney calendar month · solid CTD · dashed allowance (hover a point)${
           allowPick ? ` · top 10 ${entityLabel.toLowerCase()}s` : ""
-        }${days.length === 1 ? " · lines from day 2" : ""}`
-      : `Sydney day · same grouping as data${
+        }`
+      : `Sydney calendar month · same grouping as data${
           allowPick ? ` · same series as data chart` : ""
-        }${days.length === 1 ? " · lines from day 2" : ""}`;
+        }`;
   const hint = subtitle ?? defaultHint;
 
   return (
@@ -337,7 +347,7 @@ function MultiEntityChart({
           fillCard ? "flex-1" : "h-64 sm:h-72"
         }`}
       >
-        {plotted.length === 0 || days.length === 0 ? (
+        {plotted.length === 0 || !hasPoints ? (
           <p className="flex h-full min-h-48 items-center text-sm text-quiet">
             {allowPick
               ? `No daily points yet — open Pools or wait for the daily snapshot, then add ${entityLabel.toLowerCase()}s.`
@@ -566,8 +576,10 @@ export function PoolsDashboard({
     setSeriesBusy(true);
     setMessage("");
     try {
+      const from = sydneyMonthStartDayKey();
+      const to = sydneyMonthEndDayKey();
       const res = await fetch(
-        `/api/portal/pools?view=series&keys=${encodeURIComponent(names.join(","))}`,
+        `/api/portal/pools?view=series&keys=${encodeURIComponent(names.join(","))}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
       );
       const data = (await res.json()) as { series?: PoolSeriesPoint[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Could not load series.");

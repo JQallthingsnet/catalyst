@@ -56,6 +56,24 @@ export function sydneyMonthEndDayKey(at: Date = new Date()): string {
   return `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, "0")}-${String(last.getUTCDate()).padStart(2, "0")}`;
 }
 
+/** Inclusive YYYY-MM-DD Sydney day keys from `dateFrom` through `dateTo` (cap 100). */
+export function enumerateSydneyDays(dateFrom: string, dateTo: string): string[] {
+  const from = dateFrom.trim();
+  const to = dateTo.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) {
+    return [];
+  }
+  const days: string[] = [];
+  let cursor = from;
+  while (cursor <= to && days.length < 100) {
+    days.push(cursor);
+    const [y, m, d] = cursor.split("-").map(Number);
+    const next = new Date(Date.UTC(y, m - 1, d + 1));
+    cursor = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+  }
+  return days;
+}
+
 /** Sydney calendar day `daysAgo` before `at` (0 = today). */
 export function sydneyDayKeyDaysAgo(daysAgo: number, at: Date = new Date()): string {
   const n = Math.max(0, Math.floor(daysAgo));
