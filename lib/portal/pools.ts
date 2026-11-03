@@ -9,11 +9,11 @@ export const POOL_SERIES_DEFAULT_DAYS = 90;
 
 export type ModemAllowanceRow = {
   modemId: string;
-  /** Data MB. null = unset; 0 = PAYG. */
+  /** Data MB. null/blank or 0 = PAYG. */
   allowanceMb: number | null;
-  /** SMS messages. null = unset; 0 = PAYG. */
+  /** SMS messages. null/blank or 0 = PAYG. */
   allowanceSms: number | null;
-  /** Voice minutes. null = unset; 0 = PAYG. */
+  /** Voice minutes. null/blank or 0 = PAYG. */
   allowanceVoiceMin: number | null;
   customer: string | null;
   simCount: number;
@@ -269,8 +269,8 @@ async function modemAllowanceVoiceExpr(): Promise<string> {
 }
 
 /**
- * Upsert Reseller Plan allowances. null clears that channel; 0 = PAYG.
- * If data, SMS, and voice are all null, the row is removed.
+ * Upsert Reseller Plan allowances. null/blank or 0 = PAYG for that channel.
+ * If data, SMS, and voice are all null, the row is removed (same as PAYG unset).
  */
 export async function setModemAllowance(
   modemId: string,
@@ -338,11 +338,11 @@ export async function clearModemAllowance(modemId: string): Promise<void> {
 
 export type RatePlanAllowanceRow = {
   ratePlan: string;
-  /** Data MB. null = unset; 0 = PAYG. */
+  /** Data MB. null/blank or 0 = PAYG. */
   allowanceMb: number | null;
-  /** SMS messages. null = unset; 0 = PAYG. */
+  /** SMS messages. null/blank or 0 = PAYG. */
   allowanceSms: number | null;
-  /** Voice minutes. null = unset; 0 = PAYG. */
+  /** Voice minutes. null/blank or 0 = PAYG. */
   allowanceVoiceMin: number | null;
   simCount: number;
   ctdUsageMb: number;
@@ -352,7 +352,7 @@ export type RatePlanAllowanceRow = {
 
 function parseNonNegAllowance(value: number, label: string): number {
   if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${label} must be a non-negative number (0 = PAYG).`);
+    throw new Error(`${label} must be a non-negative number (blank or 0 = PAYG).`);
   }
   return value;
 }
@@ -404,7 +404,7 @@ export async function listRatePlanAllowances(): Promise<RatePlanAllowanceRow[]> 
 }
 
 /**
- * Upsert Supplier code allowances. null clears that channel; 0 = PAYG.
+ * Upsert Supplier code allowances. null/blank or 0 = PAYG for that channel.
  * If data, SMS, and voice are all null, the row is removed.
  */
 export async function setRatePlanAllowance(

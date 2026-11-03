@@ -824,7 +824,7 @@ export function PoolsDashboard({
               const onChart = plotted.includes(row.name);
               const perSim = row.perSimAllowanceMb;
               const onContract = row.onContract !== false && row.unitPriceAud != null;
-              const canTopupPlan = perSim != null && perSim > 0;
+              const canTopupPlan = (perSim ?? 0) > 0;
               const unitsDraft = topupDrafts[row.name] ?? "";
               const draftUnits = Math.floor(Number(unitsDraft));
               const quoteOk =
@@ -929,7 +929,7 @@ export function PoolsDashboard({
                         </div>
                       ) : (
                         <span className="text-xs text-quiet">
-                          {perSim === 0 ? "PAYG — no top-up" : "Set allowance first"}
+                          PAYG — no top-up
                         </span>
                       )}
                     </td>

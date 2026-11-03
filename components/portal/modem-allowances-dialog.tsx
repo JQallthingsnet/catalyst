@@ -175,7 +175,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
             <h2 className="text-lg font-semibold">Reseller Plan allowances</h2>
             <p className="mt-1 text-sm text-quiet">
               Inclusive data (MB), SMS (msgs), and voice (min) per Reseller Plan.{" "}
-              <span className="text-ink">0 = PAYG</span>. Leave blank to clear. Set by ATN only.
+              <span className="text-ink">Blank or 0 = PAYG</span>. Set by ATN only.
             </p>
           </div>
           <button
@@ -217,7 +217,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
                         value={draft.mb}
                         onChange={(event) => setField(row.modemId, "mb", event.target.value)}
                         placeholder="—"
-                        title="0 = PAYG"
+                        title="Blank or 0 = PAYG"
                         className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
                       />
                     </td>
@@ -226,7 +226,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
                         value={draft.sms}
                         onChange={(event) => setField(row.modemId, "sms", event.target.value)}
                         placeholder="—"
-                        title="0 = PAYG"
+                        title="Blank or 0 = PAYG"
                         className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
                       />
                     </td>
@@ -235,7 +235,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
                         value={draft.voice}
                         onChange={(event) => setField(row.modemId, "voice", event.target.value)}
                         placeholder="—"
-                        title="0 = PAYG"
+                        title="Blank or 0 = PAYG"
                         className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
                       />
                     </td>

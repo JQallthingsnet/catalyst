@@ -209,12 +209,11 @@ export async function createPoolModemTopup(input: {
     .prepare(`SELECT allowance_mb FROM modem_allowances WHERE modem_id = ?`)
     .bind(modemId)
     .first<{ allowance_mb: number | null }>();
-  const perSim = allowanceRow?.allowance_mb;
-  if (perSim == null) {
-    throw new Error(`Set a data allowance for “${modemId}” before buying a pool top-up.`);
-  }
+  const perSim = Number(allowanceRow?.allowance_mb ?? 0);
   if (!(perSim > 0)) {
-    throw new Error(`“${modemId}” is PAYG (0 MB) — pool top-up does not apply.`);
+    throw new Error(
+      `“${modemId}” is PAYG (blank or 0 MB allowance) — pool top-up does not apply.`,
+    );
   }
 
   const unitPriceAud = Math.round((Number(priceRow?.unit_price_aud) || 0) * 100) / 100;
