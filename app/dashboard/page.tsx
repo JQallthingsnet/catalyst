@@ -144,7 +144,11 @@ export default async function DashboardPage() {
       {showPools || showActivity ? (
         <div className="mt-8 grid gap-4 lg:grid-cols-5 lg:items-stretch">
           {showPools ? (
-            <section className={`min-h-0 ${showActivity ? "lg:col-span-3" : "lg:col-span-5"}`}>
+            <section
+              className={`flex h-full min-h-88 flex-col ${
+                showActivity ? "lg:col-span-3" : "lg:col-span-5"
+              }`}
+            >
               <PoolsDashboard
                 initialRows={poolRows}
                 canEdit={false}

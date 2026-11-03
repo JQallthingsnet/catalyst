@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModemAllowancesDialog } from "@/components/portal/modem-allowances-dialog";
 import { RatePlanAllowancesDialog } from "@/components/portal/rate-plan-allowances-dialog";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
@@ -212,6 +212,7 @@ function MultiEntityChart({
   metric = "data",
   title = "CTD usage over time",
   subtitle,
+  fillCard = false,
   onOpenPicker,
 }: {
   plotted: string[];
@@ -223,10 +224,14 @@ function MultiEntityChart({
   metric?: PoolChartMetric;
   title?: string;
   subtitle?: string;
+  /** Stretch plot to the card (dashboard embed). */
+  fillCard?: boolean;
   onOpenPicker: () => void;
 }) {
   const showAllowance = metric === "data";
   const unitLabel = metric === "sms" ? "msgs" : metric === "voice" ? "min" : "MB";
+  const plotRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 720, height: fillCard ? 320 : 280 });
   const [hover, setHover] = useState<{
     name: string;
     day: string;
@@ -237,6 +242,23 @@ function MultiEntityChart({
     clientX: number;
     clientY: number;
   } | null>(null);
+
+  useEffect(() => {
+    const el = plotRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      const nextW = Math.max(280, Math.floor(rect.width));
+      const nextH = Math.max(fillCard ? 220 : 200, Math.floor(rect.height));
+      setSize((prev) =>
+        prev.width === nextW && prev.height === nextH ? prev : { width: nextW, height: nextH },
+      );
+    };
+    update();
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fillCard]);
 
   const days = useMemo(() => {
     const set = new Set<string>();
@@ -257,14 +279,14 @@ function MultiEntityChart({
     return max * 1.12;
   }, [plotted, seriesByName, metric]);
 
-  const width = 720;
-  const height = 280;
-  const padL = 48;
-  const padR = 16;
-  const padT = 16;
-  const padB = 32;
-  const innerW = width - padL - padR;
-  const innerH = height - padT - padB;
+  const width = size.width;
+  const height = size.height;
+  const padL = 52;
+  const padR = 20;
+  const padT = 20;
+  const padB = 36;
+  const innerW = Math.max(1, width - padL - padR);
+  const innerH = Math.max(1, height - padT - padB);
 
   function xAt(i: number) {
     if (days.length <= 1) return padL + innerW / 2;
@@ -287,7 +309,7 @@ function MultiEntityChart({
   const hint = subtitle ?? defaultHint;
 
   return (
-    <article className="flex h-full flex-col rounded-card border border-line bg-panel p-4 sm:p-5">
+    <article className="flex h-full min-h-0 flex-col rounded-card border border-line bg-panel p-4 sm:p-5">
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-xl">
           <h2 className="text-base font-semibold text-ink sm:text-lg">{title}</h2>
@@ -309,9 +331,14 @@ function MultiEntityChart({
         </div>
       </div>
 
-      <div className="relative mt-3 min-h-0 flex-1">
+      <div
+        ref={plotRef}
+        className={`relative mt-4 min-h-0 ${
+          fillCard ? "flex-1" : "h-64 sm:h-72"
+        }`}
+      >
         {plotted.length === 0 || days.length === 0 ? (
-          <p className="flex h-64 items-center text-sm text-quiet">
+          <p className="flex h-full min-h-48 items-center text-sm text-quiet">
             {allowPick
               ? `No daily points yet — open Pools or wait for the daily snapshot, then add ${entityLabel.toLowerCase()}s.`
               : "No daily points yet — saved after Sydney midnight / first open."}
@@ -319,7 +346,10 @@ function MultiEntityChart({
         ) : (
           <svg
             viewBox={`0 0 ${width} ${height}`}
-            className="h-64 w-full sm:h-72"
+            width={width}
+            height={height}
+            preserveAspectRatio="none"
+            className="absolute inset-0 h-full w-full"
             role="img"
             onMouseLeave={() => setHover(null)}
           >
@@ -632,6 +662,7 @@ export function PoolsDashboard({
       allowPick={platformView}
       entityLabel={entityLabel}
       metric="data"
+      fillCard={mode === "chart"}
       title={
         mode === "chart"
           ? `Data usage by ${groupTitle}`
@@ -697,7 +728,7 @@ export function PoolsDashboard({
 
   if (mode === "chart") {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-1 flex-col">
         {message ? <p className="mb-3 shrink-0 text-sm text-quiet">{message}</p> : null}
         <div className="min-h-0 flex-1">{dataChart}</div>
         {picker}
