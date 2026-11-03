@@ -67,7 +67,7 @@ export function PortalNav({ role }: { role: PortalRole }) {
               type="button"
               onClick={() => toggleGroup(group.id)}
               aria-expanded={open}
-              className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] ${
+              className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left text-xs font-semibold ${
                 groupActive ? "text-accent" : "text-quiet hover:text-ink"
               }`}
             >
