@@ -69,44 +69,101 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
   reseller_operator: ["assign", "lifecycle"],
 };
 
-const ROLE_NAV: Record<PortalRole, { href: string; label: string }[]> = {
-  // Day-to-day oversight → commercial setup → org management.
+export type PortalNavItem = { href: string; label: string };
+export type PortalNavGroup = { id: string; label: string; items: PortalNavItem[] };
+
+const ROLE_NAV: Record<PortalRole, PortalNavGroup[]> = {
+  // Day-to-day → estate → commercial → ops.
   super_admin: [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/dashboard/estate", label: "Estate" },
-    { href: "/dashboard/estate/cc", label: "CC snapshot" },
-    { href: "/dashboard/pools", label: "Pools" },
-    { href: "/dashboard/usage", label: "Usage" },
-    { href: "/dashboard/alerts", label: "Alerts" },
-    { href: "/dashboard/contracts", label: "Contract" },
-    { href: "/dashboard/catalogue", label: "Catalogue" },
-    { href: "/dashboard/plans", label: "Plans" },
-    { href: "/dashboard/orders", label: "Orders" },
-    { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
-    { href: "/dashboard/logs", label: "Logs" },
-    { href: "/dashboard/invoices", label: "Invoices" },
-    { href: "/dashboard/admin", label: "Admin" },
+    {
+      id: "overview",
+      label: "Overview",
+      items: [
+        { href: "/dashboard", label: "Dashboard" },
+        { href: "/dashboard/pools", label: "Pools" },
+        { href: "/dashboard/usage", label: "Usage" },
+        { href: "/dashboard/alerts", label: "Alerts" },
+      ],
+    },
+    {
+      id: "estate",
+      label: "Estate",
+      items: [
+        { href: "/dashboard/estate", label: "Estate" },
+        { href: "/dashboard/estate/cc", label: "CC snapshot" },
+        { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
+      ],
+    },
+    {
+      id: "commerce",
+      label: "Commercial",
+      items: [
+        { href: "/dashboard/contracts", label: "Contract" },
+        { href: "/dashboard/catalogue", label: "Catalogue" },
+        { href: "/dashboard/plans", label: "Plans" },
+        { href: "/dashboard/orders", label: "Orders" },
+        { href: "/dashboard/invoices", label: "Invoices" },
+      ],
+    },
+    {
+      id: "ops",
+      label: "Operations",
+      items: [
+        { href: "/dashboard/logs", label: "Logs" },
+        { href: "/dashboard/admin", label: "Admin" },
+      ],
+    },
   ],
-  // Same shape as super admin: day-to-day → commercial → Settings last.
+  // Same shape as super admin: day-to-day → SIMs → commercial → ops.
   reseller_admin: [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/dashboard/sims", label: "SIMs" },
-    { href: "/dashboard/customers", label: "Customers" },
-    { href: "/dashboard/pools", label: "Pools" },
-    { href: "/dashboard/usage", label: "Usage" },
-    { href: "/dashboard/alerts", label: "Alerts" },
-    { href: "/dashboard/contracts", label: "Contract" },
-    { href: "/dashboard/plans", label: "Retail plans" },
-    { href: "/dashboard/orders", label: "Orders" },
-    { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
-    { href: "/dashboard/logs", label: "Logs" },
-    { href: "/dashboard/invoices", label: "Invoices" },
-    { href: "/dashboard/settings", label: "Settings" },
+    {
+      id: "overview",
+      label: "Overview",
+      items: [
+        { href: "/dashboard", label: "Dashboard" },
+        { href: "/dashboard/pools", label: "Pools" },
+        { href: "/dashboard/usage", label: "Usage" },
+        { href: "/dashboard/alerts", label: "Alerts" },
+      ],
+    },
+    {
+      id: "sims",
+      label: "SIMs",
+      items: [
+        { href: "/dashboard/sims", label: "SIMs" },
+        { href: "/dashboard/customers", label: "Customers" },
+        { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
+      ],
+    },
+    {
+      id: "commerce",
+      label: "Commercial",
+      items: [
+        { href: "/dashboard/contracts", label: "Contract" },
+        { href: "/dashboard/plans", label: "Retail plans" },
+        { href: "/dashboard/orders", label: "Orders" },
+        { href: "/dashboard/invoices", label: "Invoices" },
+      ],
+    },
+    {
+      id: "ops",
+      label: "Operations",
+      items: [
+        { href: "/dashboard/logs", label: "Logs" },
+        { href: "/dashboard/settings", label: "Settings" },
+      ],
+    },
   ],
   reseller_operator: [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/dashboard/sims", label: "SIMs" },
-    { href: "/dashboard/customers", label: "Customers" },
+    {
+      id: "overview",
+      label: "Overview",
+      items: [
+        { href: "/dashboard", label: "Dashboard" },
+        { href: "/dashboard/sims", label: "SIMs" },
+        { href: "/dashboard/customers", label: "Customers" },
+      ],
+    },
   ],
 };
 
@@ -130,8 +187,13 @@ export function simFieldsForRole(role: PortalRole) {
   };
 }
 
-export function navForRole(role: PortalRole) {
+export function navForRole(role: PortalRole): PortalNavGroup[] {
   return ROLE_NAV[role];
+}
+
+/** Flat href list for a role (tests / redirects). */
+export function navItemsForRole(role: PortalRole): PortalNavItem[] {
+  return ROLE_NAV[role].flatMap((group) => group.items);
 }
 
 export function parseViewRole(raw: string | undefined | null): PortalRole | null {
