@@ -6,7 +6,12 @@ AUTH_SECRET=replace-with-a-long-random-string
 # Show the 8-digit code on the login page when SMTP is not set.
 AUTH_DEV_RETURN_CODE=true
 
-# Optional JSON secret (same name as the Worker setting). When set, codes are emailed.
+# Preferred: Resend (same secret name as production). When set, codes and portal mail go via Resend.
+# resend_api_key=re_xxxxxxxx
+# Optional From override (default is ATN Catalyst <notifications@notify.allthingsnet.io>):
+# RESEND_FROM=ATN Catalyst <notifications@notify.allthingsnet.io>
+
+# Legacy fallback JSON secret (same name as the Worker setting).
 # gmail-smtp-keys={"gmail-smtp-email":"you@gmail.com","gmail-smtp-password":"app-password","gmail-smtp-host":"smtp.gmail.com","gmail-smtp-port":"465"}
 
 # Your email becomes a super admin on first portal load. Comma-separated for more than one.

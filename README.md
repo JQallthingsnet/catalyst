@@ -58,11 +58,13 @@ One HTTP call at a time, at most 5/s. **Sync now** catch-up pages Search (`pageN
 
 Passwordless login: enter an **invited** email, receive an 8-digit passcode, then open the dashboard. Sign-in is invite-only — unknown emails cannot register themselves. Listed **super admins** (`SUPER_ADMIN_EMAIL`) may always sign in.
 
-Set `SUPER_ADMIN_EMAIL` (your login email, comma-separated for more than one) in `.dev.vars` locally and as a Worker variable in production. That email is a super admin on every request (synced into `super_admins` with `added by env`). Their home tenant is **ATN Platform**, not a reseller — if an earlier sign-in created “My organisation”, it is renamed on the next load. After sign-in, **Admin** can invite super admins, reseller admins, and operators by email (same Gmail SMTP as login codes). Reseller admins invite operators from **Settings**. Super admins use **Estate** as the ACMA view across organisations. **Admin** renames, **deactivates**, or **deletes** resellers: deactivate blocks member sign-in and keeps data; delete (only after deactivate, confirm by typing the org name) permanently removes the org, members, SIMs, customers, plans, orders, and invites. Control Center `cc_devices` is not deleted. Creates reseller orgs and invites operators bound to a reseller. **View as** Reseller admin opens that reseller’s **Settings** (org name + invite operators into that org only). View as Super admin has no Settings — use Admin. Invite a reseller admin with a new organisation name to create a separate reseller. Plan create / contract / sell stock / retail copy / assign is described under **Plans (three layers)**.
+Set `SUPER_ADMIN_EMAIL` (your login email, comma-separated for more than one) in `.dev.vars` locally and as a Worker variable in production. That email is a super admin on every request (synced into `super_admins` with `added by env`). Their home tenant is **ATN Platform**, not a reseller — if an earlier sign-in created “My organisation”, it is renamed on the next load. After sign-in, **Admin** can invite super admins, reseller admins, and operators by email (same Resend / mail path as login codes). Reseller admins invite operators from **Settings**. Super admins use **Estate** as the ACMA view across organisations. **Admin** renames, **deactivates**, or **deletes** resellers: deactivate blocks member sign-in and keeps data; delete (only after deactivate, confirm by typing the org name) permanently removes the org, members, SIMs, customers, plans, orders, and invites. Control Center `cc_devices` is not deleted. Creates reseller orgs and invites operators bound to a reseller. **View as** Reseller admin opens that reseller’s **Settings** (org name + invite operators into that org only). View as Super admin has no Settings — use Admin. Invite a reseller admin with a new organisation name to create a separate reseller. Plan create / contract / sell stock / retail copy / assign is described under **Plans (three layers)**.
 
-Local testing can show the code on the page (`AUTH_DEV_RETURN_CODE=true` in `.dev.vars`). Production should send the code by email (`gmail-smtp-keys` Worker secret) and set `AUTH_SECRET`.
+Local testing can show the code on the page (`AUTH_DEV_RETURN_CODE=true` in `.dev.vars`). Production should send the code by email and set `AUTH_SECRET`.
 
-Gmail SMTP uses the same Worker JSON secret as Auking (`gmail-smtp-keys`):
+**Preferred:** Resend. Put the API key in Worker secret `resend_api_key`. Mail sends as `ATN Catalyst <notifications@notify.allthingsnet.io>` (domain `notify.allthingsnet.io`). Override with Worker variable `RESEND_FROM` if needed.
+
+**Fallback:** Gmail SMTP via Worker JSON secret `gmail-smtp-keys` (same shape as Auking):
 
 ```json
 {
@@ -91,7 +93,8 @@ npm run db:create
 # Put the printed database_id into wrangler.jsonc
 npm run db:migrate:remote
 npx wrangler secret put AUTH_SECRET
-npx wrangler secret put gmail-smtp-keys
+npx wrangler secret put resend_api_key
+# Legacy: npx wrangler secret put gmail-smtp-keys
 npx wrangler secret put JASPER_ACCOUNT_NAME
 npx wrangler secret put JASPER_API_KEY
 npx wrangler secret put JASPER_ACCOUNT_ID

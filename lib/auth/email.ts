@@ -3,9 +3,12 @@ import { getEnv } from "@/lib/env";
 import type { PortalRole } from "@/lib/portal/role-model";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
 
-const SECRET_NAME = "gmail-smtp-keys";
-const DEFAULT_HOST = "smtp.gmail.com";
-const DEFAULT_PORT = "465";
+const GMAIL_SECRET_NAME = "gmail-smtp-keys";
+const RESEND_SECRET_NAME = "resend_api_key";
+const DEFAULT_SMTP_HOST = "smtp.gmail.com";
+const DEFAULT_SMTP_PORT = "465";
+/** Verified Resend domain; override with Worker var RESEND_FROM if needed. */
+const DEFAULT_RESEND_FROM = "ATN Catalyst <notifications@notify.allthingsnet.io>";
 
 type SmtpConfig = {
   host: string;
@@ -39,47 +42,102 @@ function parseSmtpSecret(raw: unknown): SmtpConfig | null {
   if (!user || !pass) return null;
 
   return {
-    host: readString(json, "gmail-smtp-host") ?? DEFAULT_HOST,
-    port: Number(readString(json, "gmail-smtp-port") ?? DEFAULT_PORT),
+    host: readString(json, "gmail-smtp-host") ?? DEFAULT_SMTP_HOST,
+    port: Number(readString(json, "gmail-smtp-port") ?? DEFAULT_SMTP_PORT),
     user,
     pass,
     from: user,
   };
 }
 
+function getResendApiKey(): string | null {
+  const raw = getEnv()[RESEND_SECRET_NAME];
+  if (typeof raw !== "string") return null;
+  const key = raw.trim();
+  return key.length > 0 ? key : null;
+}
+
+function getResendFrom(): string {
+  const from = getEnv().RESEND_FROM?.trim();
+  return from && from.length > 0 ? from : DEFAULT_RESEND_FROM;
+}
+
 export function getEmailConfig(): SmtpConfig | null {
-  return parseSmtpSecret(getEnv()[SECRET_NAME]);
+  return parseSmtpSecret(getEnv()[GMAIL_SECRET_NAME]);
+}
+
+async function sendViaResend(to: string, subject: string, html: string, apiKey: string): Promise<void> {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: getResendFrom(),
+      to: [to],
+      subject,
+      html,
+    }),
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const body = (await res.json()) as { message?: string; name?: string };
+      if (body.message) detail = body.message;
+      else if (body.name) detail = `${body.name}: ${detail}`;
+    } catch {
+      // keep status text
+    }
+    throw new Error(detail);
+  }
+}
+
+async function sendViaSmtp(to: string, subject: string, html: string, smtp: SmtpConfig): Promise<void> {
+  const implicitTls = smtp.port === 465;
+  await WorkerMailer.send(
+    {
+      host: smtp.host,
+      port: smtp.port,
+      secure: implicitTls,
+      startTls: !implicitTls,
+      authType: "plain",
+      credentials: {
+        username: smtp.user,
+        password: smtp.pass,
+      },
+    },
+    {
+      from: { name: "ATN Catalyst", email: smtp.from },
+      to,
+      subject,
+      html,
+    },
+  );
 }
 
 export async function sendSystemEmail(to: string, subject: string, html: string): Promise<void> {
+  const resendKey = getResendApiKey();
+  if (resendKey) {
+    try {
+      await sendViaResend(to, subject, html, resendKey);
+      return;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Unknown Resend error";
+      console.error("[email] Resend send failed", detail);
+      throw new Error(`Email send failed: ${detail}`);
+    }
+  }
+
   const smtp = getEmailConfig();
   if (!smtp) {
     throw new Error(
-      "gmail-smtp-keys is missing or does not contain gmail-smtp-email and gmail-smtp-password.",
+      "Email is not configured. Set Worker secret resend_api_key (preferred) or gmail-smtp-keys.",
     );
   }
 
-  const implicitTls = smtp.port === 465;
   try {
-    await WorkerMailer.send(
-      {
-        host: smtp.host,
-        port: smtp.port,
-        secure: implicitTls,
-        startTls: !implicitTls,
-        authType: "plain",
-        credentials: {
-          username: smtp.user,
-          password: smtp.pass,
-        },
-      },
-      {
-        from: { name: "ATN Catalyst", email: smtp.from },
-        to,
-        subject,
-        html,
-      },
-    );
+    await sendViaSmtp(to, subject, html, smtp);
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unknown SMTP error";
     console.error("[email] SMTP send failed", detail);

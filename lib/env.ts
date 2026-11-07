@@ -10,6 +10,10 @@ export type AppEnv = {
   JASPER_ACCOUNT_ID?: string;
   JASPER_API_BASE?: string;
   CC_AUTO_POLL?: string;
+  /** Preferred outbound mail. Worker secret: `npx wrangler secret put resend_api_key`. */
+  resend_api_key?: string;
+  /** Optional override. Default: `ATN Catalyst <notifications@notify.allthingsnet.io>`. */
+  RESEND_FROM?: string;
   "gmail-smtp-keys"?: string | Record<string, unknown>;
 };
 
