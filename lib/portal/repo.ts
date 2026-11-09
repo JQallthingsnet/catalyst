@@ -222,10 +222,6 @@ export async function dashboardSummary(tenantId: string) {
     .prepare("SELECT day, mb FROM usage_daily WHERE tenant_id = ? ORDER BY day ASC")
     .bind(tenantId)
     .all<UsagePoint>();
-  const activity = await db
-    .prepare("SELECT id, action, detail, created_at FROM audit_events WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 8")
-    .bind(tenantId)
-    .all<{ id: string; action: string; detail: string; created_at: string }>();
 
   const cap = pool?.cap_mb ?? 0;
   const used = pool?.used_mb ?? 0;
@@ -236,12 +232,6 @@ export async function dashboardSummary(tenantId: string) {
     openOrders: openOrders?.c ?? 0,
     activations24h: activations?.c ?? 0,
     usage: (usage.results ?? []).map((row) => ({ day: row.day, mb: row.mb })),
-    activity: (activity.results ?? []).map((row) => ({
-      id: row.id,
-      action: row.action,
-      detail: row.detail,
-      createdAt: row.created_at,
-    })),
   };
 }
 

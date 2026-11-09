@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PoolsDashboard } from "@/components/portal/pools-dashboard";
 import { TenantDirectory } from "@/components/portal/tenant-directory";
 import { ccInventorySummary } from "@/lib/cc/devices";
+import { auditActionLabel, listAuditLogs } from "@/lib/portal/audit";
 import { requirePortal } from "@/lib/portal/guard";
 import { resolvePoolCustomerScope } from "@/lib/portal/pool-scope";
 import {
@@ -15,6 +16,7 @@ import {
 import { dashboardSummary } from "@/lib/portal/repo";
 import { can } from "@/lib/portal/role-model";
 import { excludeHomeTenant, listPlatformTenants } from "@/lib/portal/tenant";
+import { formatAuDateTime } from "@/lib/portal/time";
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -31,9 +33,11 @@ export default async function DashboardPage() {
   const showPools = can(ctx.role, "pool.view");
   const showActivity = can(ctx.role, "audit.view");
   const onPlatform = ctx.role === "super_admin" && ctx.tenantId === ctx.homeTenantId;
+  // Same scope as Logs: platform = all orgs; reseller = this tenant only.
+  const logsOnPlatform = ctx.role === "super_admin";
   // KPI uses live CTD even when role cannot open Pools (e.g. reseller operator).
   const needPoolKpi = !onPlatform;
-  const [data, tenants, ccSummary, poolScope] = await Promise.all([
+  const [data, tenants, ccSummary, poolScope, activity] = await Promise.all([
     dashboardSummary(ctx.tenantId),
     ctx.isSuperAdmin && ctx.role === "super_admin" ? listPlatformTenants(true) : Promise.resolve([]),
     ctx.isSuperAdmin && ctx.role === "super_admin"
@@ -55,6 +59,16 @@ export default async function DashboardPage() {
           usageMb: 0,
         }),
     showPools || needPoolKpi ? resolvePoolCustomerScope(ctx) : Promise.resolve(null),
+    showActivity
+      ? listAuditLogs(
+          {
+            scopeTenantId: logsOnPlatform ? undefined : ctx.tenantId,
+            hideUnitPrice: !logsOnPlatform,
+          },
+          8,
+          0,
+        )
+      : Promise.resolve([]),
   ]);
 
   let poolRows: PoolEntityLatest[] = [];
@@ -169,16 +183,22 @@ export default async function DashboardPage() {
                 </Link>
               </div>
               <p className="mt-1 shrink-0 text-xs text-quiet">
-                Audit log for this organisation (creates, deletes, assigns).
+                {logsOnPlatform
+                  ? "Latest 8 from Logs (all organisations)."
+                  : "Latest 8 from Logs for this organisation."}
               </p>
               <ul className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
-                {data.activity.length === 0 ? (
+                {activity.length === 0 ? (
                   <li className="text-sm text-quiet">No activity yet.</li>
                 ) : (
-                  data.activity.map((item) => (
+                  activity.map((item) => (
                     <li key={item.id} className="border-b border-line pb-3 text-sm last:border-0">
                       <p className="text-ink">{item.detail}</p>
-                      <p className="mt-1 text-xs text-quiet">{new Date(item.createdAt).toLocaleString("en-AU")}</p>
+                      <p className="mt-1 text-xs text-quiet">
+                        {formatAuDateTime(item.createdAt)}
+                        {logsOnPlatform ? ` · ${item.tenantName}` : ""}
+                        {` · ${auditActionLabel(item.action)}`}
+                      </p>
                     </li>
                   ))
                 )}
