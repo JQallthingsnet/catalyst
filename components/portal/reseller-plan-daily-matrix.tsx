@@ -15,6 +15,9 @@ function formatDayHeader(day: string): string {
 const ORG_STICKY = "left-0 w-36 min-w-36 max-w-36";
 const ICCID_STICKY_WITH_ORG = "left-36 w-48 min-w-48 max-w-48";
 const ICCID_STICKY_ONLY = "left-0 w-48 min-w-48 max-w-48";
+/** Day columns: at least w-10 for the count; grow equally when the table is wider. */
+const DAY_COL = "min-w-10";
+const DAY_MIN_REM = 2.5;
 
 export function ResellerPlanDailyMatrix({
   matrix,
@@ -58,6 +61,9 @@ export function ResellerPlanDailyMatrix({
           .find((row) => row.iccid === selected.iccid)
           ?.cells.find((cell) => cell.day === selected.day) ?? null;
 
+  const stickyRem = showOrg ? 9 + 12 : 12;
+  const tableMinWidth = `max(100%, calc(${stickyRem}rem + ${matrix.days.length} * ${DAY_MIN_REM}rem))`;
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-quiet">
@@ -68,7 +74,17 @@ export function ResellerPlanDailyMatrix({
         {showOrg ? " · all organisations" : ""}
       </p>
       <div className="overflow-x-auto rounded-card border border-line bg-panel">
-        <table className="border-separate border-spacing-0 text-left text-sm">
+        <table
+          className="w-full table-fixed border-separate border-spacing-0 text-left text-sm"
+          style={{ minWidth: tableMinWidth }}
+        >
+          <colgroup>
+            {showOrg ? <col className="w-36" /> : null}
+            <col className="w-48" />
+            {matrix.days.map((day) => (
+              <col key={day} />
+            ))}
+          </colgroup>
           <thead className="text-quiet">
             <tr>
               {showOrg ? (
@@ -88,7 +104,7 @@ export function ResellerPlanDailyMatrix({
               {matrix.days.map((day) => (
                 <th
                   key={day}
-                  className="relative z-0 h-28 w-10 min-w-10 max-w-10 border-b border-line px-0 align-bottom font-medium"
+                  className={`relative z-0 h-28 ${DAY_COL} border-b border-line px-0 align-bottom font-medium`}
                   title={day}
                 >
                   <div className="flex h-full w-full items-end justify-center pb-1">
@@ -129,7 +145,7 @@ export function ResellerPlanDailyMatrix({
                   return (
                     <td
                       key={cell.day}
-                      className="relative z-0 w-10 min-w-10 max-w-10 border-b border-line px-0 py-1 text-center"
+                      className={`relative z-0 ${DAY_COL} border-b border-line px-0 py-1 text-center`}
                     >
                       {hasData ? (
                         <button
