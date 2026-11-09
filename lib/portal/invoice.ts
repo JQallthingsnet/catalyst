@@ -8,6 +8,7 @@ import {
   sydneyMonthKey,
 } from "@/lib/portal/pool-topups";
 import { sydneyDayKey, sydneyYmd } from "@/lib/portal/time";
+import { buildXlsx } from "@/lib/portal/xlsx-minimal";
 
 export type InvoiceIccidRow = {
   organisationName: string;
@@ -447,34 +448,8 @@ export async function buildMonthlyInvoice(input: {
   };
 }
 
-function xmlEscape(value: string | number): string {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function sheetXml(name: string, rows: Array<Array<string | number>>): string {
-  const safeName = name.replace(/[\\/*?:\[\]]/g, " ").slice(0, 31) || "Sheet";
-  const body = rows
-    .map((row) => {
-      const cells = row
-        .map((cell) => {
-          if (typeof cell === "number" && Number.isFinite(cell)) {
-            return `<Cell><Data ss:Type="Number">${cell}</Data></Cell>`;
-          }
-          return `<Cell><Data ss:Type="String">${xmlEscape(cell)}</Data></Cell>`;
-        })
-        .join("");
-      return `<Row>${cells}</Row>`;
-    })
-    .join("");
-  return `<Worksheet ss:Name="${xmlEscape(safeName)}"><Table>${body}</Table></Worksheet>`;
-}
-
-/** Excel-compatible SpreadsheetML (.xls) for one or more org invoices. */
-export function exportInvoicesSpreadsheetXml(invoices: MonthlyInvoice[]): string {
+/** Real Office Open XML workbook (.xlsx) — avoids Excel “extension doesn’t match” warning. */
+export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
   const iccidHeader = [
     "organisation",
     "month",
@@ -669,22 +644,12 @@ export function exportInvoicesSpreadsheetXml(invoices: MonthlyInvoice[]): string
     ["Top-ups", "by", "Email of the user who bought the top-up."],
   ];
 
-  const sheets = [
-    sheetXml("Column guide", legendRows),
-    sheetXml("ICCID charges", iccidRows),
-    sheetXml("Plan pools", planRows),
-    sheetXml("Top-ups", topupRows),
-  ].join("");
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
-${sheets}
-</Workbook>`;
+  return buildXlsx([
+    { name: "Column guide", rows: legendRows },
+    { name: "ICCID charges", rows: iccidRows },
+    { name: "Plan pools", rows: planRows },
+    { name: "Top-ups", rows: topupRows },
+  ]);
 }
 
 /** Month keys for UI picker (current + previous 11). */

@@ -43,6 +43,7 @@ export default async function InvoicesPage({
 
   const primary = invoices.length === 1 ? invoices[0] : null;
   const topups = invoices.flatMap((inv) => inv.topups);
+  const planSummaries = invoices.flatMap((inv) => inv.planSummaries);
   const totalTopupCharge = topups.reduce((sum, row) => sum + row.chargeAud, 0);
   const totalIccidCharge = invoices.reduce(
     (sum, inv) => sum + inv.iccidRows.reduce((s, row) => s + row.chargeAud, 0),
@@ -145,12 +146,41 @@ export default async function InvoicesPage({
         </article>
       </div>
 
+      <details className="mt-6 rounded-card border border-line bg-panel px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium text-ink">
+          What these tables measure
+        </summary>
+        <div className="mt-3 space-y-2 text-sm text-quiet">
+          <p>
+            Same structure as the Excel export (Column guide · ICCID charges · Plan pools ·
+            Top-ups). Sydney billing month; figures as of the cycle day after the 11:59&nbsp;pm
+            refresh.
+          </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              <span className="text-ink">ICCID charges</span> — one row per SIM; Charge is contract
+              unit price for the billed Reseller Plan (highest unit price if the SIM changed plans).
+            </li>
+            <li>
+              <span className="text-ink">Plan pools</span> — one row per Reseller Plan; shared CTD,
+              allowance (incl. top-ups), utilisation, excess, and top-up totals.
+            </li>
+            <li>
+              <span className="text-ink">Pool top-ups</span> — each purchase in the month (SIM units ×
+              unit price / per-SIM MB).
+            </li>
+          </ul>
+        </div>
+      </details>
+
       <section className="mt-8 space-y-3">
-        <h2 className="text-lg font-semibold">ICCID charges</h2>
-        <p className="text-sm text-quiet">
-          Reseller Plan actual is the highest unit-price plan billed on that ICCID in the month. Pool
-          utilisation and excess live on the Plan pools export sheet.
-        </p>
+        <div>
+          <h2 className="text-lg font-semibold">ICCID charges</h2>
+          <p className="mt-1 text-sm text-quiet">
+            Per-SIM monthly charge. Reseller Plan actual is the highest unit-price plan billed on
+            that ICCID in the month.
+          </p>
+        </div>
         <div className="overflow-x-auto rounded-card border border-line bg-panel">
           <table className="w-full min-w-160 text-left text-sm">
             <thead className="text-quiet">
@@ -193,7 +223,100 @@ export default async function InvoicesPage({
       </section>
 
       <section className="mt-10 space-y-3">
-        <h2 className="text-lg font-semibold">Pool top-ups</h2>
+        <div>
+          <h2 className="text-lg font-semibold">Plan pools</h2>
+          <p className="mt-1 text-sm text-quiet">
+            Shared pool KPIs per Reseller Plan — CTD vs allowance, excess, and month top-up totals.
+            Allowance includes current-month pool top-ups.
+          </p>
+        </div>
+        <div className="overflow-x-auto rounded-card border border-line bg-panel">
+          <table className="w-full min-w-260 text-left text-sm">
+            <thead className="text-quiet">
+              <tr>
+                {onPlatform ? <th className="px-4 py-3">Organisation</th> : null}
+                <th className="px-4 py-3">Reseller Plan</th>
+                <th className="px-4 py-3">SIMs</th>
+                <th className="px-4 py-3">CTD MB</th>
+                <th className="px-4 py-3">CTD SMS</th>
+                <th className="px-4 py-3">CTD voice</th>
+                <th className="px-4 py-3">Allowance MB</th>
+                <th className="px-4 py-3">Util %</th>
+                <th className="px-4 py-3">Excess data</th>
+                <th className="px-4 py-3">Excess SMS</th>
+                <th className="px-4 py-3">Excess voice</th>
+                <th className="px-4 py-3">Top-ups</th>
+                <th className="px-4 py-3">Unit price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {planSummaries.map((row) => (
+                <tr
+                  key={`${row.tenantId}:${row.resellerPlan}`}
+                  className="border-t border-line"
+                >
+                  {onPlatform ? (
+                    <td className="px-4 py-3 text-quiet">{row.organisationName}</td>
+                  ) : null}
+                  <td className="px-4 py-3 font-mono text-xs">{row.resellerPlan}</td>
+                  <td className="px-4 py-3">{row.simCount.toLocaleString("en-AU")}</td>
+                  <td className="px-4 py-3">
+                    {row.ctdUsageMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.ctdSms.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.ctdVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">{row.poolUtilisationPct}%</td>
+                  <td className="px-4 py-3">
+                    {row.excessDataMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.excessSms.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.excessVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.topupCount.toLocaleString("en-AU")}
+                    {row.topupSimUnits > 0
+                      ? ` · ${row.topupSimUnits.toLocaleString("en-AU")} units`
+                      : ""}
+                  </td>
+                  <td className="px-4 py-3">
+                    $
+                    {row.unitPriceAud.toLocaleString("en-AU", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                </tr>
+              ))}
+              {planSummaries.length === 0 ? (
+                <tr>
+                  <td colSpan={onPlatform ? 13 : 12} className="px-4 py-10 text-quiet">
+                    No Reseller Plan pools for this month yet.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-10 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Pool top-ups</h2>
+          <p className="mt-1 text-sm text-quiet">
+            Each purchase this month. Charge = unit price × SIM units; allowance MB = per-SIM MB ×
+            SIM units.
+          </p>
+        </div>
         <div className="overflow-x-auto rounded-card border border-line bg-panel">
           <table className="w-full min-w-180 text-left text-sm">
             <thead className="text-quiet">

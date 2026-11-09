@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import {
   buildMonthlyInvoice,
-  exportInvoicesSpreadsheetXml,
+  exportInvoicesXlsx,
   invoiceMonthWindow,
 } from "@/lib/portal/invoice";
 import { excludeHomeTenant, listTenantOptions } from "@/lib/portal/tenant";
@@ -38,16 +38,18 @@ export async function GET(request: Request) {
       invoices.push(await buildMonthlyInvoice({ tenantId: ctx.tenantId, monthKey }));
     }
 
-    const xml = exportInvoicesSpreadsheetXml(invoices);
+    const body = exportInvoicesXlsx(invoices);
+    // Copy into a plain ArrayBuffer-backed view for Response/Blob typing on Workers.
+    const payload = Uint8Array.from(body);
     const scope = ctx.role === "super_admin" && !orgParam ? "all" : invoices[0]?.organisationName ?? "invoice";
     const safe = String(scope)
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
       .replace(/^-|-$/g, "")
       .slice(0, 40);
-    const filename = `catalyst-invoice-${monthKey}-${safe || "export"}.xls`;
-    return new Response(xml, {
+    const filename = `catalyst-invoice-${monthKey}-${safe || "export"}.xlsx`;
+    return new Response(payload, {
       headers: {
-        "Content-Type": "application/vnd.ms-excel; charset=utf-8",
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });

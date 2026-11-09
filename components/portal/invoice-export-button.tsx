@@ -13,7 +13,7 @@ export function InvoiceExportButton({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function exportXls() {
+  async function exportXlsx() {
     setBusy(true);
     setError("");
     try {
@@ -29,7 +29,7 @@ export function InvoiceExportButton({
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition") ?? "";
       const match = /filename="([^"]+)"/.exec(disposition);
-      const filename = match?.[1] ?? `catalyst-invoice-${monthKey}.xls`;
+      const filename = match?.[1] ?? `catalyst-invoice-${monthKey}.xlsx`;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -45,8 +45,8 @@ export function InvoiceExportButton({
 
   return (
     <div className="flex flex-col items-end gap-1">
-      <button type="button" disabled={busy} onClick={() => void exportXls()} className={btnSecondary}>
-        {busy ? "Exporting…" : "Export invoice (XLS)"}
+      <button type="button" disabled={busy} onClick={() => void exportXlsx()} className={btnSecondary}>
+        {busy ? "Exporting…" : "Export invoice (Excel)"}
       </button>
       {error ? <p className="max-w-56 text-right text-xs text-danger">{error}</p> : null}
     </div>
