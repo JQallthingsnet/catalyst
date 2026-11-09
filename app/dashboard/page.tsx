@@ -65,7 +65,7 @@ export default async function DashboardPage() {
             scopeTenantId: logsOnPlatform ? undefined : ctx.tenantId,
             hideUnitPrice: !logsOnPlatform,
           },
-          8,
+          4,
           0,
         )
       : Promise.resolve([]),
@@ -184,8 +184,8 @@ export default async function DashboardPage() {
               </div>
               <p className="mt-1 shrink-0 text-xs text-quiet">
                 {logsOnPlatform
-                  ? "Latest 8 from Logs (all organisations)."
-                  : "Latest 8 from Logs for this organisation."}
+                  ? "Latest 4 from Logs (all organisations)."
+                  : "Latest 4 from Logs for this organisation."}
               </p>
               <ul className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
                 {activity.length === 0 ? (
