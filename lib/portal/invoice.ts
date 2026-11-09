@@ -51,6 +51,61 @@ export type MonthlyInvoice = {
   topups: Awaited<ReturnType<typeof listPoolModemTopups>>;
 };
 
+/** Charging roll-up for one org (or a combined total row). */
+export type InvoiceBillSummary = {
+  organisationName: string;
+  tenantId: string;
+  monthKey: string;
+  asOfDay: string;
+  iccidCount: number;
+  simChargesAud: number;
+  topupCount: number;
+  topupSimUnits: number;
+  topupChargesAud: number;
+  /** simChargesAud + topupChargesAud */
+  totalAud: number;
+};
+
+export function summarizeInvoiceBill(invoice: MonthlyInvoice): InvoiceBillSummary {
+  const simChargesAud = invoice.iccidRows.reduce((sum, row) => sum + row.chargeAud, 0);
+  const topupChargesAud = invoice.topups.reduce((sum, row) => sum + row.chargeAud, 0);
+  const topupSimUnits = invoice.topups.reduce((sum, row) => sum + row.simUnits, 0);
+  return {
+    organisationName: invoice.organisationName?.trim() || "—",
+    tenantId: invoice.iccidRows[0]?.tenantId || invoice.planSummaries[0]?.tenantId || "",
+    monthKey: invoice.monthKey,
+    asOfDay: invoice.asOfDay,
+    iccidCount: invoice.iccidRows.length,
+    simChargesAud,
+    topupCount: invoice.topups.length,
+    topupSimUnits,
+    topupChargesAud,
+    totalAud: simChargesAud + topupChargesAud,
+  };
+}
+
+export function summarizeInvoiceBills(invoices: MonthlyInvoice[]): {
+  rows: InvoiceBillSummary[];
+  total: InvoiceBillSummary | null;
+} {
+  const rows = invoices.map(summarizeInvoiceBill);
+  if (rows.length === 0) return { rows: [], total: null };
+  if (rows.length === 1) return { rows, total: rows[0] };
+  const total: InvoiceBillSummary = {
+    organisationName: "All organisations",
+    tenantId: "",
+    monthKey: rows[0].monthKey,
+    asOfDay: rows[0].asOfDay,
+    iccidCount: rows.reduce((sum, row) => sum + row.iccidCount, 0),
+    simChargesAud: rows.reduce((sum, row) => sum + row.simChargesAud, 0),
+    topupCount: rows.reduce((sum, row) => sum + row.topupCount, 0),
+    topupSimUnits: rows.reduce((sum, row) => sum + row.topupSimUnits, 0),
+    topupChargesAud: rows.reduce((sum, row) => sum + row.topupChargesAud, 0),
+    totalAud: rows.reduce((sum, row) => sum + row.totalAud, 0),
+  };
+  return { rows, total };
+}
+
 /** YYYY-MM → first/last Sydney day keys, and as-of day (not past today). */
 export function invoiceMonthWindow(monthKey: string): {
   monthKey: string;
@@ -450,6 +505,46 @@ export async function buildMonthlyInvoice(input: {
 
 /** Real Office Open XML workbook (.xlsx) — avoids Excel “extension doesn’t match” warning. */
 export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
+  const bill = summarizeInvoiceBills(invoices);
+  const billHeader = [
+    "organisation",
+    "month",
+    "as_of_day",
+    "iccid_count",
+    "sim_charges_aud",
+    "topups_count",
+    "topup_sim_units",
+    "topup_charges_aud",
+    "total_aud",
+  ];
+  const billRows: Array<Array<string | number>> = [billHeader];
+  for (const row of bill.rows) {
+    billRows.push([
+      row.organisationName,
+      row.monthKey,
+      row.asOfDay,
+      row.iccidCount,
+      Math.round(row.simChargesAud * 100) / 100,
+      row.topupCount,
+      row.topupSimUnits,
+      Math.round(row.topupChargesAud * 100) / 100,
+      Math.round(row.totalAud * 100) / 100,
+    ]);
+  }
+  if (bill.total && bill.rows.length > 1) {
+    billRows.push([
+      bill.total.organisationName,
+      bill.total.monthKey,
+      bill.total.asOfDay,
+      bill.total.iccidCount,
+      Math.round(bill.total.simChargesAud * 100) / 100,
+      bill.total.topupCount,
+      bill.total.topupSimUnits,
+      Math.round(bill.total.topupChargesAud * 100) / 100,
+      Math.round(bill.total.totalAud * 100) / 100,
+    ]);
+  }
+
   const iccidHeader = [
     "organisation",
     "month",
@@ -543,6 +638,28 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
 
   const legendRows: Array<Array<string | number>> = [
     ["sheet", "column", "meaning"],
+    [
+      "Bill summary",
+      "(tab)",
+      "Total bill for the month: SIM charges (contract unit price × ICCIDs) + pool top-up charges. One row per organisation; when exporting all orgs, a final All organisations total row is included.",
+    ],
+    ["Bill summary", "organisation", "Reseller organisation (or All organisations total)."],
+    ["Bill summary", "month", "Sydney billing month (YYYY-MM)."],
+    ["Bill summary", "as_of_day", "Sydney day the cycle figures are taken as of."],
+    ["Bill summary", "iccid_count", "Number of billed ICCID rows."],
+    [
+      "Bill summary",
+      "sim_charges_aud",
+      "Sum of ICCID charge_aud (contract unit price per SIM).",
+    ],
+    ["Bill summary", "topups_count", "Number of pool top-up purchases."],
+    ["Bill summary", "topup_sim_units", "Total SIM units bought as pool top-ups."],
+    ["Bill summary", "topup_charges_aud", "Sum of top-up charge_aud."],
+    [
+      "Bill summary",
+      "total_aud",
+      "sim_charges_aud + topup_charges_aud (amount due for this month).",
+    ],
     [
       "ICCID charges",
       "(tab)",
@@ -646,6 +763,7 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
 
   return buildXlsx([
     { name: "Column guide", rows: legendRows },
+    { name: "Bill summary", rows: billRows },
     { name: "ICCID charges", rows: iccidRows },
     { name: "Plan pools", rows: planRows },
     { name: "Top-ups", rows: topupRows },

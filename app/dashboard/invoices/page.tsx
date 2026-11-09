@@ -7,10 +7,18 @@ import {
   buildMonthlyInvoice,
   invoiceMonthOptions,
   invoiceMonthWindow,
+  summarizeInvoiceBills,
 } from "@/lib/portal/invoice";
 import { sydneyMonthKey } from "@/lib/portal/pool-topups";
 import { excludeHomeTenant, listTenantOptions } from "@/lib/portal/tenant";
 import { formatAuDateTime } from "@/lib/portal/time";
+
+function money(value: number): string {
+  return value.toLocaleString("en-AU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
 
 export default async function InvoicesPage({
   searchParams,
@@ -44,12 +52,9 @@ export default async function InvoicesPage({
   const primary = invoices.length === 1 ? invoices[0] : null;
   const topups = invoices.flatMap((inv) => inv.topups);
   const planSummaries = invoices.flatMap((inv) => inv.planSummaries);
-  const totalTopupCharge = topups.reduce((sum, row) => sum + row.chargeAud, 0);
-  const totalIccidCharge = invoices.reduce(
-    (sum, inv) => sum + inv.iccidRows.reduce((s, row) => s + row.chargeAud, 0),
-    0,
-  );
-  const iccidCount = invoices.reduce((sum, inv) => sum + inv.iccidRows.length, 0);
+  const bill = summarizeInvoiceBills(invoices);
+  const billTotal = bill.total;
+  const iccidCount = billTotal?.iccidCount ?? 0;
 
   return (
     <div>
@@ -119,32 +124,76 @@ export default async function InvoicesPage({
         </button>
       </form>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <article className="rounded-card border border-line bg-panel p-4">
-          <p className="text-xs text-quiet">ICCIDs</p>
-          <p className="mt-1 text-2xl font-semibold">{iccidCount.toLocaleString("en-AU")}</p>
-        </article>
-        <article className="rounded-card border border-line bg-panel p-4">
-          <p className="text-xs text-quiet">SIM charges</p>
-          <p className="mt-1 text-2xl font-semibold">
-            $
-            {totalIccidCharge.toLocaleString("en-AU", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </p>
-        </article>
-        <article className="rounded-card border border-line bg-panel p-4">
-          <p className="text-xs text-quiet">Pool top-ups</p>
-          <p className="mt-1 text-2xl font-semibold">
-            $
-            {totalTopupCharge.toLocaleString("en-AU", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </p>
-        </article>
-      </div>
+      <section className="mt-6 rounded-card border border-line bg-panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Bill summary</h2>
+            <p className="mt-1 text-sm text-quiet">
+              Amount due = SIM charges + pool top-ups
+              {billTotal ? (
+                <>
+                  {" "}
+                  · {billTotal.iccidCount.toLocaleString("en-AU")} ICCID
+                  {billTotal.iccidCount === 1 ? "" : "s"}
+                  {bill.rows.length > 1
+                    ? ` · ${bill.rows.length.toLocaleString("en-AU")} organisations`
+                    : ""}
+                </>
+              ) : null}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-quiet">Total</p>
+            <p className="mt-1 text-3xl font-semibold tracking-tight">
+              ${money(billTotal?.totalAud ?? 0)}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <article className="rounded-xl border border-line bg-canvas/40 px-4 py-3">
+            <p className="text-xs text-quiet">SIM charges</p>
+            <p className="mt-1 text-xl font-semibold">${money(billTotal?.simChargesAud ?? 0)}</p>
+            <p className="mt-1 text-xs text-quiet">Contract unit price × billed ICCIDs</p>
+          </article>
+          <article className="rounded-xl border border-line bg-canvas/40 px-4 py-3">
+            <p className="text-xs text-quiet">Pool top-ups</p>
+            <p className="mt-1 text-xl font-semibold">${money(billTotal?.topupChargesAud ?? 0)}</p>
+            <p className="mt-1 text-xs text-quiet">
+              {(billTotal?.topupCount ?? 0).toLocaleString("en-AU")} purchase
+              {(billTotal?.topupCount ?? 0) === 1 ? "" : "s"}
+              {(billTotal?.topupSimUnits ?? 0) > 0
+                ? ` · ${(billTotal?.topupSimUnits ?? 0).toLocaleString("en-AU")} SIM units`
+                : ""}
+            </p>
+          </article>
+        </div>
+        {bill.rows.length > 1 ? (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-160 text-left text-sm">
+              <thead className="text-quiet">
+                <tr>
+                  <th className="px-2 py-2 font-medium">Organisation</th>
+                  <th className="px-2 py-2 font-medium">ICCIDs</th>
+                  <th className="px-2 py-2 font-medium">SIM charges</th>
+                  <th className="px-2 py-2 font-medium">Top-ups</th>
+                  <th className="px-2 py-2 font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bill.rows.map((row) => (
+                  <tr key={row.tenantId || row.organisationName} className="border-t border-line">
+                    <td className="px-2 py-2">{row.organisationName}</td>
+                    <td className="px-2 py-2">{row.iccidCount.toLocaleString("en-AU")}</td>
+                    <td className="px-2 py-2">${money(row.simChargesAud)}</td>
+                    <td className="px-2 py-2">${money(row.topupChargesAud)}</td>
+                    <td className="px-2 py-2 font-medium">${money(row.totalAud)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
 
       <details className="mt-6 rounded-card border border-line bg-panel px-4 py-3">
         <summary className="cursor-pointer text-sm font-medium text-ink">
@@ -152,11 +201,15 @@ export default async function InvoicesPage({
         </summary>
         <div className="mt-3 space-y-2 text-sm text-quiet">
           <p>
-            Same structure as the Excel export (Column guide · ICCID charges · Plan pools ·
-            Top-ups). Sydney billing month; figures as of the cycle day after the 11:59&nbsp;pm
-            refresh.
+            Same structure as the Excel export (Column guide · Bill summary · ICCID charges · Plan
+            pools · Top-ups). Sydney billing month; figures as of the cycle day after the
+            11:59&nbsp;pm refresh.
           </p>
           <ul className="list-disc space-y-1 pl-5">
+            <li>
+              <span className="text-ink">Bill summary</span> — total due = SIM charges + pool
+              top-ups.
+            </li>
             <li>
               <span className="text-ink">ICCID charges</span> — one row per SIM; Charge is contract
               unit price for the billed Reseller Plan (highest unit price if the SIM changed plans).
