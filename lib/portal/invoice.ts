@@ -506,43 +506,68 @@ export async function buildMonthlyInvoice(input: {
 /** Real Office Open XML workbook (.xlsx) — avoids Excel “extension doesn’t match” warning. */
 export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
   const bill = summarizeInvoiceBills(invoices);
-  const billHeader = [
-    "organisation",
-    "month",
-    "as_of_day",
-    "iccid_count",
-    "sim_charges_aud",
-    "topups_count",
-    "topup_sim_units",
-    "topup_charges_aud",
-    "total_aud",
-  ];
-  const billRows: Array<Array<string | number>> = [billHeader];
-  for (const row of bill.rows) {
+  const singleOrg = bill.rows.length <= 1;
+  const money = (value: number) => Math.round(value * 100) / 100;
+
+  // 1 org → row-wise bill; multi-org → column-wise comparison table.
+  const billRows: Array<Array<string | number>> = [];
+  if (singleOrg) {
+    billRows.push(["line", "amount", "notes"]);
+    const row = bill.rows[0] ?? bill.total;
+    if (row) {
+      billRows.push(["Organisation", row.organisationName, ""]);
+      billRows.push(["Month", row.monthKey, `as of ${row.asOfDay}`]);
+      billRows.push(["ICCIDs", row.iccidCount, "Billed SIM rows this month"]);
+      billRows.push([
+        "SIM charges",
+        money(row.simChargesAud),
+        "Contract unit price × billed ICCIDs",
+      ]);
+      billRows.push([
+        "Pool top-ups",
+        money(row.topupChargesAud),
+        `${row.topupCount} purchase${row.topupCount === 1 ? "" : "s"} · ${row.topupSimUnits} SIM unit${row.topupSimUnits === 1 ? "" : "s"}`,
+      ]);
+      billRows.push(["Total due", money(row.totalAud), "SIM charges + pool top-ups"]);
+    }
+  } else {
     billRows.push([
-      row.organisationName,
-      row.monthKey,
-      row.asOfDay,
-      row.iccidCount,
-      Math.round(row.simChargesAud * 100) / 100,
-      row.topupCount,
-      row.topupSimUnits,
-      Math.round(row.topupChargesAud * 100) / 100,
-      Math.round(row.totalAud * 100) / 100,
+      "organisation",
+      "month",
+      "as_of_day",
+      "iccid_count",
+      "sim_charges_aud",
+      "topups_count",
+      "topup_sim_units",
+      "topup_charges_aud",
+      "total_aud",
     ]);
-  }
-  if (bill.total && bill.rows.length > 1) {
-    billRows.push([
-      bill.total.organisationName,
-      bill.total.monthKey,
-      bill.total.asOfDay,
-      bill.total.iccidCount,
-      Math.round(bill.total.simChargesAud * 100) / 100,
-      bill.total.topupCount,
-      bill.total.topupSimUnits,
-      Math.round(bill.total.topupChargesAud * 100) / 100,
-      Math.round(bill.total.totalAud * 100) / 100,
-    ]);
+    for (const row of bill.rows) {
+      billRows.push([
+        row.organisationName,
+        row.monthKey,
+        row.asOfDay,
+        row.iccidCount,
+        money(row.simChargesAud),
+        row.topupCount,
+        row.topupSimUnits,
+        money(row.topupChargesAud),
+        money(row.totalAud),
+      ]);
+    }
+    if (bill.total) {
+      billRows.push([
+        bill.total.organisationName,
+        bill.total.monthKey,
+        bill.total.asOfDay,
+        bill.total.iccidCount,
+        money(bill.total.simChargesAud),
+        bill.total.topupCount,
+        bill.total.topupSimUnits,
+        money(bill.total.topupChargesAud),
+        money(bill.total.totalAud),
+      ]);
+    }
   }
 
   const iccidHeader = [
@@ -571,22 +596,26 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
     "topup_sim_units",
     "unit_price_aud",
   ];
-  const topupHeader = [
-    "organisation",
-    "month",
-    "when",
-    "reseller_plan",
-    "sim_units",
-    "unit_price_aud",
-    "per_sim_mb",
-    "allowance_mb",
-    "charge_aud",
-    "by",
-  ];
 
   const iccidRows: Array<Array<string | number>> = [iccidHeader];
   const planRows: Array<Array<string | number>> = [planHeader];
-  const topupRows: Array<Array<string | number>> = [topupHeader];
+  // 1 org → row-wise top-up blocks; multi-org → one purchase per table row.
+  const topupRows: Array<Array<string | number>> = singleOrg
+    ? [["line", "amount", "notes"]]
+    : [
+        [
+          "organisation",
+          "month",
+          "when",
+          "reseller_plan",
+          "sim_units",
+          "unit_price_aud",
+          "per_sim_mb",
+          "allowance_mb",
+          "charge_aud",
+          "by",
+        ],
+      ];
 
   for (const invoice of invoices) {
     const org = invoice.organisationName ?? "";
@@ -620,19 +649,45 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
         row.unitPriceAud,
       ]);
     }
-    for (const row of invoice.topups) {
-      topupRows.push([
-        org,
-        invoice.monthKey,
-        row.createdAt,
-        row.modemId,
-        row.simUnits,
-        row.unitPriceAud,
-        row.perSimAllowanceMb,
-        row.allowanceMb,
-        row.chargeAud,
-        row.createdBy,
-      ]);
+    if (singleOrg) {
+      for (const row of invoice.topups) {
+        if (topupRows.length > 1) topupRows.push(["", "", ""]);
+        topupRows.push(["Reseller Plan", row.modemId, ""]);
+        topupRows.push(["When", row.createdAt, ""]);
+        topupRows.push(["Month", invoice.monthKey, ""]);
+        topupRows.push([
+          "SIM units",
+          row.simUnits,
+          "Each unit adds one per-SIM data allowance to the pool",
+        ]);
+        topupRows.push(["Unit price", money(row.unitPriceAud), "AUD per SIM unit"]);
+        topupRows.push(["Per-SIM MB", money(row.perSimAllowanceMb), "MB added per SIM unit"]);
+        topupRows.push([
+          "Allowance MB",
+          money(row.allowanceMb),
+          "per_sim_mb × sim_units",
+        ]);
+        topupRows.push(["Charge", money(row.chargeAud), "unit_price_aud × sim_units"]);
+        topupRows.push(["By", row.createdBy, ""]);
+      }
+      if (invoice.topups.length === 0) {
+        topupRows.push(["(none)", "", "No pool top-ups for this month"]);
+      }
+    } else {
+      for (const row of invoice.topups) {
+        topupRows.push([
+          org,
+          invoice.monthKey,
+          row.createdAt,
+          row.modemId,
+          row.simUnits,
+          row.unitPriceAud,
+          row.perSimAllowanceMb,
+          row.allowanceMb,
+          row.chargeAud,
+          row.createdBy,
+        ]);
+      }
     }
   }
 
@@ -641,25 +696,27 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
     [
       "Bill summary",
       "(tab)",
-      "Total bill for the month: SIM charges (contract unit price × ICCIDs) + pool top-up charges. One row per organisation; when exporting all orgs, a final All organisations total row is included.",
+      singleOrg
+        ? "Single-org export: vertical bill (line / amount / notes). Total due = SIM charges + pool top-ups."
+        : "Multi-org export: one column-wise row per organisation, plus an All organisations total. total_aud = SIM charges + pool top-ups.",
     ],
-    ["Bill summary", "organisation", "Reseller organisation (or All organisations total)."],
-    ["Bill summary", "month", "Sydney billing month (YYYY-MM)."],
-    ["Bill summary", "as_of_day", "Sydney day the cycle figures are taken as of."],
-    ["Bill summary", "iccid_count", "Number of billed ICCID rows."],
-    [
-      "Bill summary",
-      "sim_charges_aud",
-      "Sum of ICCID charge_aud (contract unit price per SIM).",
-    ],
-    ["Bill summary", "topups_count", "Number of pool top-up purchases."],
-    ["Bill summary", "topup_sim_units", "Total SIM units bought as pool top-ups."],
-    ["Bill summary", "topup_charges_aud", "Sum of top-up charge_aud."],
-    [
-      "Bill summary",
-      "total_aud",
-      "sim_charges_aud + topup_charges_aud (amount due for this month).",
-    ],
+    ...(singleOrg
+      ? [
+          ["Bill summary", "line", "Label (Organisation, Month, ICCIDs, SIM charges, Pool top-ups, Total due)."],
+          ["Bill summary", "amount", "Value for that line."],
+          ["Bill summary", "notes", "Short explanation or context."],
+        ]
+      : [
+          ["Bill summary", "organisation", "Reseller organisation (or All organisations total)."],
+          ["Bill summary", "month", "Sydney billing month (YYYY-MM)."],
+          ["Bill summary", "as_of_day", "Sydney day the cycle figures are taken as of."],
+          ["Bill summary", "iccid_count", "Number of billed ICCID rows."],
+          ["Bill summary", "sim_charges_aud", "Sum of ICCID charge_aud."],
+          ["Bill summary", "topups_count", "Number of pool top-up purchases."],
+          ["Bill summary", "topup_sim_units", "Total SIM units bought as pool top-ups."],
+          ["Bill summary", "topup_charges_aud", "Sum of top-up charge_aud."],
+          ["Bill summary", "total_aud", "sim_charges_aud + topup_charges_aud."],
+        ]),
     [
       "ICCID charges",
       "(tab)",
@@ -743,22 +800,32 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
     [
       "Top-ups",
       "(tab)",
-      "One row per pool top-up purchase in the month (not per ICCID).",
+      singleOrg
+        ? "Single-org export: one vertical block (line / amount / notes) per purchase."
+        : "Multi-org export: one column-wise row per pool top-up purchase.",
     ],
-    ["Top-ups", "organisation", "Reseller organisation name."],
-    ["Top-ups", "month", "Sydney billing month the top-up applies to (YYYY-MM)."],
-    ["Top-ups", "when", "UTC timestamp when the top-up was purchased."],
-    ["Top-ups", "reseller_plan", "Reseller Plan pool that received the top-up."],
-    [
-      "Top-ups",
-      "sim_units",
-      "How many SIM units were bought (each unit adds one per-SIM data allowance to the pool).",
-    ],
-    ["Top-ups", "unit_price_aud", "Contract unit price (AUD) charged per SIM unit for this purchase."],
-    ["Top-ups", "per_sim_mb", "Data MB added to the pool per SIM unit."],
-    ["Top-ups", "allowance_mb", "Total data MB added by this purchase (per_sim_mb × sim_units)."],
-    ["Top-ups", "charge_aud", "AUD charged for this purchase (unit_price_aud × sim_units)."],
-    ["Top-ups", "by", "Email of the user who bought the top-up."],
+    ...(singleOrg
+      ? [
+          ["Top-ups", "line", "Label (Reseller Plan, When, Month, SIM units, Unit price, Per-SIM MB, Allowance MB, Charge, By)."],
+          ["Top-ups", "amount", "Value for that line."],
+          ["Top-ups", "notes", "Short explanation or context."],
+        ]
+      : [
+          ["Top-ups", "organisation", "Reseller organisation name."],
+          ["Top-ups", "month", "Sydney billing month the top-up applies to (YYYY-MM)."],
+          ["Top-ups", "when", "UTC timestamp when the top-up was purchased."],
+          ["Top-ups", "reseller_plan", "Reseller Plan pool that received the top-up."],
+          [
+            "Top-ups",
+            "sim_units",
+            "How many SIM units were bought (each unit adds one per-SIM data allowance to the pool).",
+          ],
+          ["Top-ups", "unit_price_aud", "Contract unit price (AUD) charged per SIM unit for this purchase."],
+          ["Top-ups", "per_sim_mb", "Data MB added to the pool per SIM unit."],
+          ["Top-ups", "allowance_mb", "Total data MB added by this purchase (per_sim_mb × sim_units)."],
+          ["Top-ups", "charge_aud", "AUD charged for this purchase (unit_price_aud × sim_units)."],
+          ["Top-ups", "by", "Email of the user who bought the top-up."],
+        ]),
   ];
 
   return buildXlsx([
