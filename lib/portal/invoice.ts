@@ -17,15 +17,6 @@ export type InvoiceIccidRow = {
   resellerPlan: string;
   /** Monthly Charge = contract unit price for that plan. */
   chargeAud: number;
-  /** Pool utilisation % for that Reseller Plan (shared across SIMs on the plan). */
-  poolUtilisationPct: number;
-  excessDataMb: number;
-  excessSms: number;
-  excessVoiceMin: number;
-  /** Count of top-up purchases for that Reseller Plan this month. */
-  topupCount: number;
-  /** Total SIM units topped up for that plan this month. */
-  topupSimUnits: number;
 };
 
 export type InvoicePlanSummary = {
@@ -412,19 +403,12 @@ export async function buildMonthlyInvoice(input: {
       chargeAud = resellerPlan ? (priceByModem.get(resellerPlan) ?? 0) : 0;
     }
     if (!resellerPlan) continue;
-    const metrics = planMetrics(resellerPlan);
     iccidRows.push({
       organisationName,
       tenantId,
       iccid,
       resellerPlan,
       chargeAud,
-      poolUtilisationPct: metrics.util,
-      excessDataMb: metrics.excessDataMb,
-      excessSms: metrics.excessSms,
-      excessVoiceMin: metrics.excessVoiceMin,
-      topupCount: metrics.topupCount,
-      topupSimUnits: metrics.topupSimUnits,
     });
   }
 
@@ -498,12 +482,6 @@ export function exportInvoicesSpreadsheetXml(invoices: MonthlyInvoice[]): string
     "iccid",
     "reseller_plan_actual",
     "charge_aud",
-    "pool_utilisation_pct",
-    "excess_data_mb",
-    "excess_sms",
-    "excess_voice_min",
-    "topups_count",
-    "topup_sim_units",
   ];
   const planHeader = [
     "organisation",
@@ -550,12 +528,6 @@ export function exportInvoicesSpreadsheetXml(invoices: MonthlyInvoice[]): string
         row.iccid,
         row.resellerPlan,
         row.chargeAud,
-        row.poolUtilisationPct,
-        row.excessDataMb,
-        row.excessSms,
-        row.excessVoiceMin,
-        row.topupCount,
-        row.topupSimUnits,
       ]);
     }
     for (const row of invoice.planSummaries) {
@@ -594,7 +566,111 @@ export function exportInvoicesSpreadsheetXml(invoices: MonthlyInvoice[]): string
     }
   }
 
+  const legendRows: Array<Array<string | number>> = [
+    ["sheet", "column", "meaning"],
+    [
+      "ICCID charges",
+      "(tab)",
+      "One row per SIM with a Reseller Plan in the Sydney billing month. Per-SIM charge only — pool KPIs are on Plan pools.",
+    ],
+    ["ICCID charges", "organisation", "Reseller organisation name."],
+    ["ICCID charges", "month", "Sydney billing month (YYYY-MM)."],
+    [
+      "ICCID charges",
+      "as_of_day",
+      "Sydney calendar day the cycle figures are taken as of (month end, or today while the month is still open), after the 11:59 pm Sydney refresh.",
+    ],
+    ["ICCID charges", "iccid", "SIM ICCID."],
+    [
+      "ICCID charges",
+      "reseller_plan_actual",
+      "Reseller Plan billed for that ICCID in the month — if the SIM used more than one plan, the highest contract unit-price plan wins.",
+    ],
+    [
+      "ICCID charges",
+      "charge_aud",
+      "Monthly Charge in AUD = contract unit price for reseller_plan_actual (not including pool top-ups).",
+    ],
+    [
+      "Plan pools",
+      "(tab)",
+      "One row per Reseller Plan pool for the organisation/month. Shared CTD, allowance, utilisation, excess, and top-up totals.",
+    ],
+    ["Plan pools", "organisation", "Reseller organisation name."],
+    ["Plan pools", "month", "Sydney billing month (YYYY-MM)."],
+    [
+      "Plan pools",
+      "as_of_day",
+      "Same as ICCID charges — Sydney day the pool snapshot / CTD is taken as of.",
+    ],
+    ["Plan pools", "reseller_plan", "Catalyst Reseller Plan name (pool key)."],
+    ["Plan pools", "sim_count", "Number of SIMs currently counted in that Reseller Plan pool."],
+    ["Plan pools", "ctd_mb", "Cycle-to-date data usage for the pool (MB), summed across SIMs on that plan."],
+    ["Plan pools", "ctd_sms", "Cycle-to-date SMS count for the pool (MO+MT)."],
+    ["Plan pools", "ctd_voice_min", "Cycle-to-date voice minutes for the pool."],
+    [
+      "Plan pools",
+      "allowance_mb",
+      "Included pool data allowance (MB) for the plan, including current-month pool top-ups.",
+    ],
+    [
+      "Plan pools",
+      "pool_utilisation_pct",
+      "ctd_mb ÷ allowance_mb × 100 (0 when allowance is PAYG / zero).",
+    ],
+    [
+      "Plan pools",
+      "excess_data_mb",
+      "How far ctd_mb is above allowance_mb (0 when under allowance).",
+    ],
+    [
+      "Plan pools",
+      "excess_sms",
+      "How far ctd_sms is above the plan SMS allowance (0 when PAYG or under).",
+    ],
+    [
+      "Plan pools",
+      "excess_voice_min",
+      "How far ctd_voice_min is above the plan voice allowance (0 when PAYG or under).",
+    ],
+    [
+      "Plan pools",
+      "topups_count",
+      "Number of pool top-up purchases for this Reseller Plan in the month.",
+    ],
+    [
+      "Plan pools",
+      "topup_sim_units",
+      "Total SIM units purchased as pool top-ups for this plan in the month.",
+    ],
+    [
+      "Plan pools",
+      "unit_price_aud",
+      "Contract unit price (AUD) for one SIM on this Reseller Plan.",
+    ],
+    [
+      "Top-ups",
+      "(tab)",
+      "One row per pool top-up purchase in the month (not per ICCID).",
+    ],
+    ["Top-ups", "organisation", "Reseller organisation name."],
+    ["Top-ups", "month", "Sydney billing month the top-up applies to (YYYY-MM)."],
+    ["Top-ups", "when", "UTC timestamp when the top-up was purchased."],
+    ["Top-ups", "reseller_plan", "Reseller Plan pool that received the top-up."],
+    [
+      "Top-ups",
+      "sim_units",
+      "How many SIM units were bought (each unit adds one per-SIM data allowance to the pool).",
+    ],
+    ["Top-ups", "unit_price_aud", "Contract unit price (AUD) charged per SIM unit for this purchase."],
+    ["Top-ups", "per_sim_mb", "Data MB added to the pool per SIM unit."],
+    ["Top-ups", "allowance_mb", "Total data MB added by this purchase (per_sim_mb × sim_units)."],
+    ["Top-ups", "charge_aud", "AUD charged for this purchase (unit_price_aud × sim_units)."],
+    ["Top-ups", "by", "Email of the user who bought the top-up."],
+  ];
+
   const sheets = [
+    sheetXml("Column guide", legendRows),
     sheetXml("ICCID charges", iccidRows),
     sheetXml("Plan pools", planRows),
     sheetXml("Top-ups", topupRows),

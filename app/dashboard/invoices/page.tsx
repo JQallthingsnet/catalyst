@@ -149,21 +149,16 @@ export default async function InvoicesPage({
         <h2 className="text-lg font-semibold">ICCID charges</h2>
         <p className="text-sm text-quiet">
           Reseller Plan actual is the highest unit-price plan billed on that ICCID in the month. Pool
-          utilisation and excess are for that Reseller Plan pool (shared).
+          utilisation and excess live on the Plan pools export sheet.
         </p>
         <div className="overflow-x-auto rounded-card border border-line bg-panel">
-          <table className="w-full min-w-220 text-left text-sm">
+          <table className="w-full min-w-160 text-left text-sm">
             <thead className="text-quiet">
               <tr>
                 {onPlatform ? <th className="px-4 py-3">Organisation</th> : null}
                 <th className="px-4 py-3">ICCID</th>
                 <th className="px-4 py-3">Reseller Plan actual</th>
                 <th className="px-4 py-3">Charge</th>
-                <th className="px-4 py-3">Pool util %</th>
-                <th className="px-4 py-3">Excess data MB</th>
-                <th className="px-4 py-3">Excess SMS</th>
-                <th className="px-4 py-3">Excess voice</th>
-                <th className="px-4 py-3">Top-ups</th>
               </tr>
             </thead>
             <tbody>
@@ -182,28 +177,12 @@ export default async function InvoicesPage({
                         maximumFractionDigits: 2,
                       })}
                     </td>
-                    <td className="px-4 py-3">{row.poolUtilisationPct}%</td>
-                    <td className="px-4 py-3">
-                      {row.excessDataMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
-                    </td>
-                    <td className="px-4 py-3">
-                      {row.excessSms.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
-                    </td>
-                    <td className="px-4 py-3">
-                      {row.excessVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
-                    </td>
-                    <td className="px-4 py-3">
-                      {row.topupCount.toLocaleString("en-AU")}
-                      {row.topupSimUnits > 0
-                        ? ` (${row.topupSimUnits.toLocaleString("en-AU")} units)`
-                        : ""}
-                    </td>
                   </tr>
                 )),
               )}
               {iccidCount === 0 ? (
                 <tr>
-                  <td colSpan={onPlatform ? 9 : 8} className="px-4 py-10 text-quiet">
+                  <td colSpan={onPlatform ? 4 : 3} className="px-4 py-10 text-quiet">
                     No ICCIDs with Reseller Plans for this month yet.
                   </td>
                 </tr>
