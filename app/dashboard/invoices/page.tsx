@@ -162,7 +162,7 @@ export default async function InvoicesPage({
               {(billTotal?.topupCount ?? 0).toLocaleString("en-AU")} purchase
               {(billTotal?.topupCount ?? 0) === 1 ? "" : "s"}
               {(billTotal?.topupSimUnits ?? 0) > 0
-                ? ` · ${(billTotal?.topupSimUnits ?? 0).toLocaleString("en-AU")} SIM units`
+                ? ` · total ${(billTotal?.topupSimUnits ?? 0).toLocaleString("en-AU")} SIM units`
                 : ""}
             </p>
           </article>
@@ -305,7 +305,7 @@ export default async function InvoicesPage({
                 <th className="px-4 py-3">Excess data</th>
                 <th className="px-4 py-3">Excess SMS</th>
                 <th className="px-4 py-3">Excess voice</th>
-                <th className="px-4 py-3">Top-ups</th>
+                <th className="px-4 py-3">Top-up purchases</th>
                 <th className="px-4 py-3">Unit price</th>
               </tr>
             </thead>
@@ -370,10 +370,9 @@ export default async function InvoicesPage({
                     {row.excessVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
                   </td>
                   <td className="px-4 py-3">
-                    {row.topupCount.toLocaleString("en-AU")}
-                    {row.topupSimUnits > 0
-                      ? ` · ${row.topupSimUnits.toLocaleString("en-AU")} units`
-                      : ""}
+                    {row.topupCount === 0
+                      ? "—"
+                      : `${row.topupCount.toLocaleString("en-AU")} purchase${row.topupCount === 1 ? "" : "s"} · total ${row.topupSimUnits.toLocaleString("en-AU")} SIM unit${row.topupSimUnits === 1 ? "" : "s"}`}
                   </td>
                   <td className="px-4 py-3">
                     $

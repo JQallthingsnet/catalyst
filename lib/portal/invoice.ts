@@ -568,7 +568,7 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
       billRows.push([
         "Pool top-ups",
         money(row.topupChargesAud),
-        `${row.topupCount} purchase${row.topupCount === 1 ? "" : "s"} · ${row.topupSimUnits} SIM unit${row.topupSimUnits === 1 ? "" : "s"}`,
+        `${row.topupCount} purchase${row.topupCount === 1 ? "" : "s"} · total ${row.topupSimUnits} SIM unit${row.topupSimUnits === 1 ? "" : "s"}`,
       ]);
       billRows.push(["Total due", money(row.totalAud), "SIM charges + pool top-ups"]);
     }
@@ -862,12 +862,12 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
     [
       "Plan pools",
       "topups_count",
-      "Number of pool top-up purchases for this Reseller Plan in the month.",
+      "How many separate pool top-up purchases for this Reseller Plan in the month (e.g. 2 = bought twice).",
     ],
     [
       "Plan pools",
       "topup_sim_units",
-      "Total SIM units purchased as pool top-ups for this plan in the month.",
+      "Total SIM units across those purchases (e.g. 10 + 20 = 30).",
     ],
     [
       "Plan pools",
