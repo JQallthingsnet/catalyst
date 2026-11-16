@@ -22,6 +22,9 @@ export async function POST(request: Request) {
       ccRatePlan?: string;
       commPlan?: string;
       resellerIds?: string[];
+      allowanceMb?: number | null;
+      allowanceSms?: number | null;
+      allowanceVoiceMin?: number | null;
       tenantId?: string;
       platformPlanId?: string;
       skuIds?: string[];
@@ -63,6 +66,9 @@ export async function POST(request: Request) {
         ccRatePlan: body.ccRatePlan ?? "",
         commPlan: body.commPlan ?? "",
         resellerIds: body.resellerIds ?? [],
+        allowanceMb: body.allowanceMb,
+        allowanceSms: body.allowanceSms,
+        allowanceVoiceMin: body.allowanceVoiceMin,
       },
       ctx.homeTenantId,
     );

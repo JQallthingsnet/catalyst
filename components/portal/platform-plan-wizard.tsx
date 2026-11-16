@@ -13,12 +13,25 @@ export function PlatformPlanWizard({
 }) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  const [allowanceMb, setAllowanceMb] = useState("0");
+  const [allowanceSms, setAllowanceSms] = useState("0");
+  const [allowanceVoiceMin, setAllowanceVoiceMin] = useState("0");
   const [supplier, setSupplier] = useState<string>(PLAN_SUPPLIERS[0]);
   const [ccRatePlan, setCcRatePlan] = useState("");
   const [commPlan, setCommPlan] = useState("");
   const [resellerIds, setResellerIds] = useState<string[]>(resellers[0] ? [resellers[0].id] : []);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  function parseAllowanceField(raw: string, label: string): number {
+    const text = raw.trim();
+    if (text === "") return 0;
+    const n = Number(text);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new Error(`${label} must be a non-negative number (0 = PAYG).`);
+    }
+    return n;
+  }
 
   function toggleReseller(id: string) {
     setResellerIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
@@ -28,10 +41,22 @@ export function PlatformPlanWizard({
     setBusy(true);
     setError("");
     try {
+      const mb = parseAllowanceField(allowanceMb, "Data allowance");
+      const sms = parseAllowanceField(allowanceSms, "SMS allowance");
+      const voice = parseAllowanceField(allowanceVoiceMin, "Voice allowance");
       const res = await fetch("/api/portal/platform-plans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, supplier, ccRatePlan, commPlan, resellerIds }),
+        body: JSON.stringify({
+          name,
+          supplier,
+          ccRatePlan,
+          commPlan,
+          resellerIds,
+          allowanceMb: mb,
+          allowanceSms: sms,
+          allowanceVoiceMin: voice,
+        }),
       });
       const data = (await res.json()) as { error?: string };
       if (!res.ok) {
@@ -39,8 +64,8 @@ export function PlatformPlanWizard({
         return;
       }
       window.location.assign(returnTo);
-    } catch {
-      setError("Could not create plan.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create plan.");
     } finally {
       setBusy(false);
     }
@@ -57,6 +82,15 @@ export function PlatformPlanWizard({
         <>
           <p>{name || "Reseller Plan"}</p>
           <p>
+            Data {allowanceMb.trim() || "0"} MB · SMS {allowanceSms.trim() || "0"} · Voice{" "}
+            {allowanceVoiceMin.trim() || "0"} min
+            {(allowanceMb.trim() === "" || allowanceMb.trim() === "0") &&
+            (allowanceSms.trim() === "" || allowanceSms.trim() === "0") &&
+            (allowanceVoiceMin.trim() === "" || allowanceVoiceMin.trim() === "0")
+              ? " (PAYG)"
+              : ""}
+          </p>
+          <p>
             {supplier || "Supplier"} · {ccRatePlan || "Supplier code"}
           </p>
           <p>{commPlan || "Plan description"}</p>
@@ -66,15 +100,62 @@ export function PlatformPlanWizard({
       }
     >
       {step === 0 ? (
-        <label className="block text-sm">
-          Reseller Plan (what resellers see on Contract, Plans, and Plan changes)
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. CM1GB, 50MB_Voice"
-            className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
-          />
-        </label>
+        <div className="space-y-4">
+          <label className="block text-sm">
+            Reseller Plan (what resellers see on Contract, Plans, and Plan changes)
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="e.g. CM1GB, 50MB_Voice"
+              className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2"
+            />
+          </label>
+          <div>
+            <p className="text-sm">Inclusive allowance</p>
+            <p className="mt-1 text-xs text-quiet">
+              Shown under Reseller Plan allowances on Pools. <span className="text-ink">0 = PAYG</span> for that
+              channel.
+            </p>
+            <div className="mt-2 grid gap-3 sm:grid-cols-3">
+              <label className="block text-sm">
+                Data (MB)
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={allowanceMb}
+                  onChange={(event) => setAllowanceMb(event.target.value)}
+                  placeholder="0"
+                  className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 font-mono"
+                />
+              </label>
+              <label className="block text-sm">
+                SMS
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={allowanceSms}
+                  onChange={(event) => setAllowanceSms(event.target.value)}
+                  placeholder="0"
+                  className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 font-mono"
+                />
+              </label>
+              <label className="block text-sm">
+                Voice (min)
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={allowanceVoiceMin}
+                  onChange={(event) => setAllowanceVoiceMin(event.target.value)}
+                  placeholder="0"
+                  className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 font-mono"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
       ) : null}
       {step === 1 ? (
         <div className="space-y-4">

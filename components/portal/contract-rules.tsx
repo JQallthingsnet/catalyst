@@ -26,6 +26,7 @@ const RESELLER_ADMIN_RULES = [
   "ATN binds your organisation once to a Control Center Customer. SIMs with that Customer become yours in Catalyst (Sync keeps adding new ones). Reseller Plan starts from modem_ID as-is (or Supplier code / contract default if empty); later Change plan uses contracted plans only.",
   "Assign SIMs maps your ICCIDs to end customers and any retail plan on this contract. Shipping is outside Catalyst.",
   "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
+  "Inclusive Data / SMS / Voice on each Reseller Plan is set by ATN (0 = PAYG). It appears on Contract and drives Pools / Usage.",
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",
   "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
   "Change Reseller Plan any time within this contract (any SIM state).",

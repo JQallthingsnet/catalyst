@@ -36,6 +36,9 @@ export default async function ContractsPage() {
             <thead className="border-b border-line text-quiet">
               <tr>
                 <th className="px-4 py-3 font-medium">Reseller Plan</th>
+                <th className="px-4 py-3 font-medium">Data MB</th>
+                <th className="px-4 py-3 font-medium">SMS</th>
+                <th className="px-4 py-3 font-medium">Voice (min)</th>
                 <th className="px-4 py-3 font-medium">Default for bulk</th>
                 <th className="px-4 py-3 font-medium">SIMs on line</th>
               </tr>
@@ -43,7 +46,7 @@ export default async function ContractsPage() {
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-8 text-quiet">
+                  <td colSpan={6} className="px-4 py-8 text-quiet">
                     No Reseller Plans on contract yet. Ask ATN to add plans for your organisation.
                   </td>
                 </tr>
@@ -51,6 +54,21 @@ export default async function ContractsPage() {
               {lines.map((line) => (
                 <tr key={line.platformPlanId} className="border-t border-line">
                   <td className="px-4 py-3 text-ink">{line.remarks}</td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {line.allowanceMb == null || line.allowanceMb === 0
+                      ? "PAYG"
+                      : line.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {line.allowanceSms == null || line.allowanceSms === 0
+                      ? "PAYG"
+                      : line.allowanceSms.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {line.allowanceVoiceMin == null || line.allowanceVoiceMin === 0
+                      ? "PAYG"
+                      : line.allowanceVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
                   <td className="px-4 py-3">{line.isDefault ? <span className="text-ok">Default</span> : "—"}</td>
                   <td className="px-4 py-3">{line.simCount}</td>
                 </tr>
@@ -58,6 +76,7 @@ export default async function ContractsPage() {
             </tbody>
           </table>
         </div>
+        <p className="mt-2 text-xs text-quiet">Inclusive allowance per SIM on each Reseller Plan. 0 / unset = PAYG. Set by ATN.</p>
 
         <h2 className="mt-8 text-lg font-semibold">Catalogue (Order SIMs)</h2>
         <p className="mt-1 text-sm text-quiet">Products ATN allows your organisation to order.</p>

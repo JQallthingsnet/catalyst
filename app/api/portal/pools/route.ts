@@ -30,14 +30,18 @@ export async function GET(request: Request) {
   const q = url.searchParams.get("customer") ?? url.searchParams.get("q") ?? "";
 
   if (view === "modems") {
-    if (ctx.role !== "super_admin") {
-      return NextResponse.json(
-        { error: "Only super admin can view Reseller Plan allowances." },
-        { status: 403 },
-      );
+    // Super admin: all plans. Reseller with pool.view: own Contract only (read).
+    if (scope.unrestricted) {
+      return NextResponse.json({
+        modems: await listModemAllowances({ q }),
+      });
     }
     return NextResponse.json({
-      modems: await listModemAllowances({ q }),
+      modems: await listModemAllowances({
+        q,
+        tenantId: ctx.tenantId,
+        exactCustomer: scope.exactCustomer || undefined,
+      }),
     });
   }
   if (view === "rate_plans") {
