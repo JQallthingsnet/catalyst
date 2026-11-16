@@ -893,6 +893,12 @@ export async function deleteResellerOrganisation(
     db.prepare("DELETE FROM sim_rate_plan_changes WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM sim_platform_plan_daily WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM sim_lifecycle_requests WHERE tenant_id = ?").bind(id),
+    // Bulk job items have no tenant_id; delete via jobs for this org first.
+    db.prepare(
+      `DELETE FROM sim_bulk_job_items
+       WHERE job_id IN (SELECT id FROM sim_bulk_jobs WHERE tenant_id = ?)`,
+    ).bind(id),
+    db.prepare("DELETE FROM sim_bulk_jobs WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM alert_settings WHERE scope_id = ?").bind(id),
     db.prepare("DELETE FROM tenant_members WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM tenants WHERE id = ?").bind(id),
