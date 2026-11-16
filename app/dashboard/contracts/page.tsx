@@ -2,10 +2,19 @@ import Link from "next/link";
 import { ContractRules } from "@/components/portal/contract-rules";
 import { ContractsAdminIndex } from "./admin-view";
 import { requirePortal, requirePrivilege } from "@/lib/portal/guard";
-import { listContractBook, listResellerContract } from "@/lib/portal/platform-plans";
+import {
+  listContractBook,
+  listResellerContract,
+  listResellerJasperCarriedPlans,
+} from "@/lib/portal/platform-plans";
 import { can } from "@/lib/portal/role-model";
 import { listResellerSkus } from "@/lib/portal/skus";
 import { redirect } from "next/navigation";
+
+function formatAllowance(value: number | null | undefined, digits = 0): string {
+  if (value == null || value === 0) return "PAYG";
+  return value.toLocaleString("en-AU", { maximumFractionDigits: digits });
+}
 
 export default async function ContractsPage() {
   const ctx = await requirePortal();
@@ -13,8 +22,9 @@ export default async function ContractsPage() {
 
   // Reseller admin (or View as reseller admin): read-only signed lines for this org.
   if (ctx.role === "reseller_admin") {
-    const [lines, skus] = await Promise.all([
+    const [lines, carried, skus] = await Promise.all([
       listResellerContract(ctx.tenantId),
+      listResellerJasperCarriedPlans(ctx.tenantId),
       listResellerSkus(ctx.tenantId),
     ]);
     return (
@@ -54,21 +64,9 @@ export default async function ContractsPage() {
               {lines.map((line) => (
                 <tr key={line.platformPlanId} className="border-t border-line">
                   <td className="px-4 py-3 text-ink">{line.remarks}</td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {line.allowanceMb == null || line.allowanceMb === 0
-                      ? "PAYG"
-                      : line.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {line.allowanceSms == null || line.allowanceSms === 0
-                      ? "PAYG"
-                      : line.allowanceSms.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {line.allowanceVoiceMin == null || line.allowanceVoiceMin === 0
-                      ? "PAYG"
-                      : line.allowanceVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
-                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">{formatAllowance(line.allowanceMb, 1)}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{formatAllowance(line.allowanceSms)}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{formatAllowance(line.allowanceVoiceMin)}</td>
                   <td className="px-4 py-3">{line.isDefault ? <span className="text-ok">Default</span> : "—"}</td>
                   <td className="px-4 py-3">{line.simCount}</td>
                 </tr>
@@ -77,6 +75,40 @@ export default async function ContractsPage() {
           </table>
         </div>
         <p className="mt-2 text-xs text-quiet">Inclusive allowance per SIM on each Reseller Plan. 0 / unset = PAYG. Set by ATN.</p>
+
+        {carried.length > 0 ? (
+          <section className="mt-8 space-y-2">
+            <h2 className="text-lg font-semibold">Also on your SIMs (from Jasper)</h2>
+            <p className="text-sm text-quiet">
+              Reseller Plans mirrored from Jasper modem_ID that are not on this Contract yet. Allowances still apply
+              on Pools, Usage, and Invoices. Ask ATN to bind them if you need Change plan / Order from these lines.
+            </p>
+            <div className="overflow-x-auto rounded-card border border-line bg-panel">
+              <table className="w-full min-w-160 text-left text-sm">
+                <thead className="border-b border-line text-quiet">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Reseller Plan</th>
+                    <th className="px-4 py-3 font-medium">Data MB</th>
+                    <th className="px-4 py-3 font-medium">SMS</th>
+                    <th className="px-4 py-3 font-medium">Voice (min)</th>
+                    <th className="px-4 py-3 font-medium">SIMs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {carried.map((line) => (
+                    <tr key={line.platformPlanId} className="border-t border-line">
+                      <td className="px-4 py-3 text-ink">{line.name}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{formatAllowance(line.allowanceMb, 1)}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{formatAllowance(line.allowanceSms)}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{formatAllowance(line.allowanceVoiceMin)}</td>
+                      <td className="px-4 py-3">{line.simCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
 
         <h2 className="mt-8 text-lg font-semibold">Catalogue (Order SIMs)</h2>
         <p className="mt-1 text-sm text-quiet">Products ATN allows your organisation to order.</p>

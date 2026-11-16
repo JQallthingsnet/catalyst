@@ -215,8 +215,9 @@ export default async function InvoicesPage({
               unit price for the billed Reseller Plan (highest unit price if the SIM changed plans).
             </li>
             <li>
-              <span className="text-ink">Plan pools</span> — one row per Reseller Plan; shared CTD,
-              allowance (incl. top-ups), utilisation, excess, and top-up totals.
+              <span className="text-ink">Plan pools</span> — one row per Reseller Plan; shared CTD vs
+              Data / SMS / Voice allowance (0 = PAYG; data incl. top-ups), utilisation, excess, and
+              top-up totals.
             </li>
             <li>
               <span className="text-ink">Pool top-ups</span> — each purchase in the month (SIM units ×
@@ -279,12 +280,13 @@ export default async function InvoicesPage({
         <div>
           <h2 className="text-lg font-semibold">Plan pools</h2>
           <p className="mt-1 text-sm text-quiet">
-            Shared pool KPIs per Reseller Plan — CTD vs allowance, excess, and month top-up totals.
-            Allowance includes current-month pool top-ups.
+            Shared pool KPIs per Reseller Plan on your SIMs (including Jasper-carried / off-contract) —
+            CTD vs Data / SMS / Voice allowance (0 = PAYG), excess, and month top-up totals. Data
+            allowance includes current-month pool top-ups.
           </p>
         </div>
         <div className="overflow-x-auto rounded-card border border-line bg-panel">
-          <table className="w-full min-w-260 text-left text-sm">
+          <table className="w-full min-w-7xl text-left text-sm">
             <thead className="text-quiet">
               <tr>
                 {onPlatform ? <th className="px-4 py-3">Organisation</th> : null}
@@ -293,7 +295,12 @@ export default async function InvoicesPage({
                 <th className="px-4 py-3">CTD MB</th>
                 <th className="px-4 py-3">CTD SMS</th>
                 <th className="px-4 py-3">CTD voice</th>
+                <th className="px-4 py-3">Per-SIM MB</th>
+                <th className="px-4 py-3">Per-SIM SMS</th>
+                <th className="px-4 py-3">Per-SIM voice</th>
                 <th className="px-4 py-3">Allowance MB</th>
+                <th className="px-4 py-3">Allowance SMS</th>
+                <th className="px-4 py-3">Allowance voice</th>
                 <th className="px-4 py-3">Util %</th>
                 <th className="px-4 py-3">Excess data</th>
                 <th className="px-4 py-3">Excess SMS</th>
@@ -322,8 +329,35 @@ export default async function InvoicesPage({
                   <td className="px-4 py-3">
                     {row.ctdVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
                   </td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {row.perSimMb === 0
+                      ? "PAYG"
+                      : row.perSimMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {row.perSimSms === 0
+                      ? "PAYG"
+                      : row.perSimSms.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {row.perSimVoiceMin === 0
+                      ? "PAYG"
+                      : row.perSimVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
                   <td className="px-4 py-3">
-                    {row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                    {row.allowanceMb === 0
+                      ? "PAYG"
+                      : row.allowanceMb.toLocaleString("en-AU", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.allowanceSms === 0
+                      ? "PAYG"
+                      : row.allowanceSms.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.allowanceVoiceMin === 0
+                      ? "PAYG"
+                      : row.allowanceVoiceMin.toLocaleString("en-AU", { maximumFractionDigits: 0 })}
                   </td>
                   <td className="px-4 py-3">{row.poolUtilisationPct}%</td>
                   <td className="px-4 py-3">
@@ -352,7 +386,7 @@ export default async function InvoicesPage({
               ))}
               {planSummaries.length === 0 ? (
                 <tr>
-                  <td colSpan={onPlatform ? 13 : 12} className="px-4 py-10 text-quiet">
+                  <td colSpan={onPlatform ? 18 : 17} className="px-4 py-10 text-quiet">
                     No Reseller Plan pools for this month yet.
                   </td>
                 </tr>

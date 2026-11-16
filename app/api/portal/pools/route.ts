@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   const q = url.searchParams.get("customer") ?? url.searchParams.get("q") ?? "";
 
   if (view === "modems") {
-    // Super admin: all plans. Reseller with pool.view: own Contract only (read).
+    // Super admin: all plans. Reseller: own Contract + Jasper-carried plans on their SIMs (read).
     if (scope.unrestricted) {
       return NextResponse.json({
         modems: await listModemAllowances({ q }),
