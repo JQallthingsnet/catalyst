@@ -35,8 +35,8 @@ export default async function AdminPage() {
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
         <h2 className="font-semibold">Send invite</h2>
         <p className="mt-1 text-sm text-quiet">
-          Super admin joins ATN Platform. Reseller admin creates a new organisation (name shown top left). Operator
-          must be bound to an existing reseller.
+          Super admin joins ATN Platform. Reseller admin can create a new organisation (unique name, shown top left)
+          or join an existing one as a backup admin. Operator must be bound to an existing reseller.
         </p>
         <InviteForm
           roles={inviteableRoles(ctx.role)}

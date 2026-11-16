@@ -39,8 +39,9 @@ export default async function SettingsPage() {
         <article className="mt-4 rounded-card border border-line bg-panel p-5">
           <h2 className="font-semibold">Invite team</h2>
           <p className="mt-1 text-sm text-quiet">
-            Invite operators into <span className="text-ink">{ctx.tenantName}</span>. They only see this
-            organisation’s SIMs and customers.
+            Invite a backup reseller admin or operators into{" "}
+            <span className="text-ink">{ctx.tenantName}</span>. Operators only see this organisation’s SIMs and
+            customers.
           </p>
           <InviteForm roles={roles} />
           <ul className="mt-4 space-y-2 text-sm">

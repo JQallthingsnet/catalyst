@@ -21,6 +21,7 @@ import { getSimSku, listResellerSkus, listSimSkus, tenantHasSku } from "@/lib/po
 import { loadPlatformPlanRecord, tenantHasPlatformPlan } from "@/lib/portal/platform-plans";
 import type { SimsListFilter } from "@/lib/portal/sim-filter";
 import {
+  assertUniqueOrganisationName,
   bindTenantCcCustomer,
   findTenantByCcCustomer,
   getResellerAdminEmail,
@@ -1767,7 +1768,6 @@ export async function addPoolMembers(tenantId: string, actorEmail: string, poolI
 }
 
 export async function renameTenant(tenantId: string, name: string): Promise<void> {
-  const trimmed = name.trim();
-  if (trimmed.length < 2) throw new Error("Enter an organisation name.");
+  const trimmed = await assertUniqueOrganisationName(name, tenantId);
   await getDB().prepare("UPDATE tenants SET name = ? WHERE id = ?").bind(trimmed, tenantId).run();
 }

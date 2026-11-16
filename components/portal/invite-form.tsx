@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import type { PortalRole } from "@/lib/portal/role-model";
 import { VIEW_ROLES } from "@/lib/portal/role-model";
 
+const NEW_ORG = "__new__";
+
 export function InviteForm({
   roles,
   allowNewOrganisation = false,
@@ -18,17 +20,22 @@ export function InviteForm({
   const [role, setRole] = useState<PortalRole>(roles[0] ?? "reseller_operator");
   const [organisationName, setOrganisationName] = useState("");
   const [organisationId, setOrganisationId] = useState("");
+  const [adminOrgChoice, setAdminOrgChoice] = useState(NEW_ORG);
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
   const router = useRouter();
-  const creatingOrg = allowNewOrganisation && role === "reseller_admin";
-  const bindingOrg = allowNewOrganisation && role === "reseller_operator";
+  const creatingOrg = allowNewOrganisation && role === "reseller_admin" && adminOrgChoice === NEW_ORG;
+  const bindingAdminOrg =
+    allowNewOrganisation && role === "reseller_admin" && adminOrgChoice !== NEW_ORG;
+  const bindingOperatorOrg = allowNewOrganisation && role === "reseller_operator";
+  const bindingOrg = bindingAdminOrg || bindingOperatorOrg;
   const newOrgName = creatingOrg ? organisationName.trim() : "";
 
   useEffect(() => {
     if (!organisations.length) {
       setOrganisationId("");
+      setAdminOrgChoice(NEW_ORG);
       return;
     }
     setOrganisationId((current) =>
@@ -36,20 +43,32 @@ export function InviteForm({
     );
   }, [organisations]);
 
+  useEffect(() => {
+    if (role !== "reseller_admin") return;
+    if (adminOrgChoice === NEW_ORG) return;
+    if (!organisations.some((org) => org.id === adminOrgChoice)) {
+      setAdminOrgChoice(organisations[0]?.id ?? NEW_ORG);
+    }
+  }, [role, adminOrgChoice, organisations]);
+
   if (roles.length === 0) return null;
 
   async function submit() {
     setBusy(true);
     setError("");
     setOk("");
-    const boundOrgId = bindingOrg ? organisationId || organisations[0]?.id || "" : "";
+    const boundOrgId = bindingOperatorOrg
+      ? organisationId || organisations[0]?.id || ""
+      : bindingAdminOrg
+        ? adminOrgChoice
+        : "";
     if (creatingOrg && !organisationName.trim()) {
       setError("Enter the organisation name. It is shown top left in their portal.");
       setBusy(false);
       return;
     }
     if (bindingOrg && !boundOrgId) {
-      setError("Choose which reseller organisation this operator belongs to.");
+      setError("Choose which reseller organisation this invite belongs to.");
       setBusy(false);
       return;
     }
@@ -116,6 +135,26 @@ export function InviteForm({
           {busy ? "Sending…" : "Send invite"}
         </button>
       </div>
+      {allowNewOrganisation && role === "reseller_admin" ? (
+        <label className="block text-sm">
+          Organisation
+          <select
+            value={adminOrgChoice}
+            onChange={(event) => setAdminOrgChoice(event.target.value)}
+            className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
+          >
+            <option value={NEW_ORG}>Create new organisation…</option>
+            {organisations.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.name}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-xs text-quiet">
+            New org needs a unique name. Pick an existing org to invite a backup reseller admin.
+          </span>
+        </label>
+      ) : null}
       {creatingOrg ? (
         <label className="block text-sm">
           Organisation name
@@ -127,11 +166,11 @@ export function InviteForm({
             className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm"
           />
           <span className="mt-1 block text-xs text-quiet">
-            Shown top left in their portal, with “Supported by ATN Catalyst” underneath.
+            Must be unique. Shown top left in their portal, with “Supported by ATN Catalyst” underneath.
           </span>
         </label>
       ) : null}
-      {bindingOrg ? (
+      {bindingOperatorOrg ? (
         <label className="block text-sm">
           Reseller organisation
           {organisations.length === 0 ? (

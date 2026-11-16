@@ -102,28 +102,39 @@ export async function createAndSendInvite(input: {
   const organisationName = input.organisationName?.trim();
   const organisationId = input.organisationId?.trim();
 
-  if (input.role === "reseller_admin" && input.ctx.isSuperAdmin && input.ctx.role === "super_admin") {
-    if (!organisationName) {
-      throw new Error("Enter the reseller organisation name. It appears top left in their portal.");
+  const platformInvite =
+    input.ctx.isSuperAdmin && input.ctx.role === "super_admin";
+
+  if (input.role === "reseller_admin" && platformInvite) {
+    if (organisationName && organisationId) {
+      throw new Error("Choose either a new organisation name or an existing organisation, not both.");
+    }
+    if (!organisationName && !organisationId) {
+      throw new Error(
+        "Enter a new organisation name, or choose an existing organisation for a backup reseller admin.",
+      );
     }
   }
 
-  if (input.role === "reseller_operator" && input.ctx.isSuperAdmin && input.ctx.role === "super_admin") {
-    if (!organisationId) {
-      throw new Error("Choose which reseller organisation this operator belongs to.");
-    }
+  if (
+    (input.role === "reseller_operator" || input.role === "reseller_admin") &&
+    platformInvite &&
+    organisationId
+  ) {
     if (organisationId === input.ctx.homeTenantId) {
-      throw new Error("Operators must belong to a reseller organisation, not ATN Platform.");
+      throw new Error("Members must belong to a reseller organisation, not ATN Platform.");
     }
     const org = await loadTenant(organisationId);
     if (!org) throw new Error("Organisation not found.");
     if (!org.active) throw new Error("That organisation is deactivated. Reactivate it before inviting.");
     tenantId = org.id;
     tenantName = org.name;
+  } else if (input.role === "reseller_operator" && platformInvite && !organisationId) {
+    throw new Error("Choose which reseller organisation this operator belongs to.");
   }
 
   if (organisationName) {
-    if (!input.ctx.isSuperAdmin || input.role !== "reseller_admin") {
+    if (!platformInvite || input.role !== "reseller_admin") {
       throw new Error("Only a super admin can create a reseller organisation.");
     }
     const org = await createResellerOrganisation(organisationName);

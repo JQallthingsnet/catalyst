@@ -799,9 +799,36 @@ export async function listPlatformEstate(
   };
 }
 
-export async function createResellerOrganisation(name: string): Promise<TenantRecord> {
+/** Organisation name is unique across the portal (case-insensitive). */
+export async function assertUniqueOrganisationName(
+  name: string,
+  excludeTenantId?: string,
+): Promise<string> {
   const trimmed = name.trim();
   if (trimmed.length < 2) throw new Error("Enter an organisation name.");
+  const row = excludeTenantId
+    ? await getDB()
+        .prepare(
+          `SELECT id FROM tenants
+           WHERE name = ? COLLATE NOCASE AND id != ?
+           LIMIT 1`,
+        )
+        .bind(trimmed, excludeTenantId)
+        .first<{ id: string }>()
+    : await getDB()
+        .prepare(
+          `SELECT id FROM tenants
+           WHERE name = ? COLLATE NOCASE
+           LIMIT 1`,
+        )
+        .bind(trimmed)
+        .first<{ id: string }>();
+  if (row) throw new Error("That organisation name is already in use.");
+  return trimmed;
+}
+
+export async function createResellerOrganisation(name: string): Promise<TenantRecord> {
+  const trimmed = await assertUniqueOrganisationName(name);
   const id = newId("ten");
   const createdAt = new Date().toISOString();
   await getDB()
@@ -829,8 +856,7 @@ export async function renameResellerOrganisation(
   if (tenantId === homeTenantId) {
     throw new Error("ATN Platform cannot be renamed here.");
   }
-  const trimmed = name.trim();
-  if (trimmed.length < 2) throw new Error("Enter an organisation name.");
+  const trimmed = await assertUniqueOrganisationName(name, tenantId);
   const existing = await loadTenant(tenantId);
   if (!existing) throw new Error("Organisation not found.");
   await getDB().prepare("UPDATE tenants SET name = ? WHERE id = ?").bind(trimmed, tenantId).run();

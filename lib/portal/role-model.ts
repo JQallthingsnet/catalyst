@@ -64,6 +64,7 @@ const ROLE_PRIVILEGES: Record<PortalRole, Privilege[]> = {
     "alerts.manage",
     "settings",
     "invite.operator",
+    "invite.reseller_admin",
     "contract.view",
   ],
   reseller_operator: ["assign", "lifecycle"],
