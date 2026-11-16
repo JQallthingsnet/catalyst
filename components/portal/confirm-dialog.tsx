@@ -85,7 +85,19 @@ export function ConfirmDialog({
         <div className="mt-2 text-sm leading-6 text-quiet">{body}</div>
         {requireName ? (
           <label className="mt-4 block text-sm text-ink">
-            Type <span className="font-medium text-accent">{requireName}</span> to confirm
+            Type{" "}
+            <button
+              type="button"
+              disabled={busy}
+              title="Copy name to clipboard"
+              onClick={() => {
+                void navigator.clipboard?.writeText(requireName).catch(() => {});
+              }}
+              className="font-medium text-accent underline-offset-2 hover:underline disabled:opacity-40"
+            >
+              {requireName}
+            </button>{" "}
+            to confirm
             <input
               ref={inputRef}
               value={typed}
