@@ -2,6 +2,7 @@ import { getDB } from "@/lib/env";
 import { portalTableHasColumn } from "@/lib/portal/d1-compat";
 import { newId } from "@/lib/portal/ids";
 import { DEFAULT_PLAN_SUPPLIER, isListedPlanSupplier, normalizePlanSupplier } from "@/lib/portal/plan-suppliers";
+import { clearModemAllowance, setModemAllowance } from "@/lib/portal/pools";
 import { assignSkuToTenant, listResellerSkus } from "@/lib/portal/skus";
 import { loadTenant } from "@/lib/portal/tenant";
 
@@ -223,9 +224,30 @@ async function bindPlanToReseller(
     .run();
 }
 
+function parseCreateAllowance(value: unknown, label: string): number {
+  if (value == null || value === "") return 0;
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`${label} must be a non-negative number (0 = PAYG).`);
+  }
+  return n;
+}
+
 export async function createPlatformPlan(
   actorEmail: string,
-  input: { name: string; supplier: string; ccRatePlan: string; commPlan: string; resellerIds: string[] },
+  input: {
+    name: string;
+    supplier: string;
+    ccRatePlan: string;
+    commPlan: string;
+    resellerIds: string[];
+    /** Inclusive data MB. 0 = PAYG. */
+    allowanceMb?: number | null;
+    /** Inclusive SMS count. 0 = PAYG. */
+    allowanceSms?: number | null;
+    /** Inclusive voice minutes. 0 = PAYG. */
+    allowanceVoiceMin?: number | null;
+  },
   homeTenantId: string,
 ): Promise<PlatformPlan> {
   const name = input.name.trim();
@@ -242,6 +264,9 @@ export async function createPlatformPlan(
   if (resellerIds.length === 0) {
     throw new Error("Bind this plan to at least one reseller (the contract).");
   }
+  const allowanceMb = parseCreateAllowance(input.allowanceMb, "Data allowance");
+  const allowanceSms = parseCreateAllowance(input.allowanceSms, "SMS allowance");
+  const allowanceVoiceMin = parseCreateAllowance(input.allowanceVoiceMin, "Voice allowance");
 
   const resellers = [];
   for (const resellerId of resellerIds) {
@@ -261,6 +286,13 @@ export async function createPlatformPlan(
   for (const reseller of resellers) {
     await bindPlanToReseller(db, actorEmail, reseller.id, id, name, createdAt);
   }
+
+  // Reseller Plan allowances dialog keys modem_allowances.modem_id = plan name.
+  await setModemAllowance(
+    name,
+    { allowanceMb, allowanceSms, allowanceVoiceMin },
+    actorEmail,
+  );
 
   return {
     id,
@@ -363,6 +395,7 @@ export async function deletePlatformPlan(id: string, confirmName: string): Promi
     db.prepare("DELETE FROM plans WHERE platform_plan_id = ?").bind(id),
     db.prepare("DELETE FROM platform_plans WHERE id = ?").bind(id),
   ]);
+  await clearModemAllowance(existing.name);
   return existing;
 }
 
@@ -613,6 +646,12 @@ export type ContractBookEntry = {
     /** AUD unit price charged to this reseller for the Reseller Plan (invoice). */
     unitPriceAud: number;
     simCount: number;
+    /** Inclusive data MB. null/0 = PAYG. */
+    allowanceMb: number | null;
+    /** Inclusive SMS. null/0 = PAYG. */
+    allowanceSms: number | null;
+    /** Inclusive voice minutes. null/0 = PAYG. */
+    allowanceVoiceMin: number | null;
   }[];
   /** Catalogue SKUs this reseller may Order SIMs for. */
   skus: {
@@ -640,20 +679,28 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
 
   const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
   const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
+  const hasSms = await portalTableHasColumn("modem_allowances", "allowance_sms");
+  const hasVoice = await portalTableHasColumn("modem_allowances", "allowance_voice_min");
   const priceExpr = hasUnitPrice
     ? "IFNULL(a.unit_price_aud, 0)"
     : hasValueRank
       ? "IFNULL(a.value_rank, 0)"
       : "0";
+  const smsExpr = hasSms ? "ma.allowance_sms" : "NULL";
+  const voiceExpr = hasVoice ? "ma.allowance_voice_min" : "NULL";
   const rows = await db
     .prepare(
       `SELECT a.tenant_id, a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
               ${priceExpr} AS unit_price_aud,
               p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
               p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+              (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count,
+              ma.allowance_mb AS allowance_mb,
+              ${smsExpr} AS allowance_sms,
+              ${voiceExpr} AS allowance_voice_min
        FROM tenant_plan_assignments a
        JOIN platform_plans p ON p.id = a.platform_plan_id
+       LEFT JOIN modem_allowances ma ON ma.modem_id = TRIM(p.name)
        ORDER BY ${priceExpr} ASC, p.cc_rate_plan COLLATE NOCASE`,
     )
     .all<{
@@ -667,6 +714,9 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
       comm_plan: string;
       plan_active: number;
       sim_count: number;
+      allowance_mb: number | null;
+      allowance_sms: number | null;
+      allowance_voice_min: number | null;
     }>();
 
   const byTenant = new Map<string, ContractBookEntry["plans"]>();
@@ -682,6 +732,9 @@ export async function listContractBook(homeTenantId: string): Promise<ContractBo
       isDefault: Boolean(row.is_default),
       unitPriceAud: Number(row.unit_price_aud) || 0,
       simCount: row.sim_count,
+      allowanceMb: row.allowance_mb,
+      allowanceSms: row.allowance_sms,
+      allowanceVoiceMin: row.allowance_voice_min,
     });
     byTenant.set(row.tenant_id, list);
   }
@@ -735,20 +788,28 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
   try {
     const hasUnitPrice = await portalTableHasColumn("tenant_plan_assignments", "unit_price_aud");
     const hasValueRank = await portalTableHasColumn("tenant_plan_assignments", "value_rank");
+    const hasSms = await portalTableHasColumn("modem_allowances", "allowance_sms");
+    const hasVoice = await portalTableHasColumn("modem_allowances", "allowance_voice_min");
     const priceExpr = hasUnitPrice
       ? "IFNULL(a.unit_price_aud, 0)"
       : hasValueRank
         ? "IFNULL(a.value_rank, 0)"
         : "0";
+    const smsExpr = hasSms ? "ma.allowance_sms" : "NULL";
+    const voiceExpr = hasVoice ? "ma.allowance_voice_min" : "NULL";
     const rows = await db
       .prepare(
         `SELECT a.platform_plan_id, IFNULL(a.is_default, 0) AS is_default,
                 ${priceExpr} AS unit_price_aud,
                 p.name AS remarks, IFNULL(p.supplier, 'Optus') AS supplier,
                 p.cc_rate_plan, p.comm_plan, IFNULL(p.active, 1) AS plan_active,
-                (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count
+                (SELECT COUNT(*) FROM sims s WHERE s.tenant_id = a.tenant_id AND s.platform_plan_id = a.platform_plan_id) AS sim_count,
+                ma.allowance_mb AS allowance_mb,
+                ${smsExpr} AS allowance_sms,
+                ${voiceExpr} AS allowance_voice_min
          FROM tenant_plan_assignments a
          JOIN platform_plans p ON p.id = a.platform_plan_id
+         LEFT JOIN modem_allowances ma ON ma.modem_id = TRIM(p.name)
          WHERE a.tenant_id = ? AND IFNULL(p.active, 1) = 1
          ORDER BY ${priceExpr} ASC, IFNULL(a.is_default, 0) DESC, p.cc_rate_plan COLLATE NOCASE`,
       )
@@ -763,6 +824,9 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
         comm_plan: string;
         plan_active: number;
         sim_count: number;
+        allowance_mb: number | null;
+        allowance_sms: number | null;
+        allowance_voice_min: number | null;
       }>();
     return (rows.results ?? []).map((row) => ({
       platformPlanId: row.platform_plan_id,
@@ -774,6 +838,9 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
       isDefault: Boolean(row.is_default),
       unitPriceAud: Number(row.unit_price_aud) || 0,
       simCount: row.sim_count,
+      allowanceMb: row.allowance_mb,
+      allowanceSms: row.allowance_sms,
+      allowanceVoiceMin: row.allowance_voice_min,
     }));
   } catch {
     // Older D1 before supplier / is_default / active alters — still show the contract book.
@@ -804,8 +871,69 @@ export async function listResellerContract(tenantId: string): Promise<ContractBo
       isDefault: false,
       unitPriceAud: 0,
       simCount: row.sim_count,
+      allowanceMb: null,
+      allowanceSms: null,
+      allowanceVoiceMin: null,
     }));
   }
+}
+
+/**
+ * Reseller Plans on this org’s SIMs that are not on Contract (Jasper modem_ID carry).
+ * Allowances still apply for Pools / Usage / Invoices.
+ */
+export async function listResellerJasperCarriedPlans(tenantId: string): Promise<
+  Array<{
+    platformPlanId: string;
+    name: string;
+    simCount: number;
+    allowanceMb: number | null;
+    allowanceSms: number | null;
+    allowanceVoiceMin: number | null;
+  }>
+> {
+  const db = getDB();
+  const hasSms = await portalTableHasColumn("modem_allowances", "allowance_sms");
+  const hasVoice = await portalTableHasColumn("modem_allowances", "allowance_voice_min");
+  const smsExpr = hasSms ? "ma.allowance_sms" : "NULL";
+  const voiceExpr = hasVoice ? "ma.allowance_voice_min" : "NULL";
+  const rows = await db
+    .prepare(
+      `SELECT p.id AS platform_plan_id, TRIM(p.name) AS name,
+              COUNT(*) AS sim_count,
+              ma.allowance_mb AS allowance_mb,
+              ${smsExpr} AS allowance_sms,
+              ${voiceExpr} AS allowance_voice_min
+       FROM sims s
+       JOIN platform_plans p ON p.id = s.platform_plan_id
+       LEFT JOIN modem_allowances ma ON ma.modem_id = TRIM(p.name)
+       WHERE s.tenant_id = ?
+         AND s.platform_plan_id IS NOT NULL AND TRIM(s.platform_plan_id) != ''
+         AND TRIM(IFNULL(p.name, '')) != ''
+         AND NOT EXISTS (
+           SELECT 1 FROM tenant_plan_assignments a
+           WHERE a.tenant_id = s.tenant_id AND a.platform_plan_id = s.platform_plan_id
+         )
+       GROUP BY p.id, TRIM(p.name)
+       ORDER BY TRIM(p.name) COLLATE NOCASE`,
+    )
+    .bind(tenantId)
+    .all<{
+      platform_plan_id: string;
+      name: string;
+      sim_count: number;
+      allowance_mb: number | null;
+      allowance_sms: number | null;
+      allowance_voice_min: number | null;
+    }>();
+  return (rows.results ?? []).map((row) => ({
+    platformPlanId: row.platform_plan_id,
+    name: row.name,
+    simCount: row.sim_count,
+    allowanceMb: row.allowance_mb,
+    allowanceSms: row.allowance_sms,
+    allowanceVoiceMin: row.allowance_voice_min,
+  }));
 }
 
 export async function tenantHasPlatformPlan(tenantId: string, platformPlanId: string): Promise<boolean> {

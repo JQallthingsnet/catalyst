@@ -28,7 +28,18 @@ export type InvoicePlanSummary = {
   ctdUsageMb: number;
   ctdSms: number;
   ctdVoiceMin: number;
+  /** Pool data allowance MB (per-SIM × SIMs + month top-ups). 0 = PAYG. */
   allowanceMb: number;
+  /** Pool SMS allowance (per-SIM × SIMs). 0 = PAYG. */
+  allowanceSms: number;
+  /** Pool voice allowance minutes (per-SIM × SIMs). 0 = PAYG. */
+  allowanceVoiceMin: number;
+  /** Per-SIM data MB from Reseller Plan allowances. 0 = PAYG. */
+  perSimMb: number;
+  /** Per-SIM SMS. 0 = PAYG. */
+  perSimSms: number;
+  /** Per-SIM voice minutes. 0 = PAYG. */
+  perSimVoiceMin: number;
   poolUtilisationPct: number;
   excessDataMb: number;
   excessSms: number;
@@ -246,19 +257,47 @@ async function loadPlanPools(input: {
     });
   }
 
+  // Per-SIM allowances for snapshot-only plans (no live SIM row this cycle).
+  const allowanceByModem = new Map<string, { mb: number; sms: number | null; voice: number | null }>();
+  {
+    const allowanceRows = await db
+      .prepare(
+        `SELECT modem_id, allowance_mb,
+                ${smsExpr} AS allowance_sms,
+                ${voiceExpr} AS allowance_voice_min
+         FROM modem_allowances`,
+      )
+      .all<{
+        modem_id: string;
+        allowance_mb: number;
+        allowance_sms: number | null;
+        allowance_voice_min: number | null;
+      }>();
+    for (const row of allowanceRows.results ?? []) {
+      allowanceByModem.set(row.modem_id, {
+        mb: row.allowance_mb ?? 0,
+        sms: row.allowance_sms,
+        voice: row.allowance_voice_min,
+      });
+    }
+  }
+
   // Overlay snapshot CTD/sim counts when available (closed days); keep live allowance + top-ups.
   for (const row of snap.results ?? []) {
     const existing = byPlan.get(row.modem_id);
     if (!existing) {
+      const per = allowanceByModem.get(row.modem_id);
+      const simCount = row.sim_count ?? 0;
+      const perSimMb = per?.mb ?? 0;
       byPlan.set(row.modem_id, {
         ctdUsageMb: row.ctd_usage_mb ?? 0,
         ctdSms: row.ctd_sms ?? 0,
         ctdVoiceMin: row.ctd_voice_min ?? 0,
-        allowanceMb: (row.allowance_mb ?? 0) + (topupMb.get(row.modem_id) ?? 0),
-        simCount: row.sim_count ?? 0,
-        perSimMb: 0,
-        perSimSms: null,
-        perSimVoice: null,
+        allowanceMb: perSimMb * simCount + (topupMb.get(row.modem_id) ?? 0),
+        simCount,
+        perSimMb,
+        perSimSms: per?.sms ?? null,
+        perSimVoice: per?.voice ?? null,
       });
       continue;
     }
@@ -403,25 +442,23 @@ export async function buildMonthlyInvoice(input: {
     const pool = planPools.get(modemId);
     const ctd = pool?.ctdUsageMb ?? 0;
     const allow = pool?.allowanceMb ?? 0;
-    const smsAllow =
-      pool?.perSimSms != null && pool.perSimSms > 0
-        ? pool.perSimSms * (pool.simCount || 0)
-        : pool?.perSimSms === 0
-          ? 0
-          : null;
-    const voiceAllow =
-      pool?.perSimVoice != null && pool.perSimVoice > 0
-        ? pool.perSimVoice * (pool.simCount || 0)
-        : pool?.perSimVoice === 0
-          ? 0
-          : null;
+    const perSimMb = pool?.perSimMb ?? 0;
+    const perSimSms = pool?.perSimSms == null ? 0 : pool.perSimSms;
+    const perSimVoiceMin = pool?.perSimVoice == null ? 0 : pool.perSimVoice;
+    const smsAllow = perSimSms > 0 ? perSimSms * (pool?.simCount || 0) : 0;
+    const voiceAllow = perSimVoiceMin > 0 ? perSimVoiceMin * (pool?.simCount || 0) : 0;
     const util = allow > 0 ? Math.round((ctd / allow) * 100) : 0;
     return {
       pool,
       util,
+      perSimMb,
+      perSimSms,
+      perSimVoiceMin,
+      allowanceSms: smsAllow,
+      allowanceVoiceMin: voiceAllow,
       excessDataMb: Math.max(0, ctd - allow),
-      excessSms: smsAllow == null ? 0 : Math.max(0, (pool?.ctdSms ?? 0) - smsAllow),
-      excessVoiceMin: voiceAllow == null ? 0 : Math.max(0, (pool?.ctdVoiceMin ?? 0) - voiceAllow),
+      excessSms: smsAllow > 0 ? Math.max(0, (pool?.ctdSms ?? 0) - smsAllow) : 0,
+      excessVoiceMin: voiceAllow > 0 ? Math.max(0, (pool?.ctdVoiceMin ?? 0) - voiceAllow) : 0,
       topupCount: topupCounts.get(modemId) ?? 0,
       topupSimUnits: topupUnits.get(modemId) ?? 0,
     };
@@ -481,6 +518,11 @@ export async function buildMonthlyInvoice(input: {
         ctdSms: pool.ctdSms,
         ctdVoiceMin: pool.ctdVoiceMin,
         allowanceMb: pool.allowanceMb,
+        allowanceSms: metrics.allowanceSms,
+        allowanceVoiceMin: metrics.allowanceVoiceMin,
+        perSimMb: metrics.perSimMb,
+        perSimSms: metrics.perSimSms,
+        perSimVoiceMin: metrics.perSimVoiceMin,
         poolUtilisationPct: metrics.util,
         excessDataMb: metrics.excessDataMb,
         excessSms: metrics.excessSms,
@@ -587,7 +629,12 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
     "ctd_mb",
     "ctd_sms",
     "ctd_voice_min",
+    "per_sim_mb",
+    "per_sim_sms",
+    "per_sim_voice_min",
     "allowance_mb",
+    "allowance_sms",
+    "allowance_voice_min",
     "pool_utilisation_pct",
     "excess_data_mb",
     "excess_sms",
@@ -639,7 +686,12 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
         row.ctdUsageMb,
         row.ctdSms,
         row.ctdVoiceMin,
+        row.perSimMb,
+        row.perSimSms,
+        row.perSimVoiceMin,
         row.allowanceMb,
+        row.allowanceSms,
+        row.allowanceVoiceMin,
         row.poolUtilisationPct,
         row.excessDataMb,
         row.excessSms,
@@ -759,8 +811,33 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
     ["Plan pools", "ctd_voice_min", "Cycle-to-date voice minutes for the pool."],
     [
       "Plan pools",
+      "per_sim_mb",
+      "Inclusive data MB per SIM on this Reseller Plan (from ATN allowances). 0 = PAYG.",
+    ],
+    [
+      "Plan pools",
+      "per_sim_sms",
+      "Inclusive SMS per SIM on this Reseller Plan. 0 = PAYG.",
+    ],
+    [
+      "Plan pools",
+      "per_sim_voice_min",
+      "Inclusive voice minutes per SIM on this Reseller Plan. 0 = PAYG.",
+    ],
+    [
+      "Plan pools",
       "allowance_mb",
-      "Included pool data allowance (MB) for the plan, including current-month pool top-ups.",
+      "Included pool data allowance (MB) = per_sim_mb × sim_count, plus current-month pool top-ups. 0 = PAYG.",
+    ],
+    [
+      "Plan pools",
+      "allowance_sms",
+      "Included pool SMS allowance = per_sim_sms × sim_count. 0 = PAYG.",
+    ],
+    [
+      "Plan pools",
+      "allowance_voice_min",
+      "Included pool voice allowance (min) = per_sim_voice_min × sim_count. 0 = PAYG.",
     ],
     [
       "Plan pools",
@@ -775,12 +852,12 @@ export function exportInvoicesXlsx(invoices: MonthlyInvoice[]): Uint8Array {
     [
       "Plan pools",
       "excess_sms",
-      "How far ctd_sms is above the plan SMS allowance (0 when PAYG or under).",
+      "How far ctd_sms is above allowance_sms (0 when PAYG or under).",
     ],
     [
       "Plan pools",
       "excess_voice_min",
-      "How far ctd_voice_min is above the plan voice allowance (0 when PAYG or under).",
+      "How far ctd_voice_min is above allowance_voice_min (0 when PAYG or under).",
     ],
     [
       "Plan pools",

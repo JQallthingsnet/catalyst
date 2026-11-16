@@ -114,22 +114,35 @@ export type PoolEntityLatest = {
  */
 export async function listModemAllowances(input?: {
   q?: string;
-  /** Exact Jasper/CC customer (reseller scope). */
+  /** Exact Jasper/CC customer (device stats scope). */
   exactCustomer?: string;
+  /** Limit plan keys to one reseller’s Contract (reseller read view). */
+  tenantId?: string;
 }): Promise<ModemAllowanceRow[]> {
   const q = input?.q?.trim() ?? "";
-  // undefined = unrestricted (super admin); "" = reseller unbound → empty.
-  if (input?.exactCustomer !== undefined && !input.exactCustomer.trim()) return [];
+  const tenantId = input?.tenantId?.trim() ?? "";
+  // Reseller unbound with no tenant scope → empty. Super admin leaves both unset.
+  if (input?.exactCustomer !== undefined && !input.exactCustomer.trim() && !tenantId) return [];
   const exact = input?.exactCustomer?.trim() ?? "";
 
   const rows = await getDB()
     .prepare(
       `WITH plan_keys AS (
+         -- Contracted Reseller Plans (Create Reseller Plan / bind).
          SELECT DISTINCT p.id AS platform_plan_id, TRIM(p.name) AS modem_id
          FROM platform_plans p
          JOIN tenant_plan_assignments a ON a.platform_plan_id = p.id
          WHERE IFNULL(p.active, 1) = 1 AND TRIM(IFNULL(p.name, '')) != ''
+           AND (? = '' OR a.tenant_id = ?)
          UNION
+         -- Jasper-carried Reseller Plans on Catalyst SIMs (modem_ID mirror; may be off-contract).
+         SELECT DISTINCT p.id AS platform_plan_id, TRIM(p.name) AS modem_id
+         FROM platform_plans p
+         JOIN sims s ON s.platform_plan_id = p.id
+         WHERE IFNULL(p.active, 1) = 1 AND TRIM(IFNULL(p.name, '')) != ''
+           AND (? = '' OR s.tenant_id = ?)
+         UNION
+         -- Same plans via CC snapshot (platform_plan_id or SIM link).
          SELECT DISTINCT p.id AS platform_plan_id, TRIM(p.name) AS modem_id
          FROM cc_devices d
          JOIN platform_plans p ON p.id = COALESCE(
@@ -142,6 +155,9 @@ export async function listModemAllowances(input?: {
          )
          WHERE TRIM(IFNULL(p.name, '')) != ''
            AND (? = '' OR IFNULL(d.customer, '') = ?)
+           AND (? = '' OR EXISTS (
+                 SELECT 1 FROM sims s2 WHERE s2.iccid = d.iccid AND s2.tenant_id = ?
+               ))
        )
        SELECT k.modem_id,
               (SELECT MAX(d.customer)
@@ -155,6 +171,9 @@ export async function listModemAllowances(input?: {
                           LIMIT 1)
                       ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
+                  AND (? = '' OR EXISTS (
+                        SELECT 1 FROM sims s2 WHERE s2.iccid = d.iccid AND s2.tenant_id = ?
+                      ))
               ) AS customer,
               (SELECT COUNT(*)
                  FROM cc_devices d
@@ -167,6 +186,9 @@ export async function listModemAllowances(input?: {
                           LIMIT 1)
                       ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
+                  AND (? = '' OR EXISTS (
+                        SELECT 1 FROM sims s2 WHERE s2.iccid = d.iccid AND s2.tenant_id = ?
+                      ))
               ) AS sim_count,
               (SELECT IFNULL(SUM(d.ctd_usage_mb), 0)
                  FROM cc_devices d
@@ -179,6 +201,9 @@ export async function listModemAllowances(input?: {
                           LIMIT 1)
                       ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
+                  AND (? = '' OR EXISTS (
+                        SELECT 1 FROM sims s2 WHERE s2.iccid = d.iccid AND s2.tenant_id = ?
+                      ))
               ) AS ctd_usage_mb,
               (SELECT IFNULL(SUM(d.ctd_sms), 0)
                  FROM cc_devices d
@@ -191,6 +216,9 @@ export async function listModemAllowances(input?: {
                           LIMIT 1)
                       ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
+                  AND (? = '' OR EXISTS (
+                        SELECT 1 FROM sims s2 WHERE s2.iccid = d.iccid AND s2.tenant_id = ?
+                      ))
               ) AS ctd_sms,
               (SELECT IFNULL(SUM(d.ctd_voice_min), 0)
                  FROM cc_devices d
@@ -203,6 +231,9 @@ export async function listModemAllowances(input?: {
                           LIMIT 1)
                       ) = k.platform_plan_id
                   AND (? = '' OR IFNULL(d.customer, '') = ?)
+                  AND (? = '' OR EXISTS (
+                        SELECT 1 FROM sims s2 WHERE s2.iccid = d.iccid AND s2.tenant_id = ?
+                      ))
               ) AS ctd_voice_min,
               a.allowance_mb AS allowance_mb,
               ${await modemAllowanceSmsExpr()} AS allowance_sms,
@@ -216,18 +247,34 @@ export async function listModemAllowances(input?: {
        LIMIT 2000`,
     )
     .bind(
+      tenantId,
+      tenantId,
+      tenantId,
+      tenantId,
       exact,
       exact,
+      tenantId,
+      tenantId,
       exact,
       exact,
+      tenantId,
+      tenantId,
       exact,
       exact,
+      tenantId,
+      tenantId,
       exact,
       exact,
+      tenantId,
+      tenantId,
       exact,
       exact,
+      tenantId,
+      tenantId,
       exact,
       exact,
+      tenantId,
+      tenantId,
       q,
       `%${q}%`,
     )

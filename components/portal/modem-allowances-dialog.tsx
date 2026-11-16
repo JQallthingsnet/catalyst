@@ -30,7 +30,16 @@ function draftsEqual(a: Draft | undefined, b: Draft | undefined): boolean {
   return a.mb.trim() === b.mb.trim() && a.sms.trim() === b.sms.trim() && a.voice.trim() === b.voice.trim();
 }
 
-export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ModemAllowancesDialog({
+  open,
+  onClose,
+  readOnly = false,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Reseller view: show Contract allowances; only ATN can edit. */
+  readOnly?: boolean;
+}) {
   const [rows, setRows] = useState<ModemRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [baseline, setBaseline] = useState<Record<string, Draft>>({});
@@ -68,6 +77,7 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
   }, [open]);
 
   async function persistAll(current: Record<string, Draft>, previous: Record<string, Draft>) {
+    if (readOnly) return;
     const changes: { modemId: string; draft: Draft }[] = [];
     for (const modemId of Object.keys(current)) {
       if (!draftsEqual(current[modemId], previous[modemId])) {
@@ -175,12 +185,16 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
             <h2 className="text-lg font-semibold">Reseller Plan allowances</h2>
             <p className="mt-1 text-sm text-quiet">
               Inclusive data (MB), SMS (msgs), and voice (min) per Reseller Plan.{" "}
-              <span className="text-ink">Blank or 0 = PAYG</span>. Set by ATN only.
+              <span className="text-ink">Blank or 0 = PAYG</span>
+              {readOnly ? ". Read-only — set by ATN." : ". Set by ATN only."}
             </p>
           </div>
           <button
             type="button"
-            onClick={() => void handleClose()}
+            onClick={() => {
+              if (readOnly) onClose();
+              else void handleClose();
+            }}
             disabled={busy}
             className="text-sm text-quiet hover:text-ink disabled:opacity-40"
           >
@@ -213,31 +227,49 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
                   <tr key={row.modemId} className="border-t border-line">
                     <td className="py-2 pr-3 font-mono text-xs">{row.modemId}</td>
                     <td className="py-2 pr-2">
-                      <input
-                        value={draft.mb}
-                        onChange={(event) => setField(row.modemId, "mb", event.target.value)}
-                        placeholder="—"
-                        title="Blank or 0 = PAYG"
-                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
-                      />
+                      {readOnly ? (
+                        <span className="font-mono text-xs">
+                          {!draft.mb.trim() || draft.mb.trim() === "0" ? "PAYG" : draft.mb}
+                        </span>
+                      ) : (
+                        <input
+                          value={draft.mb}
+                          onChange={(event) => setField(row.modemId, "mb", event.target.value)}
+                          placeholder="—"
+                          title="Blank or 0 = PAYG"
+                          className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                        />
+                      )}
                     </td>
                     <td className="py-2 pr-2">
-                      <input
-                        value={draft.sms}
-                        onChange={(event) => setField(row.modemId, "sms", event.target.value)}
-                        placeholder="—"
-                        title="Blank or 0 = PAYG"
-                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
-                      />
+                      {readOnly ? (
+                        <span className="font-mono text-xs">
+                          {!draft.sms.trim() || draft.sms.trim() === "0" ? "PAYG" : draft.sms}
+                        </span>
+                      ) : (
+                        <input
+                          value={draft.sms}
+                          onChange={(event) => setField(row.modemId, "sms", event.target.value)}
+                          placeholder="—"
+                          title="Blank or 0 = PAYG"
+                          className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                        />
+                      )}
                     </td>
                     <td className="py-2">
-                      <input
-                        value={draft.voice}
-                        onChange={(event) => setField(row.modemId, "voice", event.target.value)}
-                        placeholder="—"
-                        title="Blank or 0 = PAYG"
-                        className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
-                      />
+                      {readOnly ? (
+                        <span className="font-mono text-xs">
+                          {!draft.voice.trim() || draft.voice.trim() === "0" ? "PAYG" : draft.voice}
+                        </span>
+                      ) : (
+                        <input
+                          value={draft.voice}
+                          onChange={(event) => setField(row.modemId, "voice", event.target.value)}
+                          placeholder="—"
+                          title="Blank or 0 = PAYG"
+                          className="w-24 rounded-lg border border-line bg-canvas px-2 py-1 font-mono text-xs"
+                        />
+                      )}
                     </td>
                   </tr>
                 );
@@ -245,7 +277,8 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="py-8 text-quiet">
-                    No Reseller Plans in the CC snapshot yet. Sync the device list first.
+                    No Reseller Plans yet. Create one on Contract, or Sync so Jasper modem_ID plans appear
+                    (including off-contract carry).
                   </td>
                 </tr>
               ) : null}
@@ -255,20 +288,25 @@ export function ModemAllowancesDialog({ open, onClose }: { open: boolean; onClos
         <div className="flex items-center justify-end gap-3 border-t border-line px-5 py-4">
           <button
             type="button"
-            onClick={() => void handleClose()}
+            onClick={() => {
+              if (readOnly) onClose();
+              else void handleClose();
+            }}
             disabled={busy}
             className="rounded-card border border-line px-4 py-2 text-sm hover:border-accent disabled:opacity-40"
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={() => void saveAll()}
-            disabled={busy || !dirty}
-            className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
-          >
-            {busy ? "Saving…" : "Save"}
-          </button>
+          {readOnly ? null : (
+            <button
+              type="button"
+              onClick={() => void saveAll()}
+              disabled={busy || !dirty}
+              className="rounded-card bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
+            >
+              {busy ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
       </div>
     </div>

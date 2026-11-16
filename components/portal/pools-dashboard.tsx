@@ -784,6 +784,15 @@ export function PoolsDashboard({
             </button>
           </div>
         ) : null}
+        {!platformView && groupBy === "modem" ? (
+          <button
+            type="button"
+            onClick={() => setModemAllowancesOpen(true)}
+            className={btnSecondary}
+          >
+            Reseller Plan allowances
+          </button>
+        ) : null}
         {canBuyTopup ? (
           <Link href="/dashboard/invoices" className={btnSecondary}>
             Invoices
@@ -977,17 +986,16 @@ export function PoolsDashboard({
 
       {picker}
       {platformView ? (
-        <>
-          <RatePlanAllowancesDialog
-            open={ratePlanAllowancesOpen}
-            onClose={() => setRatePlanAllowancesOpen(false)}
-          />
-          <ModemAllowancesDialog
-            open={modemAllowancesOpen}
-            onClose={() => setModemAllowancesOpen(false)}
-          />
-        </>
+        <RatePlanAllowancesDialog
+          open={ratePlanAllowancesOpen}
+          onClose={() => setRatePlanAllowancesOpen(false)}
+        />
       ) : null}
+      <ModemAllowancesDialog
+        open={modemAllowancesOpen}
+        onClose={() => setModemAllowancesOpen(false)}
+        readOnly={!platformView}
+      />
     </div>
   );
 }
