@@ -1,12 +1,16 @@
 import Link from "next/link";
 
 const SUPER_ADMIN_RULES = [
+  "Onboard on Contract in order: create organisation (unique name) → create/bind Reseller Plan (1:1) → bind catalogue SKUs (1:many) → invite reseller admin(s) → upload signed PDF.",
+  "Organisation name is unique across Catalyst and appears top left for that reseller.",
+  "Reseller Plan binding is 1:1 (one plan → one organisation). Catalogue SKUs are 1:many per organisation.",
+  "Multiple reseller admins are allowed per organisation (backup). Operators can be invited by ATN here or later by a reseller admin from Settings.",
+  "Upload the signed contract PDF on the organisation’s Contract page. Super admin and that reseller admin can view and download it.",
   "ICCID is the unique identifier across Catalyst and every supplier feed.",
   "Every SIM a reseller assigns to a customer must map to one contracted rate plan.",
   "Sell stock (once per org): set Customer on SIMs in Jasper, Sync, then bind that Customer to the reseller. First import: modem_ID set → mirror as-is (may be off-contract); modem_ID empty → Supplier code (exact one) → contract default. Later Sync adds new SIMs; Change plan moves to a contracted Reseller Plan.",
   "Assign SIMs (reseller → end customer) is separate: operators attach an org ICCID to a portal end customer and any retail plan on contract. If the SIM’s Reseller Plan differs, Assign applies the same Plan changes rules. Physical shipping is outside Catalyst.",
   "Rate plans: only bound resellers can see and use a rate plan. Bind them on Contract before selling stock.",
-  "Catalogue: on Contract, tick which Catalogue SKUs each reseller may Order SIMs for (multiple allowed). Binding a rate plan requires at least one catalogue SKU if none are bound yet.",
   "Unbind rate plans before removing the last catalogue SKU from a reseller’s contract.",
   "Reseller Plan changes are allowed any time within contracted plans (any SIM state).",
   "Each Sydney day keeps every Reseller Plan used on each ICCID (more than one row that day if the plan changed). Export daily plans CSV from Plan changes.",
@@ -27,6 +31,7 @@ const RESELLER_ADMIN_RULES = [
   "Assign SIMs maps your ICCIDs to end customers and any retail plan on this contract. Shipping is outside Catalyst.",
   "Create retail plans on Plans from your contracted rate plans before operators assign SIMs.",
   "Inclusive Data / SMS / Voice on each Reseller Plan is set by ATN (0 = PAYG). It appears on Contract (and Jasper-carried plans on your SIMs), and drives Pools / Usage / Invoices.",
+  "If ATN uploaded a signed contract PDF, you can view and download it on this page.",
   "Only ATN can add or remove rate plans and catalogue SKUs on this contract. Contact ATN if you need a change.",
   "Order SIMs only lists catalogue products ATN ticked for your organisation on this contract.",
   "Change Reseller Plan any time within this contract (any SIM state).",

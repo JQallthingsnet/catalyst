@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { ContractRules } from "@/components/portal/contract-rules";
 import { ContractsAdminIndex } from "./admin-view";
+import { ContractDocumentPanel } from "@/components/portal/contract-document-panel";
+import { ContractRules } from "@/components/portal/contract-rules";
+import { getContractDocumentMeta, listContractDocumentMetaByTenants } from "@/lib/portal/contract-documents";
 import { requirePortal, requirePrivilege } from "@/lib/portal/guard";
 import {
   listContractBook,
@@ -20,12 +22,13 @@ export default async function ContractsPage() {
   const ctx = await requirePortal();
   if (!can(ctx.role, "contract.view") && !can(ctx.role, "platform.plan")) redirect("/dashboard");
 
-  // Reseller admin (or View as reseller admin): read-only signed lines for this org.
+  // Reseller admin (or View as reseller admin): read-only signed lines + PDF for this org.
   if (ctx.role === "reseller_admin") {
-    const [lines, carried, skus] = await Promise.all([
+    const [lines, carried, skus, document] = await Promise.all([
       listResellerContract(ctx.tenantId),
       listResellerJasperCarriedPlans(ctx.tenantId),
       listResellerSkus(ctx.tenantId),
+      getContractDocumentMeta(ctx.tenantId).catch(() => null),
     ]);
     return (
       <div>
@@ -40,6 +43,22 @@ export default async function ContractsPage() {
         </p>
 
         <ContractRules variant="reseller_admin" />
+
+        <div className="mt-6">
+          <ContractDocumentPanel
+            tenantId={ctx.tenantId}
+            meta={
+              document
+                ? {
+                    fileName: document.fileName,
+                    sizeBytes: document.sizeBytes,
+                    uploadedAt: document.uploadedAt,
+                    uploadedBy: document.uploadedBy,
+                  }
+                : null
+            }
+          />
+        </div>
 
         <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
           <table className="w-full min-w-160 text-left text-sm">
@@ -154,5 +173,10 @@ export default async function ContractsPage() {
 
   await requirePrivilege("platform.plan");
   const book = await listContractBook(ctx.homeTenantId);
-  return <ContractsAdminIndex book={book} />;
+  const pdfMap = await listContractDocumentMetaByTenants(book.map((row) => row.tenantId)).catch(
+    () => new Map(),
+  );
+  const signedPdfByTenant: Record<string, boolean> = {};
+  for (const [id] of pdfMap) signedPdfByTenant[id] = true;
+  return <ContractsAdminIndex book={book} signedPdfByTenant={signedPdfByTenant} />;
 }

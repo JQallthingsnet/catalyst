@@ -2,10 +2,34 @@ import { NextResponse } from "next/server";
 import { denyUnless, isResponse, requirePortalApi } from "@/lib/portal/api";
 import { writeAudit } from "@/lib/portal/repo";
 import {
+  createResellerOrganisation,
   deleteResellerOrganisation,
   renameResellerOrganisation,
   setTenantActive,
 } from "@/lib/portal/tenant";
+
+/** Super admin: create a reseller organisation from Contract (unique name). */
+export async function POST(request: Request) {
+  const ctx = await requirePortalApi();
+  if (isResponse(ctx)) return ctx;
+  const denied = denyUnless(ctx, "admin");
+  if (denied) return denied;
+  if (!ctx.isSuperAdmin || ctx.role !== "super_admin") {
+    return NextResponse.json({ error: "Only a super admin can create organisations." }, { status: 403 });
+  }
+
+  try {
+    const body = (await request.json()) as { name?: string };
+    const tenant = await createResellerOrganisation(body.name ?? "");
+    await writeAudit(tenant.id, ctx.email, "tenant", `Created organisation ${tenant.name}`);
+    return NextResponse.json({ success: true, tenant });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Create failed." },
+      { status: 400 },
+    );
+  }
+}
 
 export async function PATCH(request: Request) {
   const ctx = await requirePortalApi();

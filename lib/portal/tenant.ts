@@ -903,6 +903,12 @@ export async function deleteResellerOrganisation(
 
   const db = getDB();
   const id = existing.id;
+  try {
+    const { deleteContractDocument } = await import("@/lib/portal/contract-documents");
+    await deleteContractDocument(id);
+  } catch {
+    // R2 may be unavailable; D1 cleanup below still runs.
+  }
   // Order: dependents that reference other tenant rows, then membership, then tenant.
   const statements = [
     db.prepare("DELETE FROM sims WHERE tenant_id = ?").bind(id),
@@ -927,6 +933,7 @@ export async function deleteResellerOrganisation(
     ).bind(id),
     db.prepare("DELETE FROM sim_bulk_jobs WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM alert_settings WHERE scope_id = ?").bind(id),
+    db.prepare("DELETE FROM tenant_contract_documents WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM tenant_members WHERE tenant_id = ?").bind(id),
     db.prepare("DELETE FROM tenants WHERE id = ?").bind(id),
   ];

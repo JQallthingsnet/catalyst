@@ -35,8 +35,12 @@ export default async function AdminPage() {
       <article className="mt-6 rounded-card border border-line bg-panel p-5">
         <h2 className="font-semibold">Send invite</h2>
         <p className="mt-1 text-sm text-quiet">
-          Super admin joins ATN Platform. Reseller admin can create a new organisation (unique name, shown top left)
-          or join an existing one as a backup admin. Operator must be bound to an existing reseller.
+          Prefer onboarding on{" "}
+          <a href="/dashboard/contracts" className="text-accent">
+            Contract
+          </a>
+          : create organisation → plans → catalogue → invite admins → upload signed PDF. Here you can still invite
+          a super admin, a backup reseller admin into an existing org, or an operator.
         </p>
         <InviteForm
           roles={inviteableRoles(ctx.role)}

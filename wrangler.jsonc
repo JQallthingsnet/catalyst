@@ -34,5 +34,13 @@
       "database_id": "1cdbc21b-2359-4457-bab4-c2a7001225fa",
       "migrations_dir": "migrations"
     }
+  ],
+  // Signed contract PDFs (org onboarding). Create remote: npx wrangler r2 bucket create catalyst-contracts
+  "r2_buckets": [
+    {
+      "binding": "CONTRACTS",
+      "bucket_name": "catalyst-contracts",
+      "preview_bucket_name": "catalyst-contracts"
+    }
   ]
 }

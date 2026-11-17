@@ -11,10 +11,15 @@ export function InviteForm({
   roles,
   allowNewOrganisation = false,
   organisations = [],
+  /** When set (e.g. Contract detail), always invite into this org — no create/picker. */
+  fixedOrganisationId,
+  fixedOrganisationName,
 }: {
   roles: PortalRole[];
   allowNewOrganisation?: boolean;
   organisations?: { id: string; name: string }[];
+  fixedOrganisationId?: string;
+  fixedOrganisationName?: string;
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<PortalRole>(roles[0] ?? "reseller_operator");
@@ -25,14 +30,26 @@ export function InviteForm({
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
   const router = useRouter();
-  const creatingOrg = allowNewOrganisation && role === "reseller_admin" && adminOrgChoice === NEW_ORG;
+  const fixedOrg = fixedOrganisationId?.trim() || "";
+  const creatingOrg =
+    !fixedOrg && allowNewOrganisation && role === "reseller_admin" && adminOrgChoice === NEW_ORG;
   const bindingAdminOrg =
-    allowNewOrganisation && role === "reseller_admin" && adminOrgChoice !== NEW_ORG;
-  const bindingOperatorOrg = allowNewOrganisation && role === "reseller_operator";
+    Boolean(fixedOrg) && role === "reseller_admin"
+      ? true
+      : !fixedOrg && allowNewOrganisation && role === "reseller_admin" && adminOrgChoice !== NEW_ORG;
+  const bindingOperatorOrg =
+    Boolean(fixedOrg) && role === "reseller_operator"
+      ? true
+      : !fixedOrg && allowNewOrganisation && role === "reseller_operator";
   const bindingOrg = bindingAdminOrg || bindingOperatorOrg;
   const newOrgName = creatingOrg ? organisationName.trim() : "";
 
   useEffect(() => {
+    if (fixedOrg) {
+      setOrganisationId(fixedOrg);
+      setAdminOrgChoice(fixedOrg);
+      return;
+    }
     if (!organisations.length) {
       setOrganisationId("");
       setAdminOrgChoice(NEW_ORG);
@@ -41,15 +58,15 @@ export function InviteForm({
     setOrganisationId((current) =>
       current && organisations.some((org) => org.id === current) ? current : organisations[0].id,
     );
-  }, [organisations]);
+  }, [organisations, fixedOrg]);
 
   useEffect(() => {
-    if (role !== "reseller_admin") return;
+    if (fixedOrg || role !== "reseller_admin") return;
     if (adminOrgChoice === NEW_ORG) return;
     if (!organisations.some((org) => org.id === adminOrgChoice)) {
       setAdminOrgChoice(organisations[0]?.id ?? NEW_ORG);
     }
-  }, [role, adminOrgChoice, organisations]);
+  }, [role, adminOrgChoice, organisations, fixedOrg]);
 
   if (roles.length === 0) return null;
 
@@ -57,11 +74,13 @@ export function InviteForm({
     setBusy(true);
     setError("");
     setOk("");
-    const boundOrgId = bindingOperatorOrg
-      ? organisationId || organisations[0]?.id || ""
-      : bindingAdminOrg
-        ? adminOrgChoice
-        : "";
+    const boundOrgId = fixedOrg
+      ? fixedOrg
+      : bindingOperatorOrg
+        ? organisationId || organisations[0]?.id || ""
+        : bindingAdminOrg
+          ? adminOrgChoice
+          : "";
     if (creatingOrg && !organisationName.trim()) {
       setError("Enter the organisation name. It is shown top left in their portal.");
       setBusy(false);
@@ -135,7 +154,14 @@ export function InviteForm({
           {busy ? "Sending…" : "Send invite"}
         </button>
       </div>
-      {allowNewOrganisation && role === "reseller_admin" ? (
+      {fixedOrg ? (
+        <p className="text-xs text-quiet">
+          Inviting into <span className="text-ink">{fixedOrganisationName || fixedOrg}</span>
+          {role === "reseller_admin" ? " as reseller admin (backup allowed)." : null}
+          {role === "reseller_operator" ? " as operator." : null}
+        </p>
+      ) : null}
+      {!fixedOrg && allowNewOrganisation && role === "reseller_admin" ? (
         <label className="block text-sm">
           Organisation
           <select
@@ -151,7 +177,8 @@ export function InviteForm({
             ))}
           </select>
           <span className="mt-1 block text-xs text-quiet">
-            New org needs a unique name. Pick an existing org to invite a backup reseller admin.
+            Prefer creating the organisation on Contract first. Or pick an existing org for a backup
+            reseller admin.
           </span>
         </label>
       ) : null}
@@ -170,12 +197,12 @@ export function InviteForm({
           </span>
         </label>
       ) : null}
-      {bindingOperatorOrg ? (
+      {!fixedOrg && bindingOperatorOrg ? (
         <label className="block text-sm">
           Reseller organisation
           {organisations.length === 0 ? (
             <p className="mt-2 text-sm text-danger">
-              Create a reseller first (invite a reseller admin with an organisation name).
+              Create a reseller organisation on Contract first.
             </p>
           ) : (
             <select

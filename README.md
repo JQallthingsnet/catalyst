@@ -8,7 +8,7 @@ Visual theme follows allthingsnet.io. Interaction follows Atomic-style 3-step wi
 
 ## Contract book
 
-**Contract** (`/dashboard/contracts`) is what ATN has signed with each reseller (rate plan + remarks). Super admin manages the book; **reseller admin only** can open Contract to refer to their lines (operators cannot). The same ATN plans appear under **Plans**, where super admin maps each line to a **supplier** rate plan (Cisco IoT Control Center, Singapore Telecom, China Mobile, or Other). A reseller with zero bound plans cannot receive sell stock. Mark one rate plan as **default** for bulk transfers (must match Jasper TCode when supplier is Control Center). Rate-plan change windows for activated SIMs (24th-of-month cut-off, one change per month, billing mismatch flags) are specified but not automated yet.
+**Contract** (`/dashboard/contracts`) is the reseller onboarding and commercial book. Super admin flow: **create organisation** (unique name) → **Reseller Plan** bind (1:1) → **catalogue** bind (1:many) → **invite reseller admin(s)** → **upload signed PDF**. Reseller admins see their lines, allowances, and can **view/download** the signed PDF (operators cannot open Contract). PDFs are stored in R2 (`CONTRACTS` → `catalyst-contracts`). The same ATN plans appear under **Plans**, where super admin maps each line to a **supplier** rate plan. A reseller with zero bound plans cannot receive sell stock. Mark one rate plan as **default** for bulk transfers (must match Jasper TCode when supplier is Control Center).
 
 ## Plans (three layers)
 
@@ -92,6 +92,7 @@ npx wrangler login
 npm run db:create
 # Put the printed database_id into wrangler.jsonc
 npm run db:migrate:remote
+npx wrangler r2 bucket create catalyst-contracts
 npx wrangler secret put AUTH_SECRET
 npx wrangler secret put resend_api_key
 # Legacy: npx wrangler secret put gmail-smtp-keys

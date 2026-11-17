@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { BindPlanToResellerForm } from "@/components/portal/bind-plan-to-reseller-form";
 import { ContractCataloguePicker } from "@/components/portal/contract-catalogue-picker";
+import {
+  ContractDocumentPanel,
+  type ContractDocumentPanelMeta,
+} from "@/components/portal/contract-document-panel";
 import { ContractRules } from "@/components/portal/contract-rules";
+import { CreateOrganisationForm } from "@/components/portal/create-organisation-form";
+import { InviteForm } from "@/components/portal/invite-form";
 import { SetDefaultPlanButton } from "@/components/portal/set-default-plan-button";
 import { SetUnitPriceField } from "@/components/portal/set-unit-price-field";
 import { UnassignPlanButton } from "@/components/portal/unassign-plan-button";
 import { btnPrimary, btnSecondary } from "@/lib/portal/button-styles";
 import type { ContractBookEntry, PlatformPlan } from "@/lib/portal/platform-plans";
+import type { PortalRole } from "@/lib/portal/role-model";
+import { VIEW_ROLES } from "@/lib/portal/role-model";
 import type { SimSku } from "@/lib/portal/skus";
 
 function contractReady(entry: ContractBookEntry): boolean {
@@ -48,8 +56,14 @@ function ContractStatusHint({ entry }: { entry: ContractBookEntry }) {
   );
 }
 
-/** Bird’s-eye: one row per reseller — open for catalogue + Reseller Plans. */
-export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
+/** Bird’s-eye: one row per reseller — open for onboarding steps. */
+export function ContractsAdminIndex({
+  book,
+  signedPdfByTenant = {},
+}: {
+  book: ContractBookEntry[];
+  signedPdfByTenant?: Record<string, boolean>;
+}) {
   const readyCount = book.filter(contractReady).length;
   const planCount = book.reduce((sum, entry) => sum + entry.plans.length, 0);
 
@@ -60,14 +74,12 @@ export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
           <p className="text-sm text-quiet">ATN commercial view</p>
           <h1 className="mt-1 text-3xl font-semibold">Contract</h1>
           <p className="mt-2 text-sm text-quiet">
-            Bird’s-eye of reseller contracts — catalogue SKUs and Reseller Plans on each organisation.
-            Open an organisation to bind plans and tick Order SIMs products.
+            Onboard resellers here: create organisation (unique name) → Reseller Plan (1:1) → catalogue
+            (1:many) → invite reseller admins → upload signed PDF. Open an organisation to complete the
+            steps.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href="/dashboard/admin" className={btnSecondary}>
-            Add reseller
-          </Link>
           <Link href="/dashboard/catalogue" className={btnSecondary}>
             Catalogue
           </Link>
@@ -78,6 +90,17 @@ export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
       </div>
 
       <ContractRules variant="super_admin" />
+
+      <article className="mt-6 rounded-card border border-line bg-panel p-5">
+        <h2 className="font-semibold">1. Create organisation</h2>
+        <p className="mt-1 text-sm text-quiet">
+          Start onboarding with a unique organisation name. Then open the org to bind plans, catalogue,
+          admins, and the signed PDF.
+        </p>
+        <div className="mt-4 max-w-lg">
+          <CreateOrganisationForm />
+        </div>
+      </article>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <article className="rounded-card border border-line bg-panel p-5">
@@ -95,13 +118,7 @@ export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
       </div>
 
       {book.length === 0 ? (
-        <p className="mt-6 text-sm text-quiet">
-          No reseller organisations yet. Create one from{" "}
-          <Link href="/dashboard/admin" className="text-accent">
-            Admin
-          </Link>
-          .
-        </p>
+        <p className="mt-6 text-sm text-quiet">No reseller organisations yet. Create one above.</p>
       ) : (
         <div className="mt-6 overflow-x-auto rounded-card border border-line bg-panel">
           <table className="w-full min-w-180 text-left text-sm">
@@ -109,6 +126,7 @@ export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
               <tr>
                 <th className="px-4 py-3 font-medium">Organisation</th>
                 <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Signed PDF</th>
                 <th className="px-4 py-3 font-medium">Catalogue SKUs</th>
                 <th className="px-4 py-3 font-medium">Reseller Plans</th>
                 <th className="px-4 py-3 font-medium">Default plan</th>
@@ -121,6 +139,7 @@ export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
                   entry.plans.find((plan) => plan.isDefault)?.remarks ??
                   entry.plans[0]?.remarks ??
                   null;
+                const hasPdf = Boolean(signedPdfByTenant[entry.tenantId]);
                 return (
                   <tr key={entry.tenantId} className="border-t border-line align-middle">
                     <td className="px-4 py-3">
@@ -135,6 +154,13 @@ export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
                     </td>
                     <td className="px-4 py-3">
                       <ContractStatusHint entry={entry} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {hasPdf ? (
+                        <span className="text-ok">Uploaded</span>
+                      ) : (
+                        <span className="text-quiet">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">{entry.skus.length.toLocaleString("en-AU")}</td>
                     <td className="px-4 py-3">{entry.plans.length.toLocaleString("en-AU")}</td>
@@ -163,17 +189,23 @@ export function ContractsAdminIndex({ book }: { book: ContractBookEntry[] }) {
   );
 }
 
-/** Inside one reseller: catalogue + Reseller Plans (same actions as before). */
+/** Inside one reseller: onboarding order — PDF → plans → catalogue → team. */
 export function ContractResellerDetail({
   entry,
   plans,
   catalogue,
+  documentMeta,
+  members,
+  inviteRoles,
 }: {
   entry: ContractBookEntry;
   plans: PlatformPlan[];
   catalogue: SimSku[];
+  documentMeta: ContractDocumentPanelMeta;
+  members: { email: string; role: string }[];
+  inviteRoles: PortalRole[];
 }) {
-  // Only plans not on this contract and not already bound to any other reseller.
+  // Only plans not on this contract and not already bound to any other reseller (1:1).
   const unbound = plans
     .filter(
       (plan) =>
@@ -193,6 +225,9 @@ export function ContractResellerDetail({
     active: sku.active,
   }));
   const boundIds = entry.skus.map((sku) => sku.skuId);
+  const teamInviteRoles = inviteRoles.filter(
+    (role) => role === "reseller_admin" || role === "reseller_operator",
+  );
 
   return (
     <div>
@@ -207,9 +242,9 @@ export function ContractResellerDetail({
             <ContractStatusHint entry={entry} />
           </div>
           <p className="mt-2 text-sm text-quiet">
-            {entry.skus.length} catalogue SKU{entry.skus.length === 1 ? "" : "s"} · {entry.plans.length}{" "}
-            Reseller Plan{entry.plans.length === 1 ? "" : "s"} on contract. Bind rate plans and tick Order
-            SIMs products for this organisation.
+            Onboarding for this organisation: signed PDF → Reseller Plans (1:1) → catalogue (1:many) →
+            invite reseller admins (and optional operators). Reseller admins can invite more operators
+            after they sign in.
           </p>
           {!entry.tenantActive ? (
             <p className="mt-2 text-sm text-danger">Organisation deactivated — binding is locked.</p>
@@ -226,35 +261,14 @@ export function ContractResellerDetail({
       </div>
 
       <div className="mt-6 space-y-4">
-        <section className="rounded-card border border-line bg-panel p-5">
-          <h2 className="text-sm font-semibold text-ink">Catalogue (Order SIMs)</h2>
-          <p className="mt-1 text-xs text-quiet">
-            Keep at least one product bound while rate plans remain on this contract.
-          </p>
-          {entry.tenantActive ? (
-            <div className="mt-3">
-              <ContractCataloguePicker
-                tenantId={entry.tenantId}
-                options={catalogueOptions}
-                boundIds={boundIds}
-                hasRatePlans={entry.plans.length > 0}
-              />
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-quiet">
-              {boundIds.length === 0
-                ? "None bound."
-                : `${boundIds.length} catalogue SKU${boundIds.length === 1 ? "" : "s"} bound.`}
-            </p>
-          )}
-        </section>
+        <ContractDocumentPanel tenantId={entry.tenantId} meta={documentMeta} canUpload />
 
         <section className="rounded-card border border-line bg-panel p-5">
-          <h2 className="text-sm font-semibold text-ink">Reseller Plans</h2>
+          <h2 className="text-sm font-semibold text-ink">2. Reseller Plans (1:1)</h2>
           <p className="mt-1 text-xs text-quiet">
-            Contracted Reseller Plans this organisation may sell on. Unit Price (AUD) is what ATN
-            charges this organisation per SIM on that plan (invoice). When two plans occur on the same
-            Sydney day, the higher unit price is billed.
+            Each Reseller Plan binds to one organisation. Unit Price (AUD) is what ATN charges this
+            organisation per SIM on that plan (invoice). When two plans occur on the same Sydney day,
+            the higher unit price is billed.
           </p>
 
           {entry.plans.length === 0 ? (
@@ -314,6 +328,59 @@ export function ContractResellerDetail({
               />
             </div>
           ) : null}
+        </section>
+
+        <section className="rounded-card border border-line bg-panel p-5">
+          <h2 className="text-sm font-semibold text-ink">3. Catalogue (Order SIMs, 1:many)</h2>
+          <p className="mt-1 text-xs text-quiet">
+            Tick one or more catalogue products this organisation may order. Keep at least one while
+            rate plans remain on this contract.
+          </p>
+          {entry.tenantActive ? (
+            <div className="mt-3">
+              <ContractCataloguePicker
+                tenantId={entry.tenantId}
+                options={catalogueOptions}
+                boundIds={boundIds}
+                hasRatePlans={entry.plans.length > 0}
+              />
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-quiet">
+              {boundIds.length === 0
+                ? "None bound."
+                : `${boundIds.length} catalogue SKU${boundIds.length === 1 ? "" : "s"} bound.`}
+            </p>
+          )}
+        </section>
+
+        <section className="rounded-card border border-line bg-panel p-5">
+          <h2 className="text-sm font-semibold text-ink">4. Team (reseller admins + operators)</h2>
+          <p className="mt-1 text-xs text-quiet">
+            Invite one or more reseller admins for this organisation. Operators can be invited here or
+            later by a reseller admin from Settings.
+          </p>
+          {entry.tenantActive && teamInviteRoles.length > 0 ? (
+            <InviteForm
+              roles={teamInviteRoles}
+              fixedOrganisationId={entry.tenantId}
+              fixedOrganisationName={entry.tenantName}
+            />
+          ) : null}
+          <ul className="mt-4 space-y-2 text-sm">
+            {members.length === 0 ? <li className="text-quiet">No members yet.</li> : null}
+            {members.map((member) => (
+              <li
+                key={member.email}
+                className="flex justify-between rounded-xl border border-line px-3 py-2"
+              >
+                <span>{member.email}</span>
+                <span className="text-quiet">
+                  {VIEW_ROLES.find((item) => item.id === member.role)?.label ?? member.role}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </div>

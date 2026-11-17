@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 
 export type AppEnv = {
   DB?: D1Database;
+  /** Signed contract PDFs for reseller organisations. */
+  CONTRACTS?: R2Bucket;
   AUTH_SECRET?: string;
   AUTH_DEV_RETURN_CODE?: string;
   SUPER_ADMIN_EMAIL?: string;
@@ -27,6 +29,14 @@ export function getDB(): D1Database {
     throw new Error("D1 binding DB is not configured.");
   }
   return db;
+}
+
+export function getContractsBucket(): R2Bucket {
+  const bucket = getEnv().CONTRACTS;
+  if (!bucket) {
+    throw new Error("R2 binding CONTRACTS is not configured.");
+  }
+  return bucket;
 }
 
 export function isDevCodeEnabled(): boolean {
