@@ -20,10 +20,6 @@ const SUPER_ADMIN_RULES = [
   "Plan changes is the log book: super admin sees all resellers (with Organisation); reseller admin sees only their own ICCIDs.",
 ];
 
-const SUPER_ADMIN_COMING = [
-  "Optional: push a queued rate-plan change to Optus Control Center when ATN chooses to. Push status already exists (pending / pushed / failed / skipped).",
-];
-
 const RESELLER_ADMIN_RULES = [
   "ICCID is the unique identifier for every SIM.",
   "When you assign a SIM to a customer, it must use one of the rate plans on this contract.",
@@ -71,18 +67,6 @@ export function ContractRules({ variant }: { variant: "super_admin" | "reseller_
           <li key={rule}>{rule}</li>
         ))}
       </ul>
-
-      {variant === "super_admin" ? (
-        <div className="mt-5 border-t border-line pt-4">
-          <h3 className="text-sm font-semibold text-ink">Coming next</h3>
-          <p className="mt-1 text-xs text-quiet">Planned product rules — not enforced yet.</p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-quiet">
-            {SUPER_ADMIN_COMING.map((rule) => (
-              <li key={rule}>{rule}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </article>
   );
 }
