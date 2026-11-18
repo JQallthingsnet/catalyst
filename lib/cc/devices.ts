@@ -24,6 +24,7 @@ import {
   setCcDevicePlatformPlanId,
 } from "@/lib/portal/platform-plans";
 import { getSimSku } from "@/lib/portal/skus";
+import { recordImeiChangeIfNeeded } from "@/lib/portal/imei-change";
 import { listCcCustomerBindings, type CcCustomerBinding } from "@/lib/portal/tenant";
 import { ccDevicesToCsv } from "@/lib/cc/csv";
 import { parseYmd, sydneyDayEndExclusiveIso, sydneyDayStartIso } from "@/lib/portal/time";
@@ -1768,6 +1769,8 @@ async function persistDeviceEnrichment(
   const customFields = details ? packCustomFields(details) : null;
   const detailsJson = details ? JSON.stringify(details) : null;
   const applySession = session ? 1 : 0;
+  const nextImei = textOrNull(details?.imei);
+  await recordImeiChangeIfNeeded({ iccid, newImei: nextImei, source: "cc_poll" }).catch(() => {});
 
   await getDB()
     .prepare(
@@ -1816,7 +1819,7 @@ async function persistDeviceEnrichment(
       communicationPlan,
       imsi,
       msisdn,
-      textOrNull(details?.imei),
+      nextImei,
       textOrNull(details?.customer),
       textOrNull(details?.endConsumerId),
       usageMb,
@@ -1950,6 +1953,8 @@ async function persistDeviceDetailsOnly(iccid: string, details: JasperDevice | n
   const sku = extractSku(details);
   const customFields = packCustomFields(details);
   const detailsJson = JSON.stringify(details);
+  const nextImei = textOrNull(details.imei);
+  await recordImeiChangeIfNeeded({ iccid, newImei: nextImei, source: "cc_details" }).catch(() => {});
 
   await getDB()
     .prepare(
@@ -1989,7 +1994,7 @@ async function persistDeviceDetailsOnly(iccid: string, details: JasperDevice | n
       communicationPlan,
       imsi,
       msisdn,
-      textOrNull(details.imei),
+      nextImei,
       textOrNull(details.customer),
       textOrNull(details.endConsumerId),
       textOrNull(details.dateAdded),

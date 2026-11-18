@@ -93,6 +93,7 @@ const ROLE_NAV: Record<PortalRole, PortalNavGroup[]> = {
         { href: "/dashboard/estate", label: "Estate" },
         { href: "/dashboard/estate/cc", label: "CC snapshot" },
         { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
+        { href: "/dashboard/sims/imei-changes", label: "IMEI changes" },
       ],
     },
     {
@@ -134,6 +135,7 @@ const ROLE_NAV: Record<PortalRole, PortalNavGroup[]> = {
         { href: "/dashboard/sims", label: "SIMs" },
         { href: "/dashboard/customers", label: "Customers" },
         { href: "/dashboard/sims/rate-plan-changes", label: "Plan changes" },
+        { href: "/dashboard/sims/imei-changes", label: "IMEI changes" },
       ],
     },
     {

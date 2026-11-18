@@ -115,6 +115,11 @@ export default async function SimsPage({
           Plan changes
         </Link>
       ) : null}
+      {can(ctx.role, "audit.view") ? (
+        <Link href="/dashboard/sims/imei-changes" className={btnSecondary}>
+          IMEI changes
+        </Link>
+      ) : null}
       {can(ctx.role, "wholesale.allocate") ? (
         <Link href="/dashboard/estate/allocate" className={btnSecondary}>
           Sell stock

@@ -190,7 +190,11 @@ export default async function CcSnapshotPage({
         <div className="min-w-0 max-w-2xl">
           <h1 className="text-3xl font-semibold">Control Center snapshot</h1>
           <p className="mt-2 text-sm text-quiet">
-            Copy of Control Center in D1. Turn <span className="text-ink">Auto poll ON</span> — cron every 8 min walks Jasper Search until the ICCID list is in D1, then refreshes CTD and profiles and pulls changed SIMs. <span className="text-ink">Sync device list</span> is optional if you want a faster catch-up now.
+            Copy of Control Center in D1. Turn <span className="text-ink">Auto poll ON</span> — cron every 8 min walks Jasper Search until the ICCID list is in D1, then refreshes CTD and profiles and pulls changed SIMs. <span className="text-ink">Sync device list</span> is optional if you want a faster catch-up now. Each ICCID keeps one latest IMEI here; history is under{" "}
+            <Link href="/dashboard/sims/imei-changes" className="text-accent">
+              IMEI changes
+            </Link>
+            .
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -198,6 +202,12 @@ export default async function CcSnapshotPage({
           <CcJasperProbeButton />
           <CcImportDialog />
           <CcExportButton queryString={exportQuery} />
+          <Link
+            href="/dashboard/sims/imei-changes"
+            className="inline-flex h-10 items-center rounded-full border border-line px-4 text-sm hover:border-accent"
+          >
+            IMEI changes
+          </Link>
           <SyncCcButton
             initialDevices={total}
             initialJasperTotal={sync.lastTotal}
